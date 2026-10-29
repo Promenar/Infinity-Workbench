@@ -2,6 +2,7 @@ package com.promenar.infinity.ui.settings
 
 import com.promenar.infinity.ui.theme.InfinityMonospace
 import com.promenar.infinity.ui.common.InfinitySheetHeight
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySegment
 import com.promenar.infinity.ui.common.InfinitySegmentedControl
 import android.content.ClipData
@@ -567,21 +568,25 @@ internal fun SshHostActionsContent(
             SshActionItem(Icons.Rounded.Terminal, stringResource(R.string.ssh_open_terminal), enabled, onTerminal,
                 subtitle = stringResource(if (host.trustedFingerprint == null) R.string.settings_batch1_ssh_untrusted_summary else R.string.ssh_trusted))
             SshActionItem(Icons.Rounded.Security, stringResource(R.string.ssh_verify), enabled, onVerify)
-            if (host.authType == SshAuthType.KEY) {
-                SshActionItem(Icons.Rounded.ContentCopy, stringResource(R.string.ssh_copy_public_key), enabled, onCopyPublicKey)
-            }
+            val publicKeyReason = UnavailableReasons.sshCopyPublicKey(host.authType)
+            SshActionItem(
+                Icons.Rounded.ContentCopy, stringResource(R.string.ssh_copy_public_key), enabled && publicKeyReason == null, onCopyPublicKey,
+                subtitle = publicKeyReason?.let { stringResource(it) },
+            )
             SshActionItem(Icons.Rounded.Edit, stringResource(R.string.ssh_edit_host), enabled, onEdit)
-            if (host.localForwardPort != null) {
-                SettingsToggle(
-                    title = stringResource(R.string.ssh_forward_configure),
-                    description = if (forwardPort == null) stringResource(R.string.ssh_forward_stopped)
-                    else stringResource(R.string.settings_batch1_ssh_forward_running_summary, forwardPort),
-                    checked = forwardPort != null,
-                    icon = Icons.Rounded.SwapHoriz,
-                    onCheckedChange = { onToggleForward() },
-                    enabled = enabled,
-                )
-            }
+            val forwardReason = UnavailableReasons.sshForward(host.localForwardPort)
+            SettingsToggle(
+                title = stringResource(R.string.ssh_forward_configure),
+                description = when {
+                    forwardReason != null -> stringResource(forwardReason)
+                    forwardPort == null -> stringResource(R.string.ssh_forward_stopped)
+                    else -> stringResource(R.string.settings_batch1_ssh_forward_running_summary, forwardPort)
+                },
+                checked = forwardPort != null,
+                icon = Icons.Rounded.SwapHoriz,
+                onCheckedChange = { onToggleForward() },
+                enabled = enabled && forwardReason == null,
+            )
             SshActionItem(Icons.Rounded.DeleteOutline, stringResource(R.string.ssh_delete), enabled, onDelete, destructive = true)
         }
     }

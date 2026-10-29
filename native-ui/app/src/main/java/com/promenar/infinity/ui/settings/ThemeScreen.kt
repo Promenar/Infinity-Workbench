@@ -64,6 +64,7 @@ import com.promenar.infinity.ui.common.InfinityPopoverSpec
 import com.promenar.infinity.ui.common.infinityPopoverAnchor
 import com.promenar.infinity.ui.common.rememberInfinityPopoverAnchor
 import com.promenar.infinity.ui.common.SettingsToggle
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.theme.InfinityColorSource
 import com.promenar.infinity.ui.theme.InfinityPresetColors
 import com.promenar.infinity.ui.theme.InfinityThemeMode
@@ -194,17 +195,18 @@ fun ThemeScreenContent(
                 }
             }
 
-            if (preferences.mode == InfinityThemeMode.DARK) {
-                item("pure-black") {
-                    InfinitySettingsSection(
-                        title = stringResource(R.string.theme_dark_mode),
-                    ) {
-                        SettingsToggle(
-                            title = stringResource(R.string.theme_pure_black),
-                            checked = preferences.pureBlack,
-                            onCheckedChange = onPureBlackChange,
-                        )
-                    }
+            item("pure-black") {
+                val pureBlackReason = UnavailableReasons.pureBlack(preferences.mode)
+                InfinitySettingsSection(
+                    title = stringResource(R.string.theme_dark_mode),
+                ) {
+                    SettingsToggle(
+                        title = stringResource(R.string.theme_pure_black),
+                        description = pureBlackReason?.let { stringResource(it) },
+                        checked = preferences.pureBlack,
+                        onCheckedChange = onPureBlackChange,
+                        enabled = pureBlackReason == null,
+                    )
                 }
             }
 
@@ -217,15 +219,16 @@ fun ThemeScreenContent(
                         checked = preferences.textScaleEnabled,
                         onCheckedChange = onTextScaleEnabledChange,
                     )
-                    if (preferences.textScaleEnabled) {
-                        InfinityNumericSetting(
-                            title = stringResource(R.string.settings_batch1_text_scale_value),
-                            value = (preferences.textScale * 100).roundToInt(),
-                            spec = InterfaceTextScaleSpec,
-                            description = stringResource(R.string.theme_text_scale_desc),
-                            onValueChange = { onTextScaleChange((it / 100.0).toFloat()) },
-                        )
-                    }
+                    val textScaleReason = UnavailableReasons.textScaleValue(preferences.textScaleEnabled)
+                    InfinityNumericSetting(
+                        title = stringResource(R.string.settings_batch1_text_scale_value),
+                        value = (preferences.textScale * 100).roundToInt(),
+                        spec = InterfaceTextScaleSpec,
+                        subtitle = textScaleReason?.let { stringResource(it) },
+                        enabled = textScaleReason == null,
+                        description = stringResource(R.string.theme_text_scale_desc),
+                        onValueChange = { onTextScaleChange((it / 100.0).toFloat()) },
+                    )
                 }
             }
             item("chat") {

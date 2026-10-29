@@ -80,10 +80,10 @@ class AgentReachModelsTest {
     }
 
     @Test
-    fun `linux row is omitted only when the distribution has no linux environment`() {
+    fun `linux row stays listed and is marked channel-unavailable when the distribution has no linux environment`() {
         fun linux(state: LinuxRuntimeState) =
             reachBackends(true, false, null, 0, linuxState = state, linuxAgentEnabled = true).firstOrNull { it.kind == ReachBackendKind.LINUX }
-        assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION))).isNull()
+        assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION))?.status).isEqualTo(ReachBackendStatus.CHANNEL_UNAVAILABLE)
         assertThat(linux(LinuxRuntimeState.Unavailable(LinuxUnavailableReason.UNSUPPORTED_ABI))?.status).isEqualTo(ReachBackendStatus.UNAVAILABLE)
         assertThat(linux(LinuxRuntimeState.NotInstalled(0))?.status).isEqualTo(ReachBackendStatus.NOT_INSTALLED)
     }

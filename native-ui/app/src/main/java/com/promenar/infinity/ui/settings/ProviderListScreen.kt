@@ -77,6 +77,7 @@ import com.promenar.infinity.ui.common.InfinityDropdownMenu
 import com.promenar.infinity.ui.common.InfinityGroupDivider
 import com.promenar.infinity.ui.common.InfinityMenuDivider
 import com.promenar.infinity.ui.common.InfinityMenuItem
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
 import com.promenar.infinity.ui.common.InfinityStatusKind
 import com.promenar.infinity.ui.testing.UiTags
@@ -535,15 +536,29 @@ private fun ProviderCard(
                             .testTag("${UiTags.settingsProviderActions(provider.id)}:models")
                             .semantics { role = Role.Button },
                     )
-                    if (onDelete != null) {
+                    // 内置提供商保留删除项，灰显并写明原因；其余提供商照常可删。
+                    val deleteUnavailableReason = UnavailableReasons.providerDelete(provider.id)
+                    if (onDelete != null || deleteUnavailableReason != null) {
                         InfinityMenuDivider()
                         InfinityMenuItem(
                             leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                            text = { Text(deleteDescription) },
+                            text = {
+                                Column {
+                                    Text(deleteDescription)
+                                    if (deleteUnavailableReason != null) {
+                                        Text(
+                                            stringResource(deleteUnavailableReason),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            },
                             destructive = true,
+                            enabled = onDelete != null,
                             onClick = {
                                 menuExpanded = false
-                                onDelete()
+                                onDelete?.invoke()
                             },
                             modifier = Modifier
                                 .testTag("${UiTags.settingsProviderActions(provider.id)}:delete")
