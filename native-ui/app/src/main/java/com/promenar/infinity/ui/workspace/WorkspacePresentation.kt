@@ -1,7 +1,6 @@
 package com.promenar.infinity.ui.workspace
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.res.stringResource
 import com.promenar.infinity.R
 import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
@@ -33,21 +32,21 @@ fun SessionWorkspace.toUi(): SessionWorkspaceUi = when (this) {
     )
 }
 
-/** 当前会话是否固定为 Linux 模式；由聊天页提供，其它入口保持默认值。 */
-val LocalSessionLinuxMode = compositionLocalOf { false }
-
-/** 会话私有空间的名称：Linux 模式称“会话目录”（Linux 内为 /home/session），内置模式称“会话专用空间”。 */
+/** 会话私有空间的名称；两种运行模式下是同一个文件夹（Linux 中挂载为 /home/session），统一称“本会话文件夹”。 */
 @Composable
-fun privateWorkspaceLabel(): String =
-    stringResource(if (LocalSessionLinuxMode.current) R.string.workspace_kind_session_dir else R.string.workspace_kind_private)
+fun privateWorkspaceLabel(): String = stringResource(R.string.workspace_kind_private)
 
+/** 工作区的存放位置：会话私有空间与共享文件夹都在应用内存储。 */
 @Composable
-fun workspaceKindLabel(kind: String?): String = when (kind) {
-    WorkspaceEntity.KIND_PROJECT -> stringResource(R.string.workspace_kind_project)
+fun workspaceStorageLabel(kind: String?): String = when (kind) {
     WorkspaceEntity.KIND_SHARED -> stringResource(R.string.workspace_kind_shared)
     WorkspaceEntity.KIND_LINUX_HOME -> stringResource(R.string.workspace_kind_linux_home)
-    else -> privateWorkspaceLabel()
+    else -> stringResource(R.string.workspace_kind_project)
 }
+
+/** 工作区类型名：私有空间显示为“本会话文件夹”，其余显示存放位置。 */
+@Composable
+fun workspaceKindLabel(kind: String?): String = if (kind == null) privateWorkspaceLabel() else workspaceStorageLabel(kind)
 
 /**
  * 单行位置文本：项目文件夹不显示 App 私有安装路径，只显示项目名；

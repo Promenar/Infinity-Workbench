@@ -1,7 +1,9 @@
 package com.promenar.infinity.ui.workspace
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.infinity.R
 import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
+import com.promenar.infinity.domain.model.SessionRunMode
 import com.promenar.infinity.data.termux.TermuxAvailability
 import com.promenar.infinity.domain.linux.LinuxEnvironmentInfo
 import com.promenar.infinity.domain.linux.LinuxRuntimeState
@@ -17,14 +19,15 @@ import org.junit.Test
 
 class AgentReachModelsTest {
     @Test
-    fun `workspace traits follow the protection each workspace kind actually has`() {
-        assertThat(workspaceTraits(null)).isEqualTo(WorkspaceTraits(tracked = true, backedUp = true, termuxVisible = false, survivesUninstall = false))
-        assertThat(workspaceTraits(WorkspaceEntity.KIND_PROJECT)).isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false))
-        assertThat(workspaceTraits(WorkspaceEntity.KIND_SHARED)).isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = true, survivesUninstall = true))
+    fun `应用内存储进备份，Linux 主目录与手机存储不进`() {
+        assertThat(workspaceTraits(null)).isEqualTo(WorkspaceTraits(backedUp = true, termuxVisible = false))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_PROJECT)).isEqualTo(WorkspaceTraits(backedUp = true, termuxVisible = false))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_SHARED)).isEqualTo(WorkspaceTraits(backedUp = false, termuxVisible = true))
+        assertThat(workspaceTraits(WorkspaceEntity.KIND_LINUX_HOME)).isEqualTo(WorkspaceTraits(backedUp = false, termuxVisible = false))
     }
 
     @Test
-    fun `linux path footer names the bound linux directory and falls back to the workspace mount`() {
+    fun `Linux 工作区路径取绑定的 Linux 目录，其它工作区为 workspace 挂载点`() {
         val identity = com.promenar.infinity.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
         assertThat(linuxWorkspacePath(SessionWorkspaceUi.Directory("w", "demo", WorkspaceEntity.KIND_LINUX_HOME, "/opt/demo#$identity"))).isEqualTo("/opt/demo")
         assertThat(linuxWorkspacePath(SessionWorkspaceUi.Directory("w", "repo", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/repo"))).isEqualTo("/workspace")
@@ -100,9 +103,92 @@ class AgentReachModelsTest {
     }
 
     @Test
-    fun `linux home workspace is untracked, not backed up and gone with the app`() {
-        assertThat(workspaceTraits(WorkspaceEntity.KIND_LINUX_HOME))
-            .isEqualTo(WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false))
+    fun `会话保存了运行模式时以它为准，未取得时按 Linux 是否接管 shell 推断`() {
+        val readyLinux = listOf(ReachBackend(ReachBackendKind.LINUX, ReachBackendStatus.READY))
+        val brokenLinux = listOf(ReachBackend(ReachBackendKind.LINUX, ReachBackendStatus.BROKEN))
+        // 内置模式会话在 Linux 已就绪的设备上仍按内置模式描述。
+        assertThat(reachRunMode(SessionRunMode.BUILTIN, readyLinux)).isEqualTo(SessionRunMode.BUILTIN)
+        assertThat(reachRunMode(SessionRunMode.LINUX, emptyList())).isEqualTo(SessionRunMode.LINUX)
+        assertThat(reachRunMode(null, readyLinux)).isEqualTo(SessionRunMode.LINUX)
+        assertThat(reachRunMode(null, brokenLinux)).isEqualTo(SessionRunMode.BUILTIN)
+        assertThat(reachRunMode(null, emptyList())).isEqualTo(SessionRunMode.BUILTIN)
+    }
+
+    @Test
+    fun `Linux 模式只列 Linux 命令与 SSH，不列被工具集去掉的内置后端`() {
+        val backends = reachBackends(true, true, TermuxAvailability(true, "0.119.1", true), 2, linuxState = readyLinux, linuxAgentEnabled = true)
+        val runners = reachRunners(SessionRunMode.LINUX, backends)
+        assertThat(runners.shown.map { it.kind }).containsExactly(ReachBackendKind.LINUX, ReachBackendKind.SSH).inOrder()
+        assertThat(runners.inactive).isEmpty()
+        assertThat(runners.linuxOmitsBuiltins).isTrue()
+        // 与执行层一致：Linux 会话没有 python_exec、exec_js、python_sandbox、termux_exec。
+        assertThat(com.promenar.infinity.data.generation.DefaultSessionToolResolver.LINUX_HIDDEN_TOOLS)
+            .containsAtLeast("python_exec", "python_sandbox", "exec_js", "termux_exec")
+    }
+
+    @Test
+    fun `内置模式列内置命令与隔离脚本，未开启的 Termux 与无主机的 SSH 合成未启用`() {
+        val backends = reachBackends(false, false, null, 0, linuxState = readyLinux, linuxAgentEnabled = true)
+        val runners = reachRunners(SessionRunMode.BUILTIN, backends)
+        assertThat(runners.shown.map { it.kind }).containsExactly(ReachBackendKind.BUILTIN, ReachBackendKind.SANDBOX).inOrder()
+        assertThat(runners.shown.map { it.status }).containsExactly(ReachBackendStatus.SHELL_ONLY, ReachBackendStatus.JS_ONLY).inOrder()
+        assertThat(runners.inactive).containsExactly(ReachBackendKind.TERMUX, ReachBackendKind.SSH).inOrder()
+        assertThat(runners.linuxOmitsBuiltins).isFalse()
+
+        val enabled = reachRunners(SessionRunMode.BUILTIN, reachBackends(true, true, TermuxAvailability(true, "0.119.1", true), 1))
+        assertThat(enabled.shown.map { it.kind })
+            .containsExactly(ReachBackendKind.BUILTIN, ReachBackendKind.SANDBOX, ReachBackendKind.TERMUX, ReachBackendKind.SSH).inOrder()
+        assertThat(enabled.inactive).isEmpty()
+        // 开启了但没装 Termux 时单列一行说明状态，而不是归入“未启用”；SSH 仍在读取时暂不出现。
+        val pending = reachRunners(SessionRunMode.BUILTIN, reachBackends(true, true, TermuxAvailability(false, null, false), null))
+        assertThat(pending.shown.map { it.kind }).containsExactly(ReachBackendKind.BUILTIN, ReachBackendKind.SANDBOX, ReachBackendKind.TERMUX).inOrder()
+        assertThat(pending.inactive).isEmpty()
+    }
+
+    @Test
+    fun `文件位置随运行模式切换，本会话文件夹只在工作区不是它时单列`() {
+        val mounts = listOf(ReachMount("photos", ReachMountSource.SAF, commandAccessible = false, unavailable = false))
+        val repo = SessionWorkspaceUi.Directory("w", "repo", WorkspaceEntity.KIND_SHARED, "/storage/emulated/0/repo")
+        assertThat(reachPaths(SessionRunMode.LINUX, repo, mounts).map { it.kind to it.path }).containsExactly(
+            ReachPathKind.WORKSPACE to "/workspace",
+            ReachPathKind.SESSION to "/home/session",
+            ReachPathKind.MOUNT to "/mnt/photos",
+            ReachPathKind.SKILLS to "/mnt/skills",
+        ).inOrder()
+        assertThat(reachPaths(SessionRunMode.BUILTIN, repo, mounts).map { it.kind to it.path }).containsExactly(
+            ReachPathKind.WORKSPACE to "/",
+            ReachPathKind.SESSION to "/session",
+            ReachPathKind.MOUNT to "/mnt/photos",
+            ReachPathKind.SKILLS to "/skills",
+        ).inOrder()
+        assertThat(reachPaths(SessionRunMode.LINUX, repo, mounts).first { it.kind == ReachPathKind.MOUNT }.mount).isEqualTo(mounts.single())
+
+        assertThat(reachPaths(SessionRunMode.LINUX, SessionWorkspaceUi.Private, emptyList()).map { it.kind to it.path })
+            .containsExactly(ReachPathKind.WORKSPACE to "/workspace", ReachPathKind.SKILLS to "/mnt/skills").inOrder()
+        assertThat(reachPaths(SessionRunMode.BUILTIN, SessionWorkspaceUi.Private, emptyList()).map { it.kind })
+            .doesNotContain(ReachPathKind.SESSION)
+
+        val identity = com.promenar.infinity.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
+        val linuxHome = SessionWorkspaceUi.Directory("w", "demo", WorkspaceEntity.KIND_LINUX_HOME, "/root/demo#$identity")
+        assertThat(reachPaths(SessionRunMode.LINUX, linuxHome, emptyList()).first().path).isEqualTo("/root/demo")
+    }
+
+    @Test
+    fun `局域网说明按模式列出受白名单约束的工具，白名单为空时写明不可访问`() {
+        val empty = snapshot()
+        assertThat(reachLanLines(SessionRunMode.LINUX, empty)).isEqualTo(
+            ReachLanLines(R.string.agent_reach_lan_allowlist_empty, 0, R.string.agent_reach_lan_linux_commands),
+        )
+        assertThat(reachLanLines(SessionRunMode.BUILTIN, empty)).isEqualTo(
+            ReachLanLines(R.string.agent_reach_lan_allowlist_empty_scripts, 0, R.string.agent_reach_lan_builtin_commands),
+        )
+        val hosts = snapshot(lanHosts = listOf("nas.local", "127.0.0.1", "printer.lan"))
+        assertThat(reachLanLines(SessionRunMode.LINUX, hosts)).isEqualTo(
+            ReachLanLines(R.plurals.agent_reach_lan_allowlist, 3, R.string.agent_reach_lan_linux_commands),
+        )
+        assertThat(reachLanLines(SessionRunMode.BUILTIN, hosts)).isEqualTo(
+            ReachLanLines(R.plurals.agent_reach_lan_allowlist_scripts, 3, R.string.agent_reach_lan_builtin_commands),
+        )
     }
 
     @Test
@@ -126,6 +212,8 @@ class AgentReachModelsTest {
         assertThat(networkCell(NetworkTargetClass.PUBLIC, NetworkAccessState.UNRESTRICTED, empty).tone).isEqualTo(NetworkCellTone.OPEN)
         assertThat(networkCell(NetworkTargetClass.PUBLIC, NetworkAccessState.CONFIGURED_ONLY, empty).tone).isEqualTo(NetworkCellTone.LIMITED)
     }
+
+    private val readyLinux = LinuxRuntimeState.Ready(LinuxEnvironmentInfo("Alpine", "3.24.3", "aarch64", "test", 1, null))
 
     private fun snapshot(
         lanHosts: List<String> = emptyList(),

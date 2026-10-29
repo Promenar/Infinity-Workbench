@@ -23,16 +23,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.network.AgentNetworkSnapshot
 import com.promenar.infinity.domain.network.AgentNetworkTool
+import com.promenar.infinity.domain.network.NetworkAccessRow
 import com.promenar.infinity.domain.network.NetworkAccessState
 import com.promenar.infinity.domain.network.NetworkTargetClass
 import com.promenar.infinity.ui.common.InfinityBottomSheet
@@ -52,7 +50,7 @@ internal enum class NetworkCellMeaning {
 
 internal data class NetworkCell(val target: NetworkTargetClass, val meaning: NetworkCellMeaning, val tone: NetworkCellTone, val count: Int? = null)
 
-/** 会话的运行模式，决定总表中哪些行对当前会话生效；null 表示不针对具体会话（全局设置页）。 */
+/** 会话的运行模式，决定总表列出哪些行；null 表示不针对具体会话（全局设置页）。 */
 internal enum class NetworkRunMode { BUILTIN, LINUX }
 
 /** 工具行的适用范围标注：与白名单的关系不随会话变化，只随工具自身。 */
@@ -64,9 +62,14 @@ internal fun networkRowScope(tool: AgentNetworkTool): NetworkRowScope = when (to
     else -> NetworkRowScope.ALL_MODES
 }
 
-/** 当前运行模式下该行是否生效；不生效的行保留在原位置并灰显（设置规范 §3.5）。 */
-internal fun networkRowEffective(tool: AgentNetworkTool, runMode: NetworkRunMode?): Boolean =
-    !(networkRowScope(tool) == NetworkRowScope.BUILTIN_ONLY && runMode == NetworkRunMode.LINUX)
+/**
+ * 会话可达范围按运行模式取总表的行：Linux 会话没有隔离脚本，去掉该行；全局设置页（null）列出全部。
+ * Linux 模式下“内置命令”一行显示为 Linux 命令：两者都由系统网络决定，内置 Tailscale 运行时
+ * 都注入同一组代理变量（`LinuxLaunchBuilder` 与 `BuiltinExecEnvironment` 均取 `subprocessEnvironment()`），
+ * proot 不隔离网络，guest 能连到本机代理，因此 tailnet 一格与内置命令相同。
+ */
+internal fun networkRowsFor(rows: List<NetworkAccessRow>, runMode: NetworkRunMode?): List<NetworkAccessRow> =
+    if (runMode == NetworkRunMode.LINUX) rows.filterNot { it.tool == AgentNetworkTool.SCRIPT } else rows
 
 /** 把总表的静态规则与当前设置合成用户能直接读懂的状态，例如白名单为空时局域网实际不可达。 */
 internal fun networkCell(target: NetworkTargetClass, state: NetworkAccessState, snapshot: AgentNetworkSnapshot): NetworkCell = when (state) {
@@ -86,26 +89,28 @@ internal fun networkCell(target: NetworkTargetClass, state: NetworkAccessState, 
 }
 
 @Composable
-internal fun networkToolLabel(tool: AgentNetworkTool): String = stringResource(
+internal fun networkToolLabel(tool: AgentNetworkTool, runMode: NetworkRunMode? = null): String = stringResource(
     when (tool) {
         AgentNetworkTool.WEB_FETCH -> R.string.network_tool_web_fetch
         AgentNetworkTool.MEDIA_FETCH -> R.string.network_tool_media_fetch
         AgentNetworkTool.SCRIPT -> R.string.network_tool_script
         AgentNetworkTool.MCP -> R.string.network_tool_mcp
-        AgentNetworkTool.BUILTIN_PROCESS -> R.string.network_tool_builtin
+        AgentNetworkTool.BUILTIN_PROCESS ->
+            if (runMode == NetworkRunMode.LINUX) R.string.network_tool_linux else R.string.network_tool_builtin
         AgentNetworkTool.TERMUX -> R.string.network_tool_termux
         AgentNetworkTool.SSH -> R.string.network_tool_ssh
     },
 )
 
 @Composable
-private fun networkToolHint(tool: AgentNetworkTool): String = stringResource(
+private fun networkToolHint(tool: AgentNetworkTool, runMode: NetworkRunMode?): String = stringResource(
     when (tool) {
         AgentNetworkTool.WEB_FETCH -> R.string.network_tool_web_fetch_hint
         AgentNetworkTool.MEDIA_FETCH -> R.string.network_tool_media_fetch_hint
         AgentNetworkTool.SCRIPT -> R.string.network_tool_script_hint
         AgentNetworkTool.MCP -> R.string.network_tool_mcp_hint
-        AgentNetworkTool.BUILTIN_PROCESS -> R.string.network_tool_builtin_hint
+        AgentNetworkTool.BUILTIN_PROCESS ->
+            if (runMode == NetworkRunMode.LINUX) R.string.network_tool_linux_hint else R.string.network_tool_builtin_hint
         AgentNetworkTool.TERMUX -> R.string.network_tool_termux_hint
         AgentNetworkTool.SSH -> R.string.network_tool_ssh_hint
     },
@@ -160,24 +165,21 @@ internal fun NetworkAccessRows(
     runMode: NetworkRunMode? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
-        snapshot.rows.filter { tools == null || it.tool in tools }.forEach { row ->
-            val effective = networkRowEffective(row.tool, runMode)
+        networkRowsFor(snapshot.rows, runMode).filter { tools == null || it.tool in tools }.forEach { row ->
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(if (effective) 1f else 0.38f)
-                    .semantics { if (!effective) disabled() }
                     .padding(horizontal = InfinitySpacing.RowHorizontal, vertical = InfinitySpacing.Medium)
                     .testTag("network_row_${row.tool.name.lowercase()}"),
                 verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
             ) {
                 Text(
-                    text = networkToolLabel(row.tool),
+                    text = networkToolLabel(row.tool, runMode),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = networkToolHint(row.tool),
+                    text = networkToolHint(row.tool, runMode),
                     style = MaterialTheme.typography.bodySmall.forReading(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -187,14 +189,6 @@ internal fun NetworkAccessRows(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("network_scope_${row.tool.name.lowercase()}"),
-                    )
-                }
-                if (!effective) {
-                    Text(
-                        text = stringResource(R.string.ux2_network_inactive_linux),
-                        style = MaterialTheme.typography.bodySmall.forReading(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("network_inactive_${row.tool.name.lowercase()}"),
                     )
                 }
                 FlowRow(

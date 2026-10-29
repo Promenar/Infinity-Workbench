@@ -25,11 +25,10 @@
     <string name="workspace_picker_load_failed">Cannot read this folder: %1$s</string>
     <string name="workspace_picker_register_failed">Cannot use this folder: %1$s</string>
 
-    <string name="workspace_kind_private">Chat space</string>
-    <string name="workspace_kind_session_dir">Session folder</string>
-    <string name="workspace_kind_project">Built-in storage</string>
-    <string name="workspace_kind_shared">Device storage</string>
-    <string name="workspace_location_project">Built-in / %1$s</string>
+    <string name="workspace_kind_private">This chat\'s folder</string>
+    <string name="workspace_kind_project">App storage</string>
+    <string name="workspace_kind_shared">Phone storage</string>
+    <string name="workspace_location_project">Shared folder / %1$s</string>
     <string name="workspace_missing_name">Deleted workspace</string>
     <string name="workspace_unavailable_reason">Workspace unavailable: %1$s</string>
 
@@ -43,7 +42,7 @@
     <string name="workspace_switch_failed">Switching failed. Try again</string>
 
     <string name="workspace_agent_default">Default workspace</string>
-    <string name="workspace_agent_default_none">Session private workspace (default)</string>
+    <string name="workspace_agent_default_none">This chat\'s folder (default)</string>
 
     <string name="workspace_kb_entry">Workspaces</string>
     <plurals name="workspace_kb_count">
@@ -68,13 +67,14 @@
     <string name="workspace_kb_preview_binary">This file type cannot be previewed as text.</string>
     <string name="workspace_kb_preview_too_large">Text preview is limited to 256 KB.</string>
     <string name="workspace_kb_preview_failed">Cannot preview the file: %1$s</string>
-    <string name="workspace_picker_this_chat">This chat</string>
-    <string name="workspace_picker_all_folders">All folders</string>
     <string name="workspace_picker_use_named">Use %1$s</string>
-    <string name="workspace_tag_recycle_bin">Recycle bin</string>
-    <string name="workspace_tag_gone_with_chat">Deleted with chat</string>
-    <string name="workspace_tag_cross_session">Any chat</string>
-    <string name="workspace_tag_gone_on_uninstall">Gone on uninstall</string>
-    <string name="workspace_tag_termux">Termux</string>
-    <string name="workspace_tag_kept_on_uninstall">Kept on uninstall</string>
+    <string name="workspace_tag_gone_on_uninstall">Deleted on uninstall</string>
+    <string name="workspace_tag_kept_on_uninstall">Kept after uninstall</string>
+    <string name="workspace_picker_private_desc">Only this chat can use it</string>
+    <string name="workspace_picker_private_desc_linux">Only this chat can use it · %1$s in Linux</string>
+    <string name="workspace_picker_shared_folder">Shared folder</string>
+    <string name="workspace_picker_shared_folder_desc">Every chat can use it</string>
+    <string name="workspace_picker_shared_volume_desc">Every chat and other apps can access it</string>
+    <string name="workspace_tag_backed_up">Backed up</string>
+    <string name="workspace_tag_kept_on_delete">Can keep when chat is deleted</string>
 </resources>

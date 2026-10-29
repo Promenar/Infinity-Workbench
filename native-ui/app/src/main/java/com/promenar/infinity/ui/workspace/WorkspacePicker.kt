@@ -1,6 +1,23 @@
 package com.promenar.infinity.ui.workspace
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import com.promenar.infinity.domain.model.SessionRunMode
+import com.promenar.infinity.ui.common.LocalInfinityHaptics
+import com.promenar.infinity.ui.theme.InfinityMonospace
+import com.promenar.infinity.ui.theme.breakableIdentifier
 import com.promenar.infinity.ui.common.InfinitySheetHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -105,9 +122,9 @@ data class WorkspacePickerUiState(
     val page: WorkspacePickerPage = WorkspacePickerPage.Home,
     val registered: List<WorkspaceEntity> = emptyList(),
     val currentWorkspaceId: String? = null,
-    /** 为 true 时列出“会话专用空间”，[currentWorkspaceId] 为 null 即表示当前使用它。 */
+    /** 为 true 时列出“本会话文件夹”，[currentWorkspaceId] 为 null 即表示当前使用它。 */
     val showPrivate: Boolean = false,
-    /** “会话专用空间”一行的标题；为 null 时显示“本会话”。 */
+    /** “本会话文件夹”一行的标题；为 null 时显示“本会话文件夹”。 */
     val privateTitle: String? = null,
     val sharedSupported: Boolean = false,
     val sharedPermission: Boolean = false,
@@ -120,10 +137,15 @@ data class WorkspacePickerUiState(
     val error: String? = null,
     /** 侧载渠道才有 Linux 主目录；未就绪时入口可见但不可选。 */
     val linuxHome: LinuxHomeAvailability = LinuxHomeAvailability.UNSUPPORTED,
+    /** 会话保存的运行模式；内置模式下 Linux 中的文件夹灰显，null 表示不针对具体会话。 */
+    val runMode: SessionRunMode? = null,
 )
 
 /** Linux 主目录；选中它时沿用“Linux 主目录”显示名，其它目录取目录名。 */
 private const val LINUX_HOME_DIRECTORY = "/root"
+
+/** 本会话文件夹在 Linux 中的挂载点。 */
+private const val LINUX_SESSION_DIRECTORY = "/home/session"
 
 /** 选定后由 [WorkspaceDirectoryBrowser] 登记；共享卷之下的路径段转成面包屑，根级“位置”回到起始页。 */
 internal fun WorkspacePickerPage.crumbs(volumeLabel: (File) -> String, projectsLabel: String, linuxLabel: String = "Linux"): List<FolderCrumb> = when (this) {
@@ -189,10 +211,12 @@ fun WorkspacePickerSheet(
     onDismiss: () -> Unit,
     onPicked: (WorkspaceEntity) -> Unit,
     currentWorkspaceId: String? = null,
-    /** 非 null 时可选回会话专用空间（仅会话资源管理器提供）。 */
+    /** 非 null 时可选回本会话文件夹。 */
     onPickPrivate: (() -> Unit)? = null,
-    /** 智能体默认工作区等非会话场景下，“会话专用空间”一行的标题。 */
+    /** 智能体默认工作区等非会话场景下，“本会话文件夹”一行的标题。 */
     privateTitle: String? = null,
+    /** 会话保存的运行模式；智能体默认工作区等非会话场景为 null。 */
+    runMode: SessionRunMode? = null,
 ) {
     if (!show) return
     val context = LocalContext.current
@@ -273,7 +297,7 @@ fun WorkspacePickerSheet(
         privateTitle = privateTitle,
         sharedSupported = browser.sharedSupported, sharedPermission = permission, sharedRoots = roots,
         folders = folders, loading = loading, loadError = loadError, selectedProject = selectedProject,
-        busy = busy, error = error, linuxHome = linuxHome,
+        busy = busy, error = error, linuxHome = linuxHome, runMode = runMode,
     )
 
     InfinityBottomSheet(
@@ -388,7 +412,7 @@ fun WorkspacePickerContent(
     onRetry: () -> Unit = {},
 ) = Column(modifier.fillMaxSize()) {
     val page = state.page
-    val projectsLabel = stringResource(R.string.workspace_kind_project)
+    val projectsLabel = stringResource(R.string.workspace_picker_shared_folder)
     val volumeLabels = state.sharedRoots.associateWith { sharedVolumeLabel(state.sharedRoots, it) }
     if (page != WorkspacePickerPage.Home) {
         val crumbs = page.crumbs({ volumeLabels[it] ?: it.name }, projectsLabel, stringResource(R.string.workspace_picker_linux_root)).collapsedForDisplay()
@@ -511,11 +535,18 @@ private fun LazyListScope.homeItems(
     onPickLinuxHome: (WorkspaceEntity) -> Unit,
     onGrantPermission: () -> Unit,
 ) {
+    val projects = state.registered.filter { it.kind == WorkspaceEntity.KIND_PROJECT }
+    val shared = state.registered.filter { it.kind == WorkspaceEntity.KIND_SHARED }
+    // 应用内存储：本会话文件夹与共享文件夹。
+    item(key = "app_header") { WorkspaceStorageHeader(null) }
     if (state.showPrivate) {
-        item(key = "private_header") { WorkspaceKindHeader(null) }
         item(key = "private") {
-            PickerRow(
-                title = state.privateTitle ?: stringResource(R.string.workspace_picker_this_chat),
+            WorkspaceOptionRow(
+                title = state.privateTitle ?: stringResource(R.string.workspace_kind_private),
+                subtitle = if (state.runMode == SessionRunMode.LINUX) {
+                    monospaceArgument(R.string.workspace_picker_private_desc_linux, LINUX_SESSION_DIRECTORY)
+                } else AnnotatedString(stringResource(R.string.workspace_picker_private_desc)),
+                tagsKind = null,
                 selected = state.currentWorkspaceId == null,
                 enabled = !state.busy,
                 onClick = onPickPrivate,
@@ -524,23 +555,20 @@ private fun LazyListScope.homeItems(
             )
         }
     }
-    val projects = state.registered.filter { it.kind == WorkspaceEntity.KIND_PROJECT }
-    val shared = state.registered.filter { it.kind == WorkspaceEntity.KIND_SHARED }
-    item(key = "project_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_PROJECT) }
     items(projects, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
     item(key = "projects") {
-        InfinitySettingsItem(
-            title = stringResource(R.string.workspace_picker_all_folders),
+        WorkspaceOptionRow(
+            title = stringResource(R.string.workspace_picker_shared_folder),
+            subtitle = AnnotatedString(stringResource(R.string.workspace_picker_shared_folder_desc)),
+            tagsKind = WorkspaceEntity.KIND_PROJECT,
             onClick = { onNavigate(WorkspacePickerPage.Projects) },
-            showChevron = true,
-            horizontalPadding = 0.dp,
-            leadingContent = { Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary) },
+            leading = { Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary) },
             modifier = Modifier.testTag("workspace_picker_projects"),
         )
     }
     linuxItems(state, onNavigate, onPickLinuxHome)
     if (!state.sharedSupported && shared.isEmpty()) return
-    item(key = "shared_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_SHARED) }
+    item(key = "shared_header") { WorkspaceStorageHeader(WorkspaceEntity.KIND_SHARED) }
     items(shared, key = { "registered:" + it.id }) { workspace -> RegisteredRow(state, workspace, onPickRegistered) }
     if (!state.sharedSupported) return
     if (!state.sharedPermission) {
@@ -559,12 +587,12 @@ private fun LazyListScope.homeItems(
         }
     } else {
         items(state.sharedRoots, key = { "volume:" + it.path }) { volume ->
-            InfinitySettingsItem(
+            WorkspaceOptionRow(
                 title = volumeLabels[volume] ?: volume.name,
+                subtitle = AnnotatedString(stringResource(R.string.workspace_picker_shared_volume_desc)),
+                tagsKind = WorkspaceEntity.KIND_SHARED,
                 onClick = { onNavigate(WorkspacePickerPage.Shared(volume, volume)) },
-                showChevron = true,
-                horizontalPadding = 0.dp,
-                leadingContent = { Icon(Icons.Rounded.SdStorage, null, tint = MaterialTheme.colorScheme.primary) },
+                leading = { Icon(Icons.Rounded.SdStorage, null, tint = MaterialTheme.colorScheme.primary) },
                 modifier = Modifier.testTag("workspace_picker_volume"),
             )
         }
@@ -572,8 +600,8 @@ private fun LazyListScope.homeItems(
 }
 
 /**
- * Linux 来源：当前会话已绑定的 Linux 目录排在前面显示为已选，下方入口逐级浏览环境内可选目录。
- * 登记按环境代次去重，重置后旧登记不可用，因此不列出其它历史登记。
+ * Linux 环境：当前会话已绑定的 Linux 目录排在前面显示为已选，下方“主目录”入口逐级浏览环境内可选目录。
+ * 登记按环境代次去重，重置后旧登记不可用，因此不列出其它历史登记。内置模式会话中该入口灰显并说明原因，不隐藏。
  */
 private fun LazyListScope.linuxItems(
     state: WorkspacePickerUiState,
@@ -582,12 +610,15 @@ private fun LazyListScope.linuxItems(
 ) {
     if (state.linuxHome == LinuxHomeAvailability.UNSUPPORTED) return
     val ready = state.linuxHome == LinuxHomeAvailability.READY
-    item(key = "linux_header") { WorkspaceKindHeader(WorkspaceEntity.KIND_LINUX_HOME) }
+    val builtinSession = state.runMode == SessionRunMode.BUILTIN
+    item(key = "linux_header") { WorkspaceStorageHeader(WorkspaceEntity.KIND_LINUX_HOME) }
     state.registered.firstOrNull { it.kind == WorkspaceEntity.KIND_LINUX_HOME && it.id == state.currentWorkspaceId }?.let { current ->
         item(key = "linux_current") {
-            PickerRow(
+            WorkspaceOptionRow(
                 title = current.displayName,
-                subtitle = workspaceLocationText(current.kind, current.location).takeIf { it != current.displayName },
+                subtitle = workspaceLocationText(current.kind, current.location).takeIf { it != current.displayName }
+                    ?.let { AnnotatedString(it.breakableIdentifier()) },
+                tagsKind = WorkspaceEntity.KIND_LINUX_HOME,
                 selected = true,
                 enabled = !state.busy,
                 onClick = { onPickCurrent(current) },
@@ -597,14 +628,19 @@ private fun LazyListScope.linuxItems(
         }
     }
     item(key = "linux_browse") {
-        InfinitySettingsItem(
+        WorkspaceOptionRow(
             title = stringResource(R.string.workspace_picker_linux_home),
-            subtitle = if (ready) null else stringResource(R.string.workspace_picker_linux_not_ready),
+            subtitle = when {
+                builtinSession -> AnnotatedString(stringResource(R.string.workspace_picker_linux_builtin_session))
+                !ready -> AnnotatedString(stringResource(R.string.workspace_picker_linux_not_ready))
+                else -> monospaceArgument(R.string.workspace_picker_linux_home_desc, LINUX_HOME_DIRECTORY)
+            },
+            tagsKind = WorkspaceEntity.KIND_LINUX_HOME,
+            showTags = !builtinSession,
+            showChevron = !builtinSession,
             onClick = { onNavigate(WorkspacePickerPage.Linux(null)) },
-            enabled = ready && !state.busy,
-            showChevron = true,
-            horizontalPadding = 0.dp,
-            leadingContent = { Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary) },
+            enabled = ready && !builtinSession && !state.busy,
+            leading = { Icon(Icons.Rounded.Home, null, tint = MaterialTheme.colorScheme.primary) },
             modifier = Modifier.testTag("workspace_picker_linux_home"),
         )
     }
@@ -612,14 +648,15 @@ private fun LazyListScope.linuxItems(
 
 @Composable
 private fun RegisteredRow(state: WorkspacePickerUiState, workspace: WorkspaceEntity, onPick: (WorkspaceEntity) -> Unit) =
-    PickerRow(
+    WorkspaceOptionRow(
         title = workspace.displayName,
-        // 内置文件夹只在显示名与目录名不同时补目录名；设备文件夹的路径本身就是有用信息。
+        // 共享文件夹只在显示名与目录名不同时补目录名；手机存储的路径本身就是有用信息。
         subtitle = when {
             workspace.kind == WorkspaceEntity.KIND_SHARED -> compactSharedPath(workspace.location)
             workspace.displayName != workspace.location -> workspace.location
             else -> null
-        },
+        }?.let { AnnotatedString(it.breakableIdentifier()) },
+        tagsKind = workspace.kind,
         selected = workspace.id == state.currentWorkspaceId,
         enabled = !state.busy,
         onClick = { onPick(workspace) },
@@ -627,30 +664,81 @@ private fun RegisteredRow(state: WorkspacePickerUiState, workspace: WorkspaceEnt
         modifier = Modifier.testTag("workspace_picker_registered_${workspace.id}"),
     )
 
+/** 格式串中的路径参数用等宽字体显示。 */
 @Composable
-private fun PickerRow(
+private fun monospaceArgument(@StringRes template: Int, path: String): AnnotatedString {
+    val text = stringResource(template, path)
+    val start = text.indexOf(path)
+    return buildAnnotatedString {
+        append(text)
+        if (start >= 0) addStyle(SpanStyle(fontFamily = InfinityMonospace), start, start + path.length)
+    }
+}
+
+/**
+ * 起始页的一行：标题、说明与两条标签（进不进备份、何时消失）。
+ * [selected] 非 null 为单选行，选中时带勾；为 null 为入口行，可用时带箭头。
+ */
+@Composable
+private fun WorkspaceOptionRow(
     title: String,
-    selected: Boolean,
-    enabled: Boolean,
     onClick: () -> Unit,
     leading: @Composable () -> Unit,
+    tagsKind: String?,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
-) = InfinitySettingsItem(
-    title = title,
-    subtitle = subtitle,
-    subtitleIsIdentifier = true,
-    onClick = onClick,
-    enabled = enabled,
-    horizontalPadding = 0.dp,
-    role = Role.RadioButton,
-    selected = selected,
-    leadingContent = leading,
-    trailingContent = if (selected) ({
-        Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), MaterialTheme.colorScheme.primary)
-    }) else null,
-    modifier = modifier,
-)
+    subtitle: AnnotatedString? = null,
+    showTags: Boolean = true,
+    showChevron: Boolean = true,
+    selected: Boolean? = null,
+    enabled: Boolean = true,
+) {
+    val haptics = LocalInfinityHaptics.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { if (selected != null) this.selected = selected }
+            .clickable(enabled = enabled, role = if (selected != null) Role.RadioButton else Role.Button) {
+                selected?.let(haptics::select)
+                onClick()
+            }
+            .alpha(if (enabled) 1f else 0.38f)
+            .heightIn(min = InfinitySpacing.RowTwoLineHeight)
+            .padding(vertical = InfinitySpacing.RowTwoLineVertical),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(InfinitySpacing.RowIconSize + InfinitySpacing.RowIconGap), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.size(InfinitySpacing.RowIconSize), contentAlignment = Alignment.Center) { leading() }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (showTags) WorkspaceKindTagRow(tagsKind, Modifier.padding(top = InfinitySpacing.Small - 2.dp))
+        }
+        when {
+            selected == true -> Icon(Icons.Rounded.Check, null, Modifier.padding(start = InfinitySpacing.Medium).size(20.dp), MaterialTheme.colorScheme.primary)
+            selected == null && showChevron -> Icon(
+                Icons.Rounded.ChevronRight, null,
+                Modifier.padding(start = InfinitySpacing.Medium).size(18.dp),
+                MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
 private fun LazyListScope.folderItems(
     state: WorkspacePickerUiState,

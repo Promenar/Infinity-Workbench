@@ -157,8 +157,4 @@
     <string name="settings_ia_param_frequency_penalty">词频惩罚</string>
 
     <!-- 智能体可达范围 -->
-    <plurals name="settings_ia_reach_lan_summary">
-        <item quantity="other">全局设置 · %d 项</item>
-    </plurals>
-    <string name="settings_ia_reach_lan_change">去修改</string>
 </resources>

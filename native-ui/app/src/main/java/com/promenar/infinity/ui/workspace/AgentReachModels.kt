@@ -1,6 +1,9 @@
 package com.promenar.infinity.ui.workspace
 
+import com.promenar.infinity.R
 import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
+import com.promenar.infinity.data.workspace.LinuxWorkspaceLocation
+import com.promenar.infinity.domain.model.SessionRunMode
 import com.promenar.infinity.data.storage.ExternalMountPaths
 import com.promenar.infinity.data.termux.TermuxAvailability
 import com.promenar.infinity.domain.model.ExecutionMode
@@ -13,7 +16,7 @@ import com.promenar.infinity.domain.linux.LinuxUnavailableReason
 import com.promenar.infinity.domain.tool.LinuxExecRouting
 
 /**
- * “智能体可达范围”面板的展示数据：当前会话的智能体此刻能碰到的工作区、挂载、执行后端、审批与网络。
+ * “智能体可达范围”面板的展示数据：当前会话的智能体此刻能碰到的工作区、文件位置、执行方式、审批与网络。
  * 只描述现状，不参与任何授权判定；判定仍由各工具与执行策略完成。
  */
 internal data class AgentReachState(
@@ -39,7 +42,7 @@ internal data class ReachMount(
     val knowledgeBase: Boolean = false,
 )
 
-internal enum class ReachBackendKind { FILES, BUILTIN, SANDBOX, LINUX, TERMUX, SSH }
+internal enum class ReachBackendKind { BUILTIN, SANDBOX, LINUX, TERMUX, SSH }
 
 internal enum class ReachBackendStatus {
     READY,
@@ -73,23 +76,18 @@ internal fun linuxReachStatus(state: LinuxRuntimeState, agentEnabled: Boolean): 
     is LinuxRuntimeState.Ready -> if (agentEnabled) ReachBackendStatus.READY else ReachBackendStatus.DISABLED
 }
 
-/** 工作区类型决定的保护与可见性，与执行层规则一一对应（见执行后端规格 §3.2、§4.4）。 */
+/** 工作区类型决定的备份与可见性，与备份范围和执行层规则一一对应。 */
 internal data class WorkspaceTraits(
-    /** 私有工作区由 Room 跟踪：文件工具删除进回收区、保留版本、命令结束后对账。 */
-    val tracked: Boolean,
-    /** 进入本地与 WebDAV 备份。 */
+    /** 应用内存储（本会话文件夹与共享文件夹）进入本地与 WebDAV 备份；Linux 主目录与手机存储不进。 */
     val backedUp: Boolean,
     /** Termux 能直接看到这个目录（需 termux-setup-storage）。 */
     val termuxVisible: Boolean,
-    /** 卸载 Infinity Workbench 或清除数据后仍保留。 */
-    val survivesUninstall: Boolean,
 )
 
 internal fun workspaceTraits(kind: String?): WorkspaceTraits = when (kind) {
-    WorkspaceEntity.KIND_PROJECT -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false)
-    WorkspaceEntity.KIND_SHARED -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = true, survivesUninstall = true)
-    WorkspaceEntity.KIND_LINUX_HOME -> WorkspaceTraits(tracked = false, backedUp = false, termuxVisible = false, survivesUninstall = false)
-    else -> WorkspaceTraits(tracked = true, backedUp = true, termuxVisible = false, survivesUninstall = false)
+    WorkspaceEntity.KIND_SHARED -> WorkspaceTraits(backedUp = false, termuxVisible = true)
+    WorkspaceEntity.KIND_LINUX_HOME -> WorkspaceTraits(backedUp = false, termuxVisible = false)
+    else -> WorkspaceTraits(backedUp = true, termuxVisible = false)
 }
 
 /** 不可用的目录工作区不给出特征，避免描述一个当前不能使用的位置。 */
@@ -108,9 +106,94 @@ internal fun ExternalMount.toReach(): ReachMount = ReachMount(
     knowledgeBase = sourceType == ExternalMountPaths.KNOWLEDGE_BASE_SOURCE,
 )
 
-/** Linux 就绪且开启时 shell_exec 在 Alpine 中运行，命令路径按 guest 视角解释，内置进程只剩 python_exec。 */
+/** Linux 就绪且开启时 shell_exec 在 Alpine 中运行。只在会话尚未保存运行模式时用来推断。 */
 internal fun List<ReachBackend>.linuxRunsShell(): Boolean =
     any { it.kind == ReachBackendKind.LINUX && it.status == ReachBackendStatus.READY }
+
+/** 面板所有分区共用的运行模式：以会话保存的模式为准，未取得时按 Linux 环境是否接管 shell 推断。 */
+internal fun reachRunMode(saved: SessionRunMode?, backends: List<ReachBackend>): SessionRunMode =
+    saved ?: if (backends.linuxRunsShell()) SessionRunMode.LINUX else SessionRunMode.BUILTIN
+
+internal enum class ReachPathKind { WORKSPACE, SESSION, MOUNT, SKILLS }
+
+/** “文件位置”一行：含义由 [kind] 决定，[path] 是当前运行模式下智能体看到的路径。 */
+internal data class ReachPath(val kind: ReachPathKind, val path: String, val mount: ReachMount? = null)
+
+/**
+ * 文件位置随运行模式切换：Linux 模式下文件工具与命令共用 guest 路径，内置模式下为文件工具的虚拟路径。
+ * 本会话文件夹只在工作区不是它本身时单列。
+ */
+internal fun reachPaths(mode: SessionRunMode, workspace: SessionWorkspaceUi, mounts: List<ReachMount>): List<ReachPath> {
+    val linux = mode == SessionRunMode.LINUX
+    return buildList {
+        add(ReachPath(ReachPathKind.WORKSPACE, if (linux) linuxWorkspacePath(workspace) else "/"))
+        if (workspace is SessionWorkspaceUi.Directory || workspace is SessionWorkspaceUi.Unavailable) {
+            add(ReachPath(ReachPathKind.SESSION, if (linux) LINUX_SESSION_PATH else BUILTIN_SESSION_PATH))
+        }
+        mounts.forEach { add(ReachPath(ReachPathKind.MOUNT, "/mnt/${it.alias}", it)) }
+        add(ReachPath(ReachPathKind.SKILLS, if (linux) "/mnt/skills" else "/skills"))
+    }
+}
+
+/** 绑定 Linux 目录时命令工作目录就是该目录；其它工作区经绑定挂到 /workspace。 */
+internal fun linuxWorkspacePath(workspace: SessionWorkspaceUi): String =
+    (workspace as? SessionWorkspaceUi.Directory)
+        ?.takeIf { it.kind == WorkspaceEntity.KIND_LINUX_HOME }
+        ?.let { LinuxWorkspaceLocation.parse(it.location)?.directory }
+        ?: "/workspace"
+
+private const val LINUX_SESSION_PATH = "/home/session"
+private const val BUILTIN_SESSION_PATH = "/session"
+
+/** “运行代码”一节：[shown] 逐项展开，[inactive] 合成一行“未启用”。 */
+internal data class ReachRunners(
+    val shown: List<ReachBackend>,
+    val inactive: List<ReachBackendKind>,
+    /** Linux 会话的工具集去掉了内置 Python、隔离脚本与 Termux，单独一行说明。 */
+    val linuxOmitsBuiltins: Boolean,
+)
+
+/**
+ * 只列本会话可用的执行方式，与 `SessionToolResolver.LINUX_HIDDEN_TOOLS` 一致：
+ * Linux 模式为 Linux 命令与 SSH；内置模式为内置命令、隔离脚本、Termux 与 SSH。
+ * Termux 未开启、SSH 未登记主机时归入“未启用”；仍在读取时暂不显示。
+ */
+internal fun reachRunners(mode: SessionRunMode, backends: List<ReachBackend>): ReachRunners {
+    val linux = mode == SessionRunMode.LINUX
+    val offered = if (linux) LINUX_RUNNERS else BUILTIN_RUNNERS
+    val candidates = backends.filter { it.kind in offered }
+    val inactive = candidates.filter { it.kind in OPTIONAL_RUNNERS && (it.status == ReachBackendStatus.DISABLED || it.status == ReachBackendStatus.NO_HOSTS) }
+    return ReachRunners(
+        shown = candidates.filter { it !in inactive && !(it.kind in OPTIONAL_RUNNERS && it.status == ReachBackendStatus.LOADING) },
+        inactive = inactive.map { it.kind },
+        linuxOmitsBuiltins = linux,
+    )
+}
+
+private val LINUX_RUNNERS = setOf(ReachBackendKind.LINUX, ReachBackendKind.SSH)
+private val BUILTIN_RUNNERS = setOf(ReachBackendKind.BUILTIN, ReachBackendKind.SANDBOX, ReachBackendKind.TERMUX, ReachBackendKind.SSH)
+private val OPTIONAL_RUNNERS = setOf(ReachBackendKind.TERMUX, ReachBackendKind.SSH)
+
+/**
+ * “局域网与本机”一行的两句说明：受白名单约束的工具（内置模式多出隔离脚本），以及不受白名单限制的命令。
+ * 白名单为空时 [allowlistRes] 为字符串资源，否则为带项数的复数资源。
+ */
+internal data class ReachLanLines(val allowlistRes: Int, val allowlistSize: Int, val commandsRes: Int)
+
+internal fun reachLanLines(mode: SessionRunMode, snapshot: AgentNetworkSnapshot): ReachLanLines {
+    val scripts = mode == SessionRunMode.BUILTIN
+    val size = snapshot.lanHosts.size
+    return ReachLanLines(
+        allowlistRes = when {
+            size == 0 && scripts -> R.string.agent_reach_lan_allowlist_empty_scripts
+            size == 0 -> R.string.agent_reach_lan_allowlist_empty
+            scripts -> R.plurals.agent_reach_lan_allowlist_scripts
+            else -> R.plurals.agent_reach_lan_allowlist
+        },
+        allowlistSize = size,
+        commandsRes = if (scripts) R.string.agent_reach_lan_builtin_commands else R.string.agent_reach_lan_linux_commands,
+    )
+}
 
 /** 用户级技能以保留别名 `skills` 出现在挂载列表中，面板单独说明，不作为普通挂载重复列出。 */
 internal fun reachMounts(mounts: List<ExternalMount>): List<ReachMount> =
@@ -134,7 +217,6 @@ internal fun reachBackends(
     linuxState: LinuxRuntimeState = LinuxExecRouting.state,
     linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
 ): List<ReachBackend> = listOf(
-    ReachBackend(ReachBackendKind.FILES, ReachBackendStatus.READY),
     ReachBackend(ReachBackendKind.BUILTIN, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.SHELL_ONLY),
     ReachBackend(ReachBackendKind.SANDBOX, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.JS_ONLY),
     // 渠道不提供 Linux 环境时仍列出该行，状态为不可用并说明原因；该行不带跳转，不会让人误以为可安装。

@@ -101,7 +101,7 @@ suspend fun removeBranchWorktree(context: Context, controls: com.promenar.infini
 /** 保留了文件时提示保存位置；会话页删除后会立即返回，因此用 Toast 而不是页内提示。 */
 fun announceKeptFiles(context: Context, result: SessionDeletionResult) {
     val kept = result as? SessionDeletionResult.DeletedKeepingFiles ?: return
-    val text = context.getString(R.string.delete_session_kept, context.getString(R.string.workspace_kind_project), kept.displayName)
+    val text = context.getString(R.string.delete_session_kept, context.getString(R.string.workspace_picker_shared_folder), kept.displayName)
     Toast.makeText(context, text, Toast.LENGTH_LONG).show()
 }
 
@@ -137,7 +137,7 @@ internal fun DeleteSessionDialogContent(
                 KeepOption(
                     selected = keep,
                     label = stringResource(R.string.delete_session_keep_files),
-                    detail = stringResource(R.string.delete_session_keep_files_to, stringResource(R.string.workspace_kind_project)),
+                    detail = stringResource(R.string.delete_session_keep_files_to, stringResource(R.string.workspace_picker_shared_folder)),
                     onClick = { onKeepChange(true) },
                     tag = "delete_session_keep",
                 )

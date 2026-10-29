@@ -3,31 +3,39 @@
 <resources>
     <string name="agent_reach_title">智能体可达范围</string>
 
-    <string name="agent_reach_section_workspace">当前工作区</string>
+    <string name="agent_reach_run_mode_linux">Linux 模式</string>
+    <string name="agent_reach_run_mode_builtin">内置模式</string>
+    <string name="agent_reach_permission_workspace">工作区权限</string>
+    <string name="agent_reach_permission_full_access">完全访问</string>
+    <string name="agent_reach_workspace_storage">%1$s · %2$s</string>
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
 
-    <string name="agent_reach_section_paths">路径</string>
-    <string name="agent_reach_paths_footer">命令里的 / 是设备根目录；系统授权的文件夹只有文件工具能访问。</string>
-    <string name="agent_reach_path_root">文件工具的根目录</string>
-    <string name="agent_reach_path_workspace_var">命令里的工作区路径</string>
-    <string name="agent_reach_path_skills">技能目录，每次改动需批准</string>
-    <string name="agent_reach_path_mnt_empty">未挂载外部文件夹</string>
-    <string name="agent_reach_mount_saf">系统授权</string>
+    <string name="agent_reach_section_paths">文件位置</string>
+    <string name="agent_reach_paths_footer_linux">文件工具和 Linux 命令用同一套路径。其它路径属于 Linux 系统本身，重置 Linux 时清空。</string>
+    <string name="agent_reach_paths_footer_builtin">以上是文件工具看到的路径。内置命令看到的是手机上的真实路径，工作区位置在 %1$s。</string>
+    <string name="agent_reach_path_workspace">当前工作区</string>
+    <string name="agent_reach_path_workspace_desc">命令默认从这里开始</string>
+    <string name="agent_reach_path_session_desc">工作区不是它时，从这里访问</string>
+    <string name="agent_reach_path_skills">技能</string>
+    <string name="agent_reach_path_skills_desc">每次改动都要你批准</string>
+    <string name="agent_reach_mount_saf">系统授权的文件夹</string>
     <string name="agent_reach_mount_path">设备路径</string>
+    <string name="agent_reach_mount_access_files_only">只有文件工具能访问</string>
+    <string name="agent_reach_mount_access_commands">命令也能访问</string>
     <string name="agent_reach_mount_unavailable">当前不可用</string>
 
-    <string name="agent_reach_section_backends">执行后端</string>
+    <string name="agent_reach_section_backends">运行代码</string>
     <string name="agent_reach_backends_footer">命令删除的文件不进回收站。</string>
-    <string name="agent_reach_backend_files">文件工具</string>
-    <string name="agent_reach_backend_files_scope">工作区、/mnt 与 /skills</string>
-    <string name="agent_reach_backend_builtin">内置命令 shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">以本应用权限运行，可访问全部应用数据，不受工作区限制</string>
-    <string name="agent_reach_backend_sandbox">隔离脚本 exec_js · python_sandbox</string>
-    <string name="agent_reach_backend_sandbox_scope">隔离运行，只能访问工作区路径</string>
-    <string name="agent_reach_backend_termux">Termux termux_exec</string>
+    <string name="agent_reach_runner_linux">Linux 命令</string>
+    <string name="agent_reach_runner_linux_scope">在 Alpine 中运行，能访问上面所有路径；局域网不受白名单限制</string>
+    <string name="agent_reach_runner_builtin">内置命令</string>
+    <string name="agent_reach_backend_builtin_scope">以本应用权限运行，能读写全部应用数据，不受工作区限制</string>
+    <string name="agent_reach_runner_sandbox">隔离脚本</string>
+    <string name="agent_reach_backend_sandbox_scope">只能访问工作区；联网需逐次声明</string>
+    <string name="agent_reach_runner_termux">Termux</string>
     <string name="agent_reach_backend_termux_scope">在 Termux 主目录运行，看不到工作区</string>
     <string name="agent_reach_backend_termux_scope_shared">在 Termux 主目录运行，可访问工作区</string>
-    <string name="agent_reach_backend_ssh">SSH ssh_exec · sftp</string>
+    <string name="agent_reach_runner_ssh">SSH</string>
     <string name="agent_reach_backend_ssh_scope">只连已登记的主机</string>
     <plurals name="agent_reach_ssh_hosts">
         <item quantity="other">已登记 %1$d 台主机</item>
@@ -37,11 +45,32 @@
     <string name="agent_reach_status_js_only">只有 JavaScript，无内置 Python</string>
     <string name="agent_reach_status_disabled">未启用</string>
     <string name="agent_reach_status_no_hosts">未登记主机</string>
+    <string name="agent_reach_runners_linux_omits">Linux 模式不提供：内置 Python、隔离脚本、Termux</string>
+    <string name="agent_reach_runners_inactive">未启用：%1$s</string>
+    <string name="agent_reach_list_separator">、</string>
+    <string name="agent_reach_runners_settings">设置</string>
 
-    <string name="agent_reach_section_approval">审批</string>
+    <string name="agent_reach_section_approval">什么时候问你</string>
     <string name="agent_reach_approval_footer">定时任务、技能目录变更和 SSH 主机配置始终逐次批准。</string>
 
-    <string name="agent_reach_section_network">网络</string>
+    <string name="agent_reach_section_network">能连到哪里</string>
+    <string name="agent_reach_network_public">所有工具都能访问</string>
+    <string name="agent_reach_network_lan">局域网与本机</string>
+    <plurals name="agent_reach_lan_allowlist">
+        <item quantity="other">网页读取、媒体下载：只限白名单 %1$d 项</item>
+    </plurals>
+    <plurals name="agent_reach_lan_allowlist_scripts">
+        <item quantity="other">网页读取、媒体下载、隔离脚本：只限白名单 %1$d 项</item>
+    </plurals>
+    <string name="agent_reach_lan_allowlist_empty">网页读取、媒体下载：白名单为空，不可访问</string>
+    <string name="agent_reach_lan_allowlist_empty_scripts">网页读取、媒体下载、隔离脚本：白名单为空，不可访问</string>
+    <string name="agent_reach_lan_linux_commands">Linux 命令：不受白名单限制</string>
+    <string name="agent_reach_lan_builtin_commands">内置命令：不受白名单限制</string>
+    <string name="agent_reach_network_change">修改</string>
+    <string name="agent_reach_network_configured">MCP 与 SSH</string>
+    <string name="agent_reach_network_configured_desc">只连你添加过的地址和主机</string>
+    <string name="agent_reach_network_details">各工具明细</string>
+
     <string name="agent_reach_mount_command_visible">命令可访问</string>
     <string name="agent_reach_mount_files_only">仅文件工具</string>
 </resources>

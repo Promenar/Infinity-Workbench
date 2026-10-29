@@ -5,31 +5,39 @@
 <resources>
     <string name="agent_reach_title">Agent reach</string>
 
-    <string name="agent_reach_section_workspace">Current workspace</string>
+    <string name="agent_reach_run_mode_linux">Linux mode</string>
+    <string name="agent_reach_run_mode_builtin">Built-in mode</string>
+    <string name="agent_reach_permission_workspace">Workspace access</string>
+    <string name="agent_reach_permission_full_access">Full access</string>
+    <string name="agent_reach_workspace_storage">%1$s · %2$s</string>
     <string name="agent_reach_workspace_unavailable">The workspace is unavailable</string>
 
-    <string name="agent_reach_section_paths">Paths</string>
-    <string name="agent_reach_paths_footer">In commands, / is the device root. System-granted folders are visible to file tools only.</string>
-    <string name="agent_reach_path_root">Root for file tools</string>
-    <string name="agent_reach_path_workspace_var">Workspace path in commands</string>
-    <string name="agent_reach_path_skills">Skills folder; every change asks first</string>
-    <string name="agent_reach_path_mnt_empty">No external folders mounted</string>
-    <string name="agent_reach_mount_saf">System-granted</string>
+    <string name="agent_reach_section_paths">File locations</string>
+    <string name="agent_reach_paths_footer_linux">File tools and Linux commands use the same paths. Other paths belong to the Linux system and are cleared when Linux is reset.</string>
+    <string name="agent_reach_paths_footer_builtin">These are the paths file tools see. Built-in commands see real paths on the phone; the workspace is at %1$s.</string>
+    <string name="agent_reach_path_workspace">Current workspace</string>
+    <string name="agent_reach_path_workspace_desc">Commands start here by default</string>
+    <string name="agent_reach_path_session_desc">Reach it here when it isn\'t the workspace</string>
+    <string name="agent_reach_path_skills">Skills</string>
+    <string name="agent_reach_path_skills_desc">Every change asks you first</string>
+    <string name="agent_reach_mount_saf">System-granted folder</string>
     <string name="agent_reach_mount_path">Device path</string>
+    <string name="agent_reach_mount_access_files_only">File tools only</string>
+    <string name="agent_reach_mount_access_commands">Commands can access it too</string>
     <string name="agent_reach_mount_unavailable">Unavailable</string>
 
-    <string name="agent_reach_section_backends">Runners</string>
+    <string name="agent_reach_section_backends">Running code</string>
     <string name="agent_reach_backends_footer">Files deleted by commands skip the recycle bin.</string>
-    <string name="agent_reach_backend_files">File tools</string>
-    <string name="agent_reach_backend_files_scope">Workspace, /mnt and /skills</string>
-    <string name="agent_reach_backend_builtin">Built-in commands shell_exec · python_exec</string>
-    <string name="agent_reach_backend_builtin_scope">Runs with this app\'s permissions and can access all app data, not limited to the workspace</string>
-    <string name="agent_reach_backend_sandbox">Sandbox exec_js · python_sandbox</string>
-    <string name="agent_reach_backend_sandbox_scope">Isolated; workspace paths only</string>
-    <string name="agent_reach_backend_termux">Termux termux_exec</string>
+    <string name="agent_reach_runner_linux">Linux commands</string>
+    <string name="agent_reach_runner_linux_scope">Run in Alpine with every path above; LAN access isn\'t limited by the allowlist</string>
+    <string name="agent_reach_runner_builtin">Built-in commands</string>
+    <string name="agent_reach_backend_builtin_scope">Run with this app\'s permissions, can read and write all app data, not limited to the workspace</string>
+    <string name="agent_reach_runner_sandbox">Sandboxed scripts</string>
+    <string name="agent_reach_backend_sandbox_scope">Workspace only; network access is declared per call</string>
+    <string name="agent_reach_runner_termux">Termux</string>
     <string name="agent_reach_backend_termux_scope">Runs in Termux home; can\'t see the workspace</string>
     <string name="agent_reach_backend_termux_scope_shared">Runs in Termux home; can open the workspace</string>
-    <string name="agent_reach_backend_ssh">SSH ssh_exec · sftp</string>
+    <string name="agent_reach_runner_ssh">SSH</string>
     <string name="agent_reach_backend_ssh_scope">Saved hosts only</string>
     <plurals name="agent_reach_ssh_hosts">
         <item quantity="one">%1$d host saved</item>
@@ -40,11 +48,34 @@
     <string name="agent_reach_status_js_only">JavaScript only; no built-in Python</string>
     <string name="agent_reach_status_disabled">Off</string>
     <string name="agent_reach_status_no_hosts">No hosts saved</string>
+    <string name="agent_reach_runners_linux_omits">Not in Linux mode: built-in Python, sandboxed scripts, Termux</string>
+    <string name="agent_reach_runners_inactive">Off: %1$s</string>
+    <string name="agent_reach_list_separator">", "</string>
+    <string name="agent_reach_runners_settings">Settings</string>
 
-    <string name="agent_reach_section_approval">Approvals</string>
+    <string name="agent_reach_section_approval">When it asks you</string>
     <string name="agent_reach_approval_footer">Scheduled tasks, skill-folder changes and SSH host setup always ask.</string>
 
-    <string name="agent_reach_section_network">Network</string>
+    <string name="agent_reach_section_network">Where it can connect</string>
+    <string name="agent_reach_network_public">Every tool can reach it</string>
+    <string name="agent_reach_network_lan">LAN and this device</string>
+    <plurals name="agent_reach_lan_allowlist">
+        <item quantity="one">Web and media fetch: allowlist only, %1$d host</item>
+        <item quantity="other">Web and media fetch: allowlist only, %1$d hosts</item>
+    </plurals>
+    <plurals name="agent_reach_lan_allowlist_scripts">
+        <item quantity="one">Web fetch, media fetch and scripts: allowlist only, %1$d host</item>
+        <item quantity="other">Web fetch, media fetch and scripts: allowlist only, %1$d hosts</item>
+    </plurals>
+    <string name="agent_reach_lan_allowlist_empty">Web and media fetch: allowlist is empty, so nothing is reachable</string>
+    <string name="agent_reach_lan_allowlist_empty_scripts">Web fetch, media fetch and scripts: allowlist is empty, so nothing is reachable</string>
+    <string name="agent_reach_lan_linux_commands">Linux commands: not limited by the allowlist</string>
+    <string name="agent_reach_lan_builtin_commands">Built-in commands: not limited by the allowlist</string>
+    <string name="agent_reach_network_change">Change</string>
+    <string name="agent_reach_network_configured">MCP and SSH</string>
+    <string name="agent_reach_network_configured_desc">Only the addresses and hosts you added</string>
+    <string name="agent_reach_network_details">Per-tool details</string>
+
     <string name="agent_reach_mount_command_visible">Commands can access</string>
     <string name="agent_reach_mount_files_only">File tools only</string>
 </resources>

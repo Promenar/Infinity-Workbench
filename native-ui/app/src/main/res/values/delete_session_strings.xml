@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <plurals name="delete_session_files">
-        <item quantity="one">%1$d file in this chat\'s space</item>
-        <item quantity="other">%1$d files in this chat\'s space</item>
+        <item quantity="one">%1$d file in this chat\'s folder</item>
+        <item quantity="other">%1$d files in this chat\'s folder</item>
     </plurals>
     <string name="delete_session_keep_files">Keep files</string>
     <string name="delete_session_keep_files_to">in %1$s</string>

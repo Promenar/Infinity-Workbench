@@ -1,41 +1,62 @@
 package com.promenar.infinity.ui.workspace
 
-import com.promenar.infinity.data.workspace.LinuxWorkspaceLocation
-import com.promenar.infinity.data.local.db.entity.WorkspaceEntity
-import com.promenar.infinity.ui.theme.InfinityMonospace
 import android.app.Application
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Dns
-import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.VerifiedUser
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import com.promenar.infinity.ui.theme.forReading
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.infinity.R
@@ -43,16 +64,18 @@ import com.promenar.infinity.domain.model.ExecutionMode
 import com.promenar.infinity.domain.model.ExecutionModeCodec
 import com.promenar.infinity.domain.model.SessionRunMode
 import com.promenar.infinity.ui.common.InfinityBottomSheet
-import com.promenar.infinity.ui.common.InfinitySettingsItem
-import com.promenar.infinity.ui.common.InfinityValueRow
+import com.promenar.infinity.ui.common.InfinitySettingsGroup
 import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import com.promenar.infinity.ui.common.InfinitySettingsSection
 import com.promenar.infinity.ui.common.InfinitySheetHeight
 import com.promenar.infinity.ui.settings.NetworkAccessRows
 import com.promenar.infinity.ui.settings.NetworkRunMode
-import com.promenar.infinity.ui.settings.networkMatrixFooter
 import com.promenar.infinity.ui.settings.tailnetSummary
+import com.promenar.infinity.ui.theme.InfinityMonospace
+import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.InfinitySpacing
+import com.promenar.infinity.ui.theme.breakableIdentifier
+import com.promenar.infinity.ui.theme.forReading
 
 internal data class AgentReachActions(
     /** 局域网白名单是全局设置：非 null 时该行关闭面板并打开全局网络访问页（R3），为 null 时只显示项数。 */
@@ -63,9 +86,11 @@ internal data class AgentReachActions(
     val onOpenLinux: (() -> Unit)? = null,
     /** 非 null 时工作区一行提供切换；从会话顶栏打开面板时传入。 */
     val workspaceSwitch: AgentReachWorkspaceSwitch? = null,
+    /** 非 null 时“未启用”一行带“设置”，打开 Termux 与 SSH 所在的工具设置。 */
+    val onOpenToolSettings: (() -> Unit)? = null,
 )
 
-/** 面板内的工作区切换：生成进行中或有待审批时停用，切换失败时在工作区下方提示。 */
+/** 摘要卡内的工作区切换：生成进行中或有待审批时停用，切换失败时在工作区下方提示。 */
 internal data class AgentReachWorkspaceSwitch(
     val busy: Boolean,
     val failed: Boolean,
@@ -115,8 +140,8 @@ internal fun AgentReachSheet(
 }
 
 /**
- * 面板正文，按“在哪里 → 路径怎么解释 → 谁在执行 → 什么时候问我 → 能连到哪里”的顺序排列，
- * 每一节只陈述当前会话的事实，与执行层规则一一对应。
+ * 面板正文，按“当前是什么 → 文件在哪 → 谁能运行代码 → 什么时候问你 → 能连到哪里”的顺序排列，
+ * 每一节只陈述当前会话的事实，与执行层规则一一对应。所有分区以同一个运行模式为准。
  */
 @Composable
 internal fun AgentReachContent(
@@ -125,7 +150,10 @@ internal fun AgentReachContent(
     modifier: Modifier = Modifier,
     /** 会话保存的运行模式；未取得时按 Linux 环境是否接管 shell 推断。 */
     runMode: SessionRunMode? = null,
+    /** “各工具明细”的初始展开状态；截图预览用来检查总表。 */
+    networkDetailsExpanded: Boolean = false,
 ) {
+    val mode = reachRunMode(runMode, state.backends)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -134,51 +162,90 @@ internal fun AgentReachContent(
             .testTag("agent_reach_content"),
         verticalArrangement = Arrangement.spacedBy(InfinitySpacing.SectionGap),
     ) {
-        WorkspaceSection(state, actions.workspaceSwitch)
-        PathSection(state)
-        BackendSection(state, actions)
+        SummaryCard(state, mode, actions.workspaceSwitch)
+        PathSection(state, mode)
+        RunnerSection(state, mode, actions)
         ApprovalSection(state)
-        NetworkSection(state, actions, reachNetworkRunMode(runMode, state))
+        NetworkSection(state, actions, mode, networkDetailsExpanded)
     }
 }
 
-/** 网络可达范围按会话运行模式灰显：会话未保存模式时以 Linux 环境是否接管 shell 为准。 */
-internal fun reachNetworkRunMode(runMode: SessionRunMode?, state: AgentReachState): NetworkRunMode = when (runMode) {
+internal fun SessionRunMode.toNetworkRunMode(): NetworkRunMode = when (this) {
     SessionRunMode.LINUX -> NetworkRunMode.LINUX
     SessionRunMode.BUILTIN -> NetworkRunMode.BUILTIN
-    null -> if (state.backends.linuxRunsShell()) NetworkRunMode.LINUX else NetworkRunMode.BUILTIN
 }
 
+/** 摘要卡：运行模式与权限模式两个小标签，下面是当前工作区、存放位置与是否进备份，右侧切换。 */
 @Composable
-private fun WorkspaceSection(state: AgentReachState, switch: AgentReachWorkspaceSwitch?) {
+private fun SummaryCard(state: AgentReachState, mode: SessionRunMode, switch: AgentReachWorkspaceSwitch?) {
     val workspace = state.workspace
-    InfinitySettingsSection(title = stringResource(R.string.agent_reach_section_workspace)) {
-        InfinitySettingsRowLayout(
-            title = when (workspace) {
-                SessionWorkspaceUi.Loading -> "…"
-                SessionWorkspaceUi.Private -> privateWorkspaceLabel()
-                is SessionWorkspaceUi.Directory -> workspace.name
-                is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
-            },
-            subtitle = when (workspace) {
-                is SessionWorkspaceUi.Directory -> workspaceKindLabel(workspace.kind)
-                is SessionWorkspaceUi.Unavailable -> workspace.reason.ifBlank { stringResource(R.string.agent_reach_workspace_unavailable) }
-                else -> null
-            },
-            subtitleMaxLines = 2,
-            leadingContent = {
-                if (workspace is SessionWorkspaceUi.Unavailable) {
-                    Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
-                } else {
-                    WorkspaceKindIcon((workspace as? SessionWorkspaceUi.Directory)?.kind)
+    InfinitySettingsGroup {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = InfinitySpacing.RowHorizontal, vertical = InfinitySpacing.Medium)
+                .testTag("agent_reach_workspace"),
+            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+        ) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
+                verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
+            ) {
+                ReachPill(
+                    stringResource(if (mode == SessionRunMode.LINUX) R.string.agent_reach_run_mode_linux else R.string.agent_reach_run_mode_builtin),
+                    Modifier.testTag("agent_reach_run_mode"),
+                )
+                ReachPill(
+                    stringResource(
+                        when (state.executionMode) {
+                            ExecutionMode.WORKSPACE -> R.string.agent_reach_permission_workspace
+                            ExecutionMode.FULL_ACCESS -> R.string.agent_reach_permission_full_access
+                        },
+                    ),
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = when (workspace) {
+                            SessionWorkspaceUi.Loading -> "…"
+                            SessionWorkspaceUi.Private -> privateWorkspaceLabel()
+                            is SessionWorkspaceUi.Directory -> workspace.name
+                            is SessionWorkspaceUi.Unavailable -> workspace.name ?: stringResource(R.string.workspace_missing_name)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val traits = workspace.traits
+                    val subtitle = when (workspace) {
+                        is SessionWorkspaceUi.Unavailable -> workspace.reason.ifBlank { stringResource(R.string.agent_reach_workspace_unavailable) }
+                        else -> traits?.let {
+                            stringResource(
+                                R.string.agent_reach_workspace_storage,
+                                workspaceStorageLabel((workspace as? SessionWorkspaceUi.Directory)?.kind),
+                                stringResource(if (it.backedUp) R.string.workspace_tag_backed_up else R.string.workspace_tag_not_backed_up),
+                            )
+                        }
+                    }
+                    if (subtitle != null) {
+                        Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (workspace is SessionWorkspaceUi.Unavailable) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-            },
-            trailingContent = switch?.let { entry ->
-                {
+                if (switch != null) {
                     val label = stringResource(R.string.agent_reach_workspace_switch)
                     TextButton(
-                        onClick = entry.onChoose,
-                        enabled = !entry.busy && workspace != SessionWorkspaceUi.Loading,
+                        onClick = switch.onChoose,
+                        enabled = !switch.busy && workspace != SessionWorkspaceUi.Loading,
                         modifier = Modifier
                             .semantics { contentDescription = label }
                             .testTag("agent_reach_workspace_switch"),
@@ -191,132 +258,261 @@ private fun WorkspaceSection(state: AgentReachState, switch: AgentReachWorkspace
                         )
                     }
                 }
-            },
-            modifier = Modifier.testTag("agent_reach_workspace"),
-        )
-        if (switch != null && (switch.busy || switch.failed)) {
-            Text(
-                text = stringResource(if (switch.failed) R.string.workspace_switch_failed else R.string.workspace_session_busy),
-                style = MaterialTheme.typography.bodySmall.forReading(),
-                color = if (switch.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(horizontal = InfinitySpacing.RowHorizontal)
-                    .padding(bottom = InfinitySpacing.Small),
-            )
-        }
-        if (workspace is SessionWorkspaceUi.Private || workspace is SessionWorkspaceUi.Directory) {
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = InfinitySpacing.RowHorizontal)
-                    .padding(bottom = InfinitySpacing.Medium),
-                horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
-            ) {
-                workspaceKindTags((workspace as? SessionWorkspaceUi.Directory)?.kind).forEach { tag ->
-                    WorkspaceTagChip(stringResource(tag.label), tag.tone)
-                }
+            }
+            if (switch != null && (switch.busy || switch.failed)) {
+                Text(
+                    text = stringResource(if (switch.failed) R.string.workspace_switch_failed else R.string.workspace_session_busy),
+                    style = MaterialTheme.typography.bodySmall.forReading(),
+                    color = if (switch.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun PathRow(path: String, meaning: String, tag: String, knowledgeBase: Boolean = false) {
-    InfinitySettingsRowLayout(
-        title = path,
-        subtitle = meaning,
-        titleTextStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = InfinityMonospace),
-        subtitleMaxLines = 2,
-        modifier = Modifier.testTag(tag),
-        trailingContent = if (knowledgeBase) ({ KnowledgeReadOnlyTag() }) else null,
-    )
+private fun ReachPill(label: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = CircleShape,
+        modifier = modifier,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = InfinitySpacing.Small + 2.dp, vertical = 2.dp),
+        )
+    }
 }
 
-/** 绑定 Linux 目录时命令工作目录就是该目录；其它工作区经绑定挂到 /workspace。 */
-internal fun linuxWorkspacePath(workspace: SessionWorkspaceUi): String =
-    (workspace as? SessionWorkspaceUi.Directory)
-        ?.takeIf { it.kind == WorkspaceEntity.KIND_LINUX_HOME }
-        ?.let { LinuxWorkspaceLocation.parse(it.location)?.directory }
-        ?: "/workspace"
+/** 等宽路径标签，放在行的右侧；长路径只在分隔符后折行。 */
+@Composable
+private fun ReachPathChip(path: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = MaterialTheme.shapes.extraSmall,
+    ) {
+        Text(
+            path.breakableIdentifier(),
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = InfinityMonospace),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .semantics { contentDescription = path }
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+/**
+ * 面板的通用一行：主标题说含义，副行说范围；[note] 是标题下的小号等宽工具 ID，[path] 是右侧的等宽路径。
+ * [onClick] 非 null 时整行可点并带箭头。
+ */
+@Composable
+private fun ReachRow(
+    title: String,
+    subtitle: String?,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    note: String? = null,
+    path: String? = null,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
+            .alpha(if (enabled) 1f else 0.38f)
+            .heightIn(min = InfinitySpacing.RowTwoLineHeight)
+            .padding(horizontal = InfinitySpacing.RowHorizontal, vertical = InfinitySpacing.RowTwoLineVertical),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Box(Modifier.width(InfinitySpacing.RowIconSize + InfinitySpacing.RowIconGap), contentAlignment = Alignment.CenterStart) {
+                Icon(icon, null, Modifier.size(InfinitySpacing.RowIconSize), MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) {
+                Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (note != null) {
+                Spacer(Modifier.height(InfinitySpacing.XSmall))
+                Text(
+                    note,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = InfinityMonospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (path != null) {
+            Spacer(Modifier.width(InfinitySpacing.Medium))
+            Box(Modifier.widthIn(max = 168.dp)) { ReachPathChip(path) }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(InfinitySpacing.Small))
+            trailing()
+        }
+        if (onClick != null && trailing == null) {
+            Spacer(Modifier.width(InfinitySpacing.Small))
+            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** 格式串中的参数用等宽字体显示。 */
+@Composable
+private fun monospaceArgument(template: Int, argument: String): AnnotatedString {
+    val text = stringResource(template, argument)
+    val start = text.indexOf(argument)
+    return buildAnnotatedString {
+        append(text)
+        if (start >= 0) addStyle(SpanStyle(fontFamily = InfinityMonospace), start, start + argument.length)
+    }
+}
 
 @Composable
-private fun PathSection(state: AgentReachState) {
+private fun PathSection(state: AgentReachState, mode: SessionRunMode) {
+    val linux = mode == SessionRunMode.LINUX
     InfinitySettingsSection(
         title = stringResource(R.string.agent_reach_section_paths),
-        // Linux 接管 shell_exec 时，命令看到的是 Alpine 根目录而不是设备根目录。
-        footer = if (state.backends.linuxRunsShell()) {
-            stringResource(R.string.linux_reach_paths_footer, linuxWorkspacePath(state.workspace))
-        } else {
-            stringResource(R.string.agent_reach_paths_footer)
-        },
+        linkedFooter = if (linux) AnnotatedString(stringResource(R.string.agent_reach_paths_footer_linux))
+        else monospaceArgument(R.string.agent_reach_paths_footer_builtin, "\$INFINITY_WORKSPACE"),
     ) {
-        PathRow("/", stringResource(R.string.agent_reach_path_root), "agent_reach_path_root")
-        PathRow("\$INFINITY_WORKSPACE", stringResource(R.string.agent_reach_path_workspace_var), "agent_reach_path_workspace_var")
-        PathRow("/skills", stringResource(R.string.agent_reach_path_skills), "agent_reach_path_skills")
-        if (state.mounts.isEmpty()) {
-            PathRow("/mnt", stringResource(R.string.agent_reach_path_mnt_empty), "agent_reach_path_mnt_empty")
-        } else {
-            state.mounts.forEach { mount ->
-                val attributes = listOfNotNull(
-                    if (mount.knowledgeBase) null
-                    else stringResource(if (mount.source == ReachMountSource.PATH) R.string.agent_reach_mount_path else R.string.agent_reach_mount_saf),
-                    stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_command_visible else R.string.agent_reach_mount_files_only),
-                    if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null,
+        reachPaths(mode, state.workspace, state.mounts).forEach { entry ->
+            when (entry.kind) {
+                ReachPathKind.WORKSPACE -> ReachRow(
+                    title = stringResource(R.string.agent_reach_path_workspace),
+                    subtitle = stringResource(R.string.agent_reach_path_workspace_desc),
+                    path = entry.path,
+                    modifier = Modifier.testTag("agent_reach_path_workspace"),
                 )
-                PathRow("/mnt/${mount.alias}", attributes.joinToString(" · "), "agent_reach_path_mount", knowledgeBase = mount.knowledgeBase)
+                ReachPathKind.SESSION -> ReachRow(
+                    title = privateWorkspaceLabel(),
+                    subtitle = stringResource(R.string.agent_reach_path_session_desc),
+                    path = entry.path,
+                    modifier = Modifier.testTag("agent_reach_path_session"),
+                )
+                ReachPathKind.MOUNT -> {
+                    val mount = checkNotNull(entry.mount)
+                    val attributes = listOfNotNull(
+                        if (mount.knowledgeBase) null
+                        else stringResource(if (mount.source == ReachMountSource.PATH) R.string.agent_reach_mount_path else R.string.agent_reach_mount_saf),
+                        stringResource(if (mount.commandAccessible) R.string.agent_reach_mount_access_commands else R.string.agent_reach_mount_access_files_only),
+                        if (mount.unavailable) stringResource(R.string.agent_reach_mount_unavailable) else null,
+                    )
+                    ReachRow(
+                        title = mount.alias,
+                        subtitle = attributes.joinToString(" · "),
+                        path = entry.path,
+                        trailing = if (mount.knowledgeBase) ({ KnowledgeReadOnlyTag() }) else null,
+                        modifier = Modifier.testTag("agent_reach_path_mount"),
+                    )
+                }
+                ReachPathKind.SKILLS -> ReachRow(
+                    title = stringResource(R.string.agent_reach_path_skills),
+                    subtitle = stringResource(R.string.agent_reach_path_skills_desc),
+                    path = entry.path,
+                    modifier = Modifier.testTag("agent_reach_path_skills"),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
+private fun RunnerSection(state: AgentReachState, mode: SessionRunMode, actions: AgentReachActions) {
+    val runners = reachRunners(mode, state.backends)
     val traits = state.workspace.traits
-    val builtinTitle = if (state.backends.linuxRunsShell()) R.string.linux_reach_backend_builtin_python else R.string.agent_reach_backend_builtin
     InfinitySettingsSection(
         title = stringResource(R.string.agent_reach_section_backends),
         footer = stringResource(R.string.agent_reach_backends_footer),
     ) {
-        state.backends.forEach { backend ->
-            val (icon, title, scope) = when (backend.kind) {
-                ReachBackendKind.FILES -> Triple(Icons.Rounded.Description, R.string.agent_reach_backend_files, R.string.agent_reach_backend_files_scope)
-                ReachBackendKind.BUILTIN -> Triple(Icons.Rounded.Terminal, builtinTitle, R.string.agent_reach_backend_builtin_scope)
-                ReachBackendKind.LINUX -> Triple(Icons.Rounded.Terminal, R.string.linux_runner_name, R.string.linux_reach_scope)
-                ReachBackendKind.SANDBOX -> Triple(Icons.Rounded.Code, R.string.agent_reach_backend_sandbox, R.string.agent_reach_backend_sandbox_scope)
-                ReachBackendKind.TERMUX -> Triple(
-                    Icons.Rounded.PhoneAndroid,
-                    R.string.agent_reach_backend_termux,
+        runners.shown.forEach { backend ->
+            val ready = backend.status == ReachBackendStatus.READY
+            val (icon, title) = when (backend.kind) {
+                ReachBackendKind.LINUX -> Icons.Rounded.Terminal to R.string.agent_reach_runner_linux
+                ReachBackendKind.BUILTIN -> Icons.Rounded.Terminal to R.string.agent_reach_runner_builtin
+                ReachBackendKind.SANDBOX -> Icons.Rounded.Code to R.string.agent_reach_runner_sandbox
+                ReachBackendKind.TERMUX -> Icons.Rounded.PhoneAndroid to R.string.agent_reach_runner_termux
+                ReachBackendKind.SSH -> Icons.Rounded.Dns to R.string.agent_reach_runner_ssh
+            }
+            val note = when (backend.kind) {
+                ReachBackendKind.LINUX -> "shell_exec"
+                ReachBackendKind.BUILTIN -> if (backend.status == ReachBackendStatus.SHELL_ONLY) "shell_exec" else "shell_exec · python_exec"
+                ReachBackendKind.SANDBOX -> if (backend.status == ReachBackendStatus.JS_ONLY) "exec_js" else "exec_js · python_sandbox"
+                ReachBackendKind.TERMUX -> "termux_exec"
+                ReachBackendKind.SSH -> "ssh_exec · sftp"
+            }
+            val scope = when (backend.kind) {
+                ReachBackendKind.LINUX -> stringResource(R.string.agent_reach_runner_linux_scope)
+                ReachBackendKind.BUILTIN -> stringResource(R.string.agent_reach_backend_builtin_scope)
+                ReachBackendKind.SANDBOX -> stringResource(R.string.agent_reach_backend_sandbox_scope)
+                ReachBackendKind.TERMUX -> stringResource(
                     if (traits?.termuxVisible == true) R.string.agent_reach_backend_termux_scope_shared else R.string.agent_reach_backend_termux_scope,
                 )
-                ReachBackendKind.SSH -> Triple(Icons.Rounded.Dns, R.string.agent_reach_backend_ssh, R.string.agent_reach_backend_ssh_scope)
+                ReachBackendKind.SSH -> stringResource(R.string.agent_reach_backend_ssh_scope)
             }
-            // 可用时说明作用范围，不可用时只说状态。
-            val subtitle = if (backend.status == ReachBackendStatus.READY && backend.count == null) stringResource(scope)
-            else backendStatusText(backend)
-            val tag = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}")
+            // 可用时说明作用范围；缺 Python 时范围之后补一句状态；其它不可用状态只说状态。
+            val subtitle = when {
+                ready && backend.count != null -> scope + " · " + backendStatusText(backend)
+                ready -> scope
+                backend.status == ReachBackendStatus.SHELL_ONLY || backend.status == ReachBackendStatus.JS_ONLY ->
+                    scope + "\n" + backendStatusText(backend)
+                else -> backendStatusText(backend)
+            }
+            // Linux 的安装、修复与开关都在环境页完成，行本身就是去处理的入口。
             val openLinux = actions.onOpenLinux.takeIf { backend.kind == ReachBackendKind.LINUX && !backend.status.isUnavailable() }
-            if (openLinux != null) {
-                // Linux 的安装、修复与开关都在环境页完成，行本身就是去处理的入口。
-                InfinitySettingsItem(
-                    icon = icon,
-                    title = stringResource(title),
-                    subtitle = subtitle,
-                    subtitleMaxLines = 2,
-                    onClick = openLinux,
-                    showChevron = true,
-                    modifier = tag,
-                )
-            } else {
-                InfinitySettingsRowLayout(
-                    title = stringResource(title),
-                    subtitle = subtitle,
-                    icon = icon,
-                    subtitleMaxLines = 2,
-                    enabled = backend.status != ReachBackendStatus.DISABLED && !backend.status.isUnavailable(),
-                    modifier = tag,
-                )
-            }
+            ReachRow(
+                title = stringResource(title),
+                subtitle = subtitle,
+                icon = icon,
+                note = note,
+                enabled = backend.status != ReachBackendStatus.DISABLED && !backend.status.isUnavailable(),
+                onClick = openLinux,
+                modifier = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}"),
+            )
         }
+        if (runners.linuxOmitsBuiltins) {
+            ReachNoteRow(stringResource(R.string.agent_reach_runners_linux_omits), Modifier.testTag("agent_reach_runners_linux_omits"))
+        }
+        if (runners.inactive.isNotEmpty()) {
+            val names = runners.inactive.map { kind ->
+                stringResource(if (kind == ReachBackendKind.TERMUX) R.string.agent_reach_runner_termux else R.string.agent_reach_runner_ssh)
+            }
+            ReachNoteRow(
+                text = stringResource(R.string.agent_reach_runners_inactive, names.joinToString(stringResource(R.string.agent_reach_list_separator))),
+                modifier = Modifier.testTag("agent_reach_runners_inactive"),
+                action = actions.onOpenToolSettings?.let { open -> stringResource(R.string.agent_reach_runners_settings) to open },
+            )
+        }
+    }
+}
+
+/** 合并说明的一行：小号次要文字，可带右侧文字按钮。 */
+@Composable
+private fun ReachNoteRow(text: String, modifier: Modifier = Modifier, action: Pair<String, () -> Unit>? = null) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+            .padding(start = InfinitySpacing.RowHorizontal, end = if (action == null) InfinitySpacing.RowHorizontal else InfinitySpacing.XSmall),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium.forReading(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f).padding(vertical = InfinitySpacing.Small),
+        )
+        if (action != null) TextButton(onClick = action.second) { Text(action.first) }
     }
 }
 
@@ -368,51 +564,71 @@ private fun ApprovalSection(state: AgentReachState) {
     }
 }
 
+/** 按目标分四行说明能连到哪里；原来的工具 × 目标总表收进默认折叠的“各工具明细”。 */
 @Composable
-private fun NetworkSection(state: AgentReachState, actions: AgentReachActions, runMode: NetworkRunMode) {
-    InfinitySettingsSection(title = stringResource(R.string.agent_reach_section_network), footer = networkMatrixFooter()) {
+private fun NetworkSection(state: AgentReachState, actions: AgentReachActions, mode: SessionRunMode, detailsInitiallyExpanded: Boolean) {
+    InfinitySettingsSection(title = stringResource(R.string.agent_reach_section_network)) {
         val network = state.network
         if (network == null) {
             InfinitySettingsRowLayout(title = stringResource(R.string.settings_status_loading))
             return@InfinitySettingsSection
         }
-        val lanSummary = pluralStringResource(R.plurals.settings_ia_reach_lan_summary, network.lanHosts.size, network.lanHosts.size)
+        ReachRow(
+            title = stringResource(R.string.network_target_public),
+            subtitle = stringResource(R.string.agent_reach_network_public),
+            modifier = Modifier.testTag("agent_reach_network_public"),
+        )
+        val lan = reachLanLines(mode, network)
+        val allowlist = if (lan.allowlistSize == 0) stringResource(lan.allowlistRes)
+        else pluralStringResource(lan.allowlistRes, lan.allowlistSize, lan.allowlistSize)
         val openNetworkAccess = actions.onOpenNetworkAccess
-        if (openNetworkAccess != null) {
-            InfinityValueRow(
-                icon = Icons.Rounded.Dns,
-                title = stringResource(R.string.network_lan_hosts_title),
-                subtitle = lanSummary,
-                value = stringResource(R.string.settings_ia_reach_lan_change),
-                onClick = openNetworkAccess,
-                modifier = Modifier.testTag("agent_reach_lan_hosts"),
+        ReachRow(
+            title = stringResource(R.string.agent_reach_network_lan),
+            subtitle = allowlist + "\n" + stringResource(lan.commandsRes),
+            onClick = openNetworkAccess,
+            trailing = openNetworkAccess?.let {
+                {
+                    Text(
+                        stringResource(R.string.agent_reach_network_change),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            },
+            modifier = Modifier.testTag("agent_reach_lan_hosts"),
+        )
+        ReachRow(
+            title = stringResource(R.string.network_tailnet_title),
+            subtitle = tailnetSummary(network),
+            onClick = actions.onOpenTailscale,
+            modifier = Modifier.testTag("agent_reach_network_tailnet"),
+        )
+        ReachRow(
+            title = stringResource(R.string.agent_reach_network_configured),
+            subtitle = stringResource(R.string.agent_reach_network_configured_desc),
+            modifier = Modifier.testTag("agent_reach_network_configured"),
+        )
+        var expanded by rememberSaveable { mutableStateOf(detailsInitiallyExpanded) }
+        val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "agent_reach_network_details")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .heightIn(min = InfinitySpacing.RowSingleLineHeight)
+                .padding(horizontal = InfinitySpacing.RowHorizontal)
+                .testTag("agent_reach_network_details"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.agent_reach_network_details),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
             )
-        } else {
-            InfinitySettingsRowLayout(
-                title = stringResource(R.string.network_lan_hosts_title),
-                subtitle = lanSummary,
-                icon = Icons.Rounded.Dns,
-                modifier = Modifier.testTag("agent_reach_lan_hosts"),
-            )
+            Icon(Icons.Rounded.ExpandMore, null, Modifier.size(20.dp).rotate(rotation), MaterialTheme.colorScheme.primary)
         }
-        val openTailscale = actions.onOpenTailscale
-        if (openTailscale != null) {
-            InfinitySettingsItem(
-                icon = Icons.Rounded.Hub,
-                title = stringResource(R.string.network_tailnet_title),
-                subtitle = tailnetSummary(network),
-                onClick = openTailscale,
-                showChevron = true,
-                subtitleMaxLines = 2,
-            )
-        } else {
-            InfinitySettingsRowLayout(
-                title = stringResource(R.string.network_tailnet_title),
-                subtitle = tailnetSummary(network),
-                icon = Icons.Rounded.Hub,
-                subtitleMaxLines = 2,
-            )
+        AnimatedVisibility(visible = expanded, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
+            NetworkAccessRows(network, runMode = mode.toNetworkRunMode())
         }
-        NetworkAccessRows(network, runMode = runMode)
     }
 }

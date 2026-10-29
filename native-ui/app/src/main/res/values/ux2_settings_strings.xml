@@ -17,6 +17,5 @@
     <string name="ux2_network_scope_prefix">Scope: %1$s</string>
     <string name="ux2_network_scope_builtin_only">Built-in mode only</string>
     <string name="ux2_network_scope_not_bound">Not bound by the allowlist</string>
-    <string name="ux2_network_inactive_linux">Not in effect in this session: it runs in Linux mode, and script networking applies in built-in mode only.</string>
     <string name="ux2_network_matrix_footer_linux">Commands in the Linux environment can reach the local network directly and are not limited by this allowlist.</string>
 </resources>
