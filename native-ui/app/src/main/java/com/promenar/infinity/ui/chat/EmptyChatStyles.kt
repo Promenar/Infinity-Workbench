@@ -221,7 +221,8 @@ private fun DrawScope.drawLedWordmark(scene: EmptyChatScene, mask: WordmarkMask,
 private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette) {
     val k = density
     val pitch = 4.2f * k
-    val radius = mobiusRadius(size.width, size.height)
+    // 灯珠带比固定灯珠环宽，加上视角摆动与拖动，用同样半径会在窄屏两端出界，这里收小一档。
+    val radius = mobiusRadius(size.width, size.height) * 0.82f
     val beads = scene.ledMorph?.takeIf { it.mask === mask && it.width == size.width }
         ?: buildLedMorphBeads(mask, size.width, size.height, k, pitch, radius).also { scene.ledMorph = it }
     if (tapped) scene.ledMorphClock = LedMorphTimeline.skip(scene.ledMorphClock)

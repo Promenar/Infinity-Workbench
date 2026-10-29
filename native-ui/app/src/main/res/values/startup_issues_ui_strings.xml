@@ -30,7 +30,7 @@
     <string name="startup_issue_title_background">Background jobs couldn\'t be restored</string>
     <string name="startup_issue_title_confirmations">Background confirmations couldn\'t be restored</string>
     <string name="startup_issue_title_schedules">Scheduled tasks couldn\'t be restored</string>
-    <string name="startup_issue_title_catalog">Model catalog update failed</string>
+    <string name="startup_issue_title_catalog">Spec library update failed</string>
     <string name="startup_issue_title_memory">Memory cleanup failed</string>
     <string name="startup_blocked_detail_label">Reason</string>
     <string name="startup_blocked_export">Export diagnostics</string>

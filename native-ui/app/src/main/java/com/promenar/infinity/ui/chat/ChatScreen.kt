@@ -870,7 +870,11 @@ fun ChatScreenContent(
                     onQuote = actions.onQuote,
                     onLocateSource = { sourceId ->
                         val index = latestPipelineGroups.indexOfFirst { group -> group.messages.any { it.id == sourceId } }
-                        if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                        // 先停掉自动跟随，否则尾部几何监听会立刻把列表拉回输入区上方，看起来像没跳。
+                        if (index >= 0) {
+                            autoFollowEnabled = false
+                            scope.launch { listState.animateScrollToItem(index) }
+                        }
                         else android.widget.Toast.makeText(quoteContext, quoteSourceMissing, android.widget.Toast.LENGTH_SHORT).show()
                     },
                 )

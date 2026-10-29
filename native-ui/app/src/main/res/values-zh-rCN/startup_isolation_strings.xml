@@ -17,6 +17,6 @@
     <string name="startup_subsystem_background">后台任务</string>
     <string name="startup_subsystem_confirmations">后台确认</string>
     <string name="startup_subsystem_schedules">定时任务</string>
-    <string name="startup_subsystem_catalog">模型目录</string>
+    <string name="startup_subsystem_catalog">规格库</string>
     <string name="startup_subsystem_memory">记忆清理</string>
 </resources>

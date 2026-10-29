@@ -69,7 +69,7 @@
     <!-- 模型编辑 -->
     <string name="model_editor_group_identity">Identity</string>
     <string name="model_editor_group_specs">Specs</string>
-    <string name="model_editor_specs_footer">Tap a value to set it yourself. Your value overrides the catalog.</string>
+    <string name="model_editor_specs_footer">Tap a value to set it yourself. Your value overrides the spec library.</string>
     <string name="model_editor_capabilities_selected">%d selected</string>
     <string name="model_editor_group_test">Test</string>
     <string name="model_editor_test_idle">Send a short request to check this model responds</string>
@@ -79,7 +79,7 @@
     <string name="model_editor_autosave_hint">Changes are saved automatically</string>
     <string name="model_editor_list_separator">", "</string>
     <string name="model_spec_edit_action">Edit %s</string>
-    <string name="model_spec_source_catalog">Catalog</string>
+    <string name="model_spec_source_catalog">Spec library</string>
     <string name="model_spec_source_provider">Provider</string>
     <string name="model_spec_source_manual">Manual</string>
     <string name="model_spec_source_inferred">Inferred</string>

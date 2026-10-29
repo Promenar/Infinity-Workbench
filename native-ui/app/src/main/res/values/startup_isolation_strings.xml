@@ -17,6 +17,6 @@
     <string name="startup_subsystem_background">Background tasks</string>
     <string name="startup_subsystem_confirmations">Background confirmations</string>
     <string name="startup_subsystem_schedules">Scheduled tasks</string>
-    <string name="startup_subsystem_catalog">Model catalog</string>
+    <string name="startup_subsystem_catalog">Spec library</string>
     <string name="startup_subsystem_memory">Memory cleanup</string>
 </resources>

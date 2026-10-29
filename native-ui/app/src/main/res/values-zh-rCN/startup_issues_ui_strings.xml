@@ -30,7 +30,7 @@
     <string name="startup_issue_title_background">后台任务无法恢复</string>
     <string name="startup_issue_title_confirmations">后台确认无法恢复</string>
     <string name="startup_issue_title_schedules">定时任务无法恢复</string>
-    <string name="startup_issue_title_catalog">模型目录更新失败</string>
+    <string name="startup_issue_title_catalog">规格库更新失败</string>
     <string name="startup_issue_title_memory">记忆清理失败</string>
     <string name="startup_blocked_detail_label">原因</string>
     <string name="startup_blocked_export">导出诊断</string>

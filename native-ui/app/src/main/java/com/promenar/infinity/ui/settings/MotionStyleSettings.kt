@@ -216,7 +216,7 @@ private fun <T : Enum<T>> MotionStylePicker(
     }
 }
 
-/** 浮岛材质：分段控件加一块静态预览，示例正文垫在浮岛后面，毛玻璃时能看到它被模糊。 */
+/** 浮岛材质：分段控件加一块生成中的预览，示例正文垫在浮岛后面，毛玻璃时能看到它被模糊。 */
 @Composable
 private fun ComposerSurfaceOptions(motion: InfinityMotionStyles, onSelect: (ComposerSurfaceStyle) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -243,8 +243,11 @@ private fun ComposerSurfaceOptions(motion: InfinityMotionStyles, onSelect: (Comp
             modifier = Modifier.padding(top = 6.dp),
         )
     }
-    Box(Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp).testTag("theme_motion_surface_preview")) {
-        ComposerPreview(motion.composer, generating = false)
+    // 预览跑演示生成脚本：环境光的内部漫光与点阵屏只有生成中才看得出来。
+    CompositionLocalProvider(LocalGenerationMotion provides rememberDemoGenerationMotion()) {
+        Box(Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp).testTag("theme_motion_surface_preview")) {
+            ComposerPreview(motion.composer)
+        }
     }
 }
 
