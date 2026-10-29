@@ -142,10 +142,7 @@ internal class ModelCatalogUpdater(
         private const val HOUR_MILLIS = 60 * 60 * 1000L
 
         fun create(application: Application, onInstalled: (PublishedModelCatalog) -> Unit): ModelCatalogUpdater {
-            val publicKey = Base64.getDecoder().decode(
-                "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzD29At+nig0aL8gom0jbIrgwWlwqm7cbrkkA47AJ8xqtFeq0ccrmYsJxI7Vu12ysijxzM5jFWRnt1LO05662Bg==",
-            )
-            val verifier = CatalogEnvelopeVerifier(mapOf("infinity-catalog-p256-20260922" to publicKey))
+            val verifier = CatalogEnvelopeVerifier(catalogPublicKeys())
             val prefs = application.getSharedPreferences("catalog_update_schedule", 0)
             return ModelCatalogUpdater(
                 ModelCatalogCache(application.noBackupFilesDir.resolve("model-catalog"), verifier),
@@ -157,6 +154,17 @@ internal class ModelCatalogUpdater(
             )
         }
     }
+}
+
+internal fun catalogPublicKeys(): Map<String, ByteArray> {
+    val publicKey = Base64.getDecoder().decode(
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzD29At+nig0aL8gom0jbIrgwWlwqm7cbrkkA47AJ8xqtFeq0ccrmYsJxI7Vu12ysijxzM5jFWRnt1LO05662Bg==",
+    )
+    return mapOf(
+        "infinity-catalog-p256-20260922" to publicKey,
+        // 旧 keyId 是项目改名前已发布目录的兼容别名。
+        "nexara-catalog-p256-20260922" to publicKey,
+    )
 }
 
 internal fun readCatalogLimited(input: InputStream, limit: Int): ByteArray {

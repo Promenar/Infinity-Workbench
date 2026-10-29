@@ -16,11 +16,48 @@ class ModelCatalogUpdateTest {
     private val verifier = CatalogEnvelopeVerifier(mapOf("test" to keys.public.encoded))
     private val catalog = """{"schemaVersion":3,"generatedAt":"2026-09-22T00:00:00Z","sources":[],"records":[{"canonicalModelId":"test/a","displayName":"A","source":"MODELS_DEV"}]}""".toByteArray()
 
-    private fun envelope(version: Long = 10, data: ByteArray = catalog, file: String? = null): ByteArray {
+    private fun envelope(version: Long = 10, data: ByteArray = catalog, file: String? = null, keyId: String = "test"): ByteArray {
         val hash = catalogSha256(data)
         val payload = Json.encodeToString(CatalogManifest(1, version, "2026-09-22T00:00:00Z", file ?: "catalog-$hash.json", data.size, hash, 1)).toByteArray()
         val signature = Signature.getInstance("SHA256withECDSA").apply { initSign(keys.private); update(payload) }.sign()
-        return Json.encodeToString(CatalogEnvelope("test", Base64.getEncoder().encodeToString(payload), Base64.getEncoder().encodeToString(signature))).toByteArray()
+        return Json.encodeToString(CatalogEnvelope(keyId, Base64.getEncoder().encodeToString(payload), Base64.getEncoder().encodeToString(signature))).toByteArray()
+    }
+
+    @Test fun `生产公钥表同时注册新旧名称且共用同一密钥`() {
+        val publicKeys = catalogPublicKeys()
+        assertThat(publicKeys.keys).containsExactly(
+            "infinity-catalog-p256-20260922", "nexara-catalog-p256-20260922",
+        )
+        assertThat(publicKeys.getValue("infinity-catalog-p256-20260922"))
+            .isEqualTo(publicKeys.getValue("nexara-catalog-p256-20260922"))
+        CatalogEnvelopeVerifier(publicKeys)
+    }
+
+    @Test fun `新旧公钥别名均可验签更新和重启读取缓存`() = runTest {
+        val keyIds = listOf("infinity-catalog-p256-20260922", "nexara-catalog-p256-20260922")
+        val aliasVerifier = CatalogEnvelopeVerifier(keyIds.associateWith { keys.public.encoded })
+        for (keyId in keyIds) {
+            val root = Files.createTempDirectory("catalog-alias-test").toFile()
+            try {
+                val signed = envelope(keyId = keyId)
+                assertThat(aliasVerifier.verify(signed, catalog).manifest.catalogVersion).isEqualTo(10)
+                var installed: PublishedModelCatalog? = null
+                val updater = ModelCatalogUpdater(
+                    ModelCatalogCache(root, aliasVerifier), aliasVerifier,
+                    CatalogTransport { file, _ -> if (file == "manifest.json") signed else catalog },
+                    { 0 }, {}, { installed = it },
+                )
+                updater.refresh()
+                assertThat(updater.status.value.phase).isEqualTo(CatalogUpdatePhase.CURRENT)
+                assertThat(installed?.records).hasSize(1)
+                assertThat(ModelCatalogCache(root, aliasVerifier).load()?.manifest?.catalogVersion).isEqualTo(10)
+                root.resolve("state.json").delete()
+                assertThat(ModelCatalogCache(root, aliasVerifier).load()?.manifest?.catalogVersion).isEqualTo(10)
+            } finally { root.deleteRecursively() }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            aliasVerifier.verify(envelope(keyId = "unknown-catalog-key"), catalog)
+        }
     }
 
     @Test fun `有效签名和哈希才接受目录`() {

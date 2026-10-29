@@ -48,6 +48,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -171,8 +173,8 @@ internal class ProviderModelTestCoordinator(
                     val startedAt = nowNanos()
                     val outcome = withTimeout(timeoutMillis) { probe(modelId) }
                     val terminal = when (outcome) {
-                        ProbeOutcome.Success -> ModelTestState.Success(
-                            latencyMs = ((nowNanos() - startedAt) / 1_000_000L).coerceAtLeast(0),
+                        is ProbeOutcome.Success -> ModelTestState.Success(
+                            latencyMs = ((outcome.receivedAtNanos - startedAt) / 1_000_000L).coerceAtLeast(0),
                         )
                         is ProbeOutcome.Failed -> outcome.error
                     }
@@ -229,39 +231,33 @@ internal class ProviderModelTestCoordinator(
                 ),
             )
         }
-        var error: ModelTestState.Error? = null
-        var sawPayload = false
-        var sawDone = false
-        router.createClient(resolved).sendStream(
+        return router.createClient(resolved).sendStream(
             params = StreamTextParams(
                 messages = listOf(ProtocolMessage(role = "user", content = "Reply OK.")),
                 model = resolved.remoteModelId,
-                maxOutputTokens = 1,
+                maxOutputTokens = PROBE_MAX_OUTPUT_TOKENS,
                 streamTimeout = timeoutMillis,
             ),
             config = StreamConfig(),
-        ).collect { chunk ->
+        ).mapNotNull { chunk ->
             when (chunk) {
-                is StreamChunk.Error -> {
-                    if (error == null) {
-                        error = ModelTestState.Error(chunk.code, chunk.retryAfterSeconds)
-                    }
-                }
-                is StreamChunk.TextDelta -> if (chunk.content.isNotEmpty()) sawPayload = true
-                is StreamChunk.Thinking -> if (chunk.content.isNotEmpty()) sawPayload = true
-                is StreamChunk.Completed -> sawDone = chunk.reason ==
-                    com.promenar.infinity.domain.generation.CompletionReason.END_TURN
-                else -> Unit
+                is StreamChunk.Error -> ProbeOutcome.Failed(ModelTestState.Error(chunk.code, chunk.retryAfterSeconds))
+                is StreamChunk.TextDelta -> if (chunk.content.isNotEmpty()) ProbeOutcome.Success(nowNanos()) else null
+                is StreamChunk.Thinking -> if (chunk.content.isNotEmpty()) ProbeOutcome.Success(nowNanos()) else null
+                is StreamChunk.Completed -> ProbeOutcome.Failed(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
+                else -> null
             }
-        }
-        error?.let { return ProbeOutcome.Failed(it) }
-        return if (sawPayload && sawDone) ProbeOutcome.Success
-        else ProbeOutcome.Failed(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
+        }.firstOrNull() ?: ProbeOutcome.Failed(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
     }
 
     private sealed interface ProbeOutcome {
-        data object Success : ProbeOutcome
+        data class Success(val receivedAtNanos: Long) : ProbeOutcome
         data class Failed(val error: ModelTestState.Error) : ProbeOutcome
+    }
+
+    companion object {
+        // OpenAI Responses 与百炼 Responses 的 max_output_tokens 最小值为 16。
+        const val PROBE_MAX_OUTPUT_TOKENS = 16
     }
 }
 
