@@ -13,4 +13,20 @@
     <!-- 设置首页：关于 -->
     <string name="settings_about_version">%1$s（%2$d）· %3$s</string>
     <string name="settings_about_commit">提交 %1$s</string>
+    <!-- 模型管理：规格库（模型规格目录；“同步”只指从服务商拉模型列表） -->
+    <string name="model_spec_update">更新规格库</string>
+    <string name="model_spec_updating">正在更新规格库…</string>
+    <plurals name="model_spec_version">
+        <item quantity="other">当前 %1$s 版 · %2$s 条</item>
+    </plurals>
+    <string name="model_spec_bundled">内置快照</string>
+    <string name="model_spec_version_unapplied">新版本未应用</string>
+    <string name="model_spec_updated">规格库已更新到 %1$s 版</string>
+    <string name="model_spec_up_to_date">规格库已是最新（%1$s 版）</string>
+    <string name="model_spec_failed_update">规格库更新失败：无法下载或校验新版本</string>
+    <string name="model_spec_failed_apply">新规格库已下载，但应用到模型时失败</string>
+    <string name="model_spec_kept">沿用 %1$s 版</string>
+    <string name="model_spec_kept_bundled">沿用内置快照</string>
+    <string name="model_spec_kept_unknown">沿用现有版本</string>
+    <string name="model_spec_retry">重试</string>
 </resources>

@@ -13,4 +13,21 @@
     <!-- 设置首页：关于 -->
     <string name="settings_about_version">%1$s (%2$d) · %3$s</string>
     <string name="settings_about_commit">Commit %1$s</string>
+    <!-- Model management: spec library (model spec catalog; "sync" only means pulling the provider's model list) -->
+    <string name="model_spec_update">Update spec library</string>
+    <string name="model_spec_updating">Updating spec library…</string>
+    <plurals name="model_spec_version">
+        <item quantity="one">Version %1$s · %2$s record</item>
+        <item quantity="other">Version %1$s · %2$s records</item>
+    </plurals>
+    <string name="model_spec_bundled">Bundled snapshot</string>
+    <string name="model_spec_version_unapplied">New version not applied</string>
+    <string name="model_spec_updated">Spec library updated to %1$s</string>
+    <string name="model_spec_up_to_date">Spec library is up to date (%1$s)</string>
+    <string name="model_spec_failed_update">Couldn\'t update the spec library: download or verification failed</string>
+    <string name="model_spec_failed_apply">The new spec library was downloaded but couldn\'t be applied to models</string>
+    <string name="model_spec_kept">Keeping %1$s</string>
+    <string name="model_spec_kept_bundled">Keeping the bundled snapshot</string>
+    <string name="model_spec_kept_unknown">Keeping the current version</string>
+    <string name="model_spec_retry">Retry</string>
 </resources>

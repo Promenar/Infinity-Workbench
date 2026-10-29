@@ -2,6 +2,7 @@ package com.promenar.infinity.ui.settings
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -35,8 +37,10 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,6 +50,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,8 +87,6 @@ import com.promenar.infinity.R
 import com.promenar.infinity.data.model.ModelInfo
 import com.promenar.infinity.navigation.NavDestinations
 import com.promenar.infinity.ui.common.BettboxListGroup
-import com.promenar.infinity.ui.common.ModelBrandIcon
-import com.promenar.infinity.ui.common.ModelCapabilityBadges
 import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.ui.common.InfinityDropdownMenu
 import com.promenar.infinity.ui.common.InfinityGroupDivider
@@ -92,9 +97,14 @@ import com.promenar.infinity.ui.common.InfinityModalSheet
 import com.promenar.infinity.ui.common.InfinitySearchBar
 import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
 import com.promenar.infinity.ui.common.InfinitySheetHeight
+import com.promenar.infinity.ui.common.InfinitySnackbar
+import com.promenar.infinity.ui.common.InfinitySnackbarData
 import com.promenar.infinity.ui.common.InfinityStatusKind
 import com.promenar.infinity.ui.common.InfinityStatusStrip
 import com.promenar.infinity.ui.common.InfinitySwitch
+import com.promenar.infinity.ui.common.ModelBrandIcon
+import com.promenar.infinity.ui.common.ModelCapabilityBadges
+import com.promenar.infinity.ui.common.SnackbarType
 import com.promenar.infinity.ui.common.bettboxListGroupItem
 import com.promenar.infinity.ui.common.status.NoticeSeverity
 import com.promenar.infinity.ui.common.status.UiStatusNotice
@@ -105,6 +115,7 @@ import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.forInput
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.launch
 
 internal data class ProviderModelsScreenState(
     val providerName: String,
@@ -223,6 +234,17 @@ internal fun ProviderModelsScreenContent(
     var backProgress by remember { mutableFloatStateOf(0f) }
     // 列表滚动位置提到切换容器之外，从编辑页返回时停在原处。
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var completion by remember { mutableStateOf<SpecLibraryCompletion?>(null) }
+    val specLibrary = rememberSpecLibraryUi(state.catalogStatus) { completion = it }
+    completion?.let { done ->
+        val message = specLibraryCompletionText(done)
+        LaunchedEffect(done) {
+            completion = null
+            scope.launch { snackbarHostState.showSnackbar(message) }
+        }
+    }
 
     // 选中项始终从最新同步结果派生，删除或同步移除后不会继续编辑旧快照。
     val selectedModel = remember(state.models, selectedModelId) {
@@ -253,51 +275,61 @@ internal fun ProviderModelsScreenContent(
         }
     }
 
-    AnimatedContent(
-        targetState = selectedModelId,
-        transitionSpec = { InfinityMotion.sharedAxisX(forward = targetState != null) },
-        contentAlignment = Alignment.TopStart,
-        label = "provider_models_editor_switch",
-    ) { editingId ->
-        val editing = editingId?.let { id -> state.models.firstOrNull { it.id == id } }
-        if (editing != null) {
-            val density = LocalDensity.current
-            ModelEditorScreen(
-                model = editing,
-                testState = state.modelTestStates[editing.id] ?: ModelTestState.Idle,
-                onClose = { selectedModelId = null },
-                onUpdate = actions.onUpdate,
-                onTest = { actions.onTest(editing.id) },
-                onCancel = { actions.onCancelTest(editing.id) },
-                onDelete = {
-                    actions.onDelete(editing.id)
-                    selectedModelId = null
-                },
-                // 预测性返回：随手势右移并略微缩小，松手后由切换动效退回列表。
-                modifier = Modifier.graphicsLayer {
-                    val p = backProgress
-                    translationX = with(density) { 32.dp.toPx() } * p
-                    scaleX = 1f - 0.06f * p
-                    scaleY = 1f - 0.06f * p
-                },
-            )
-        } else {
-            ProviderModelsListPage(
-                state = state,
-                actions = actions,
-                filteredModels = filteredModels,
-                searchQuery = searchQuery,
-                onSearchQuery = { searchQuery = it },
-                listState = listState,
-                onNavigateBack = onNavigateBack,
-                onAdd = { showAddDialog = true },
-                onDeleteAll = { showDeleteAllDialog = true },
-                onRowClick = { model ->
-                    focusManager.clearFocus()
-                    keyboardController?.hide()
-                    selectedModelId = model.id
-                },
-            )
+    Box(Modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = selectedModelId,
+            transitionSpec = { InfinityMotion.sharedAxisX(forward = targetState != null) },
+            contentAlignment = Alignment.TopStart,
+            label = "provider_models_editor_switch",
+        ) { editingId ->
+            val editing = editingId?.let { id -> state.models.firstOrNull { it.id == id } }
+            if (editing != null) {
+                val density = LocalDensity.current
+                ModelEditorScreen(
+                    model = editing,
+                    testState = state.modelTestStates[editing.id] ?: ModelTestState.Idle,
+                    onClose = { selectedModelId = null },
+                    onUpdate = actions.onUpdate,
+                    onTest = { actions.onTest(editing.id) },
+                    onCancel = { actions.onCancelTest(editing.id) },
+                    onDelete = {
+                        actions.onDelete(editing.id)
+                        selectedModelId = null
+                    },
+                    // 预测性返回：随手势右移并略微缩小，松手后由切换动效退回列表。
+                    modifier = Modifier.graphicsLayer {
+                        val p = backProgress
+                        translationX = with(density) { 32.dp.toPx() } * p
+                        scaleX = 1f - 0.06f * p
+                        scaleY = 1f - 0.06f * p
+                    },
+                )
+            } else {
+                ProviderModelsListPage(
+                    state = state,
+                    actions = actions,
+                    filteredModels = filteredModels,
+                    searchQuery = searchQuery,
+                    onSearchQuery = { searchQuery = it },
+                    listState = listState,
+                    onNavigateBack = onNavigateBack,
+                    onAdd = { showAddDialog = true },
+                    onDeleteAll = { showDeleteAllDialog = true },
+                    onRowClick = { model ->
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        selectedModelId = model.id
+                    },
+                    specLibrary = specLibrary,
+                )
+            }
+        }
+        // 规格库更新完成的提示放在切换容器之外，编辑页打开时同样可见。
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+        ) { data ->
+            InfinitySnackbar(InfinitySnackbarData(data.visuals.message, SnackbarType.SUCCESS))
         }
     }
 
@@ -345,6 +377,7 @@ private fun ProviderModelsListPage(
     onAdd: () -> Unit,
     onDeleteAll: () -> Unit,
     onRowClick: (ModelInfo) -> Unit,
+    specLibrary: SpecLibraryUi?,
 ) {
     InfinitySettingsPageLayout(
         title = state.providerName,
@@ -356,10 +389,12 @@ private fun ProviderModelsListPage(
                 onEditProvider = actions.onEditProvider,
                 onDisableAll = actions.onDisableAll,
                 onDeleteAll = onDeleteAll,
+                specLibrary = specLibrary,
+                onUpdateSpecLibrary = actions.onRefreshCatalog,
             )
         },
     ) { contentPadding ->
-        // 固定搜索栏与同步栏；状态条、模型与目录脚注随同一列表滚动，列表底部延伸到系统导航栏后方。
+        // 固定搜索栏、同步栏与规格库失败提示；状态条与模型随同一列表滚动，列表底部延伸到系统导航栏后方。
         val layoutDirection = LocalLayoutDirection.current
         Column(
             modifier = Modifier
@@ -384,6 +419,20 @@ private fun ProviderModelsListPage(
                 lastSyncAtMillis = state.lastSyncAtMillis,
                 onRefresh = actions.onRefresh,
             )
+            val failure = specLibrary?.failure
+            AnimatedVisibility(visible = failure != null) {
+                // 收起动画期间沿用最后一次的失败内容。
+                val shown = remember { mutableStateOf<SpecLibraryUi?>(null) }
+                if (failure != null) shown.value = specLibrary
+                shown.value?.let { ui ->
+                    ModelSpecLibraryFailureNotice(
+                        failure = ui.failure ?: return@let,
+                        kept = ui.kept,
+                        onRetry = actions.onRefreshCatalog,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+            }
 
             val reducedState = reduceProviderModelsListState(
                 isLoading = state.isFetching,
@@ -471,11 +520,6 @@ private fun ProviderModelsListPage(
                     }
                 }
 
-                state.catalogStatus?.let { catalog ->
-                    item("catalog") {
-                        ModelCatalogStatusLine(catalog = catalog, onRefresh = actions.onRefreshCatalog)
-                    }
-                }
             }
         }
     }
@@ -588,13 +632,15 @@ internal fun AddCustomModelForm(
     }
 }
 
-/** 顶栏动作：+ 添加模型；⋮ 内为编辑提供商、全部禁用、全部删除。 */
+/** 顶栏动作：+ 添加模型；⋮ 内为编辑提供商、全部禁用、更新规格库、全部删除。 */
 @Composable
 internal fun ProviderModelsTopActions(
     onAdd: () -> Unit,
     onEditProvider: () -> Unit,
     onDisableAll: () -> Unit,
     onDeleteAll: () -> Unit,
+    specLibrary: SpecLibraryUi? = null,
+    onUpdateSpecLibrary: () -> Unit = {},
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     IconButton(
@@ -632,6 +678,10 @@ internal fun ProviderModelsTopActions(
                 },
                 modifier = Modifier.testTag(UiTags.PROVIDER_MODELS_ACTION_DISABLE_ALL),
             )
+            if (specLibrary != null) {
+                InfinityMenuDivider()
+                ModelSpecLibraryMenuItem(specLibrary, onUpdate = onUpdateSpecLibrary)
+            }
             InfinityMenuDivider()
             InfinityMenuItem(
                 leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(20.dp)) },
@@ -645,6 +695,41 @@ internal fun ProviderModelsTopActions(
             )
         }
     }
+}
+
+/**
+ * ⋮ 菜单的“更新规格库”：第二行是当前版本。点按后菜单不收起，原地显示进度，
+ * 更新中再次点按无效；完成后由页面底部提示新版本。
+ */
+@Composable
+internal fun ModelSpecLibraryMenuItem(specLibrary: SpecLibraryUi, onUpdate: () -> Unit) {
+    val updating = specLibrary.updating
+    val title = stringResource(if (updating) R.string.model_spec_updating else R.string.model_spec_update)
+    val version = specLibraryVersionText(specLibrary.current)
+    InfinityMenuItem(
+        leadingIcon = {
+            if (updating) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Rounded.Update, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title)
+                Text(
+                    version,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        onClick = { if (!updating) onUpdate() },
+        haptic = if (updating) null else com.promenar.infinity.ui.common.InfinityHapticEvent.SELECTION,
+        modifier = Modifier
+            .semantics { if (updating) stateDescription = title }
+            .testTag(UiTags.PROVIDER_MODELS_ACTION_SPEC_LIBRARY),
+    )
 }
 
 /** 搜索栏下一行：左侧“x / y 个已启用”与上次同步时间，右侧同步按钮（同步中按钮内转圈）。 */
@@ -794,60 +879,44 @@ internal fun ProviderModelsModelRow(
 
 private val ModelTileSize = 36.dp
 
-/** 模型目录脚注：放在列表末尾，一行说明加更新入口；失败时补一行错误。 */
+/** 规格库更新失败的浅色提示：原因、沿用的版本与“重试”。正常与更新中不显示。 */
 @Composable
-private fun ModelCatalogStatusLine(
-    catalog: com.promenar.infinity.data.model.catalog.CatalogUpdateStatus,
-    onRefresh: () -> Unit,
+internal fun ModelSpecLibraryFailureNotice(
+    failure: SpecLibraryFailure,
+    kept: SpecLibraryVersion?,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val updating = catalog.phase == com.promenar.infinity.data.model.catalog.CatalogUpdatePhase.UPDATING
-    val errorRes = when (catalog.phase) {
-        com.promenar.infinity.data.model.catalog.CatalogUpdatePhase.FAILED -> R.string.model_catalog_failed
-        com.promenar.infinity.data.model.catalog.CatalogUpdatePhase.APPLY_FAILED -> R.string.model_catalog_apply_failed
-        else -> null
-    }
-    Column(
-        modifier = Modifier
+    val scheme = MaterialTheme.colorScheme
+    val reason = specLibraryFailureText(failure)
+    val keptText = specLibraryKeptText(kept)
+    Row(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(start = InfinitySpacing.RowHorizontal, top = 12.dp)
-            .testTag(UiTags.PROVIDER_MODELS_CATALOG_FOOTER),
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.errorContainer.copy(alpha = 0.45f))
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)
+            .testTag(UiTags.PROVIDER_MODELS_SPEC_FAILURE),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            InfinityMetaLine(
-                segments = if (catalog.cached) {
-                    listOf(
-                        stringResource(R.string.model_catalog_label),
-                        catalog.generatedAt.orEmpty().take(10),
-                        stringResource(R.string.model_catalog_records, catalog.recordCount),
-                    )
-                } else {
-                    listOf(
-                        stringResource(R.string.model_catalog_label),
-                        stringResource(R.string.model_catalog_bundled_snapshot),
-                    )
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                onClick = onRefresh,
-                enabled = !updating,
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.testTag("model_catalog_refresh"),
-            ) {
-                Text(
-                    stringResource(if (updating) R.string.model_catalog_updating else R.string.model_catalog_update),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
+        Icon(
+            Icons.Rounded.ErrorOutline,
+            contentDescription = null,
+            tint = scheme.error,
+            modifier = Modifier.size(18.dp),
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(reason, style = MaterialTheme.typography.bodySmall, color = scheme.onSurface)
+            Text(keptText, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
         }
-        if (errorRes != null) {
-            Text(
-                stringResource(errorRes),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+        TextButton(
+            onClick = onRetry,
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag(UiTags.PROVIDER_MODELS_SPEC_RETRY),
+        ) {
+            Text(stringResource(R.string.model_spec_retry), style = MaterialTheme.typography.labelLarge)
         }
     }
 }
