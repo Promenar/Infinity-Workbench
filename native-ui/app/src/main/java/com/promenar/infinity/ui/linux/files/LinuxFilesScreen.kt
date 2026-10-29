@@ -116,6 +116,16 @@ private const val OUTCOME_VISIBLE_MS = 4_000L
 /** 读取超过这个时长才显示进度条，常见的毫秒级读取不闪烁。 */
 private const val LOADING_INDICATOR_DELAY_MS = 250
 
+/**
+ * 目录选择模式：复用浏览页选一个 rootfs 目录。只能进入目录和新建文件夹，点文件、多选、终端与更多菜单不出现；
+ * 底部换成“取消 / 选这个目录”。
+ */
+class LinuxDirectoryPicker(
+    val title: String,
+    val confirmLabel: String,
+    val onPick: (path: String) -> Unit,
+)
+
 /** 目录层级：根为 0，每级子目录加 1；尚未读到列表时视为根。 */
 private fun linuxPathDepth(path: String?): Int = path?.split('/')?.count(String::isNotEmpty) ?: 0
 
@@ -135,12 +145,18 @@ fun LinuxFilesScreen(
     onOpenEnvironment: () -> Unit,
     initialPath: String = LINUX_HOME_PATH,
     onOpenFile: ((path: String) -> Unit)? = null,
+    picker: LinuxDirectoryPicker? = null,
 ) {
     val linux = (LocalContext.current.applicationContext as InfinityApplication).linux
     val viewModel: LinuxFilesViewModel = viewModel(
-        key = "linux_files",
+        // 选择器可能挂在 Activity 级（导入面板），与浏览页分开保存状态。
+        key = if (picker != null) "linux_files_picker" else "linux_files",
         factory = LinuxFilesViewModel.factory(linux.files, linux.runtime, initialPath),
     )
+    if (picker != null) {
+        // Activity 级视图模型会保留上次的目录；每次打开选择器都从给定起点开始。
+        LaunchedEffect(viewModel) { viewModel.navigate(initialPath) }
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     var openedFile by rememberSaveable { mutableStateOf<String?>(null) }
     LifecycleResumeEffect(viewModel) {
@@ -165,6 +181,7 @@ fun LinuxFilesScreen(
             }
             LinuxFilesContent(
                 state = state,
+                picker = picker,
                 actions = LinuxFilesActions(
                     onBack = onBack,
                     onNavigate = viewModel::navigate,
@@ -175,9 +192,15 @@ fun LinuxFilesScreen(
                     onToggleHidden = viewModel::toggleShowHidden,
                     onCreate = viewModel::requestCreate,
                     onOpen = { entry ->
-                        viewModel.open(entry)?.let { path -> if (onOpenFile != null) onOpenFile(path) else openedFile = path }
+                        viewModel.open(entry)?.let { path ->
+                            when {
+                                picker != null -> Unit
+                                onOpenFile != null -> onOpenFile(path)
+                                else -> openedFile = path
+                            }
+                        }
                     },
-                    onToggleSelect = viewModel::toggleSelection,
+                    onToggleSelect = { path -> if (picker == null) viewModel.toggleSelection(path) },
                     onSelectAll = viewModel::selectAll,
                     onClearSelection = viewModel::clearSelection,
                     onCopy = viewModel::copySelection,
@@ -243,12 +266,13 @@ internal fun LinuxFilesContent(
     state: LinuxFilesUiState,
     actions: LinuxFilesActions,
     modifier: Modifier = Modifier,
+    picker: LinuxDirectoryPicker? = null,
 ) {
     var searchActive by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
     Surface(color = MaterialTheme.colorScheme.background, modifier = modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().systemBarsPadding()) {
             InfinitySearchTopBar(
-                title = stringResource(R.string.linux_files_title),
+                title = picker?.title ?: stringResource(R.string.linux_files_title),
                 search = if (state.ready) {
                     InfinityPageSearch(
                         query = state.query,
@@ -263,7 +287,15 @@ internal fun LinuxFilesContent(
                 },
                 onBack = actions.onBack,
                 actions = {
-                    if (state.ready) {
+                    if (state.ready && picker != null) {
+                        IconButton(
+                            onClick = { actions.onCreate(true) },
+                            enabled = !state.operating && state.error == null,
+                            modifier = Modifier.size(InfinitySpacing.MinimumTouchTarget).testTag(UiTags.LINUX_FILES_NEW),
+                        ) {
+                            Icon(Icons.Rounded.CreateNewFolder, contentDescription = stringResource(R.string.linux_files_new_folder))
+                        }
+                    } else if (state.ready) {
                         LinuxCreateButton(enabled = !state.selecting && !state.operating && state.error == null, onCreate = actions.onCreate)
                         LinuxMoreMenu(state, actions)
                     }
@@ -279,7 +311,7 @@ internal fun LinuxFilesContent(
             AnimatedVisibility(visible = state.operating, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = InfinitySpacing.Large))
             }
-            LinuxBottomBar(state, actions)
+            if (picker != null) LinuxPickerBar(state, picker, actions) else LinuxBottomBar(state, actions)
         }
     }
     LinuxFilesDialogs(state, actions)
@@ -707,6 +739,41 @@ private fun linuxEntryMeta(entry: LinuxFileEntry, nowMs: Long): String {
         if (linuxLooksBinaryByName(entry.name)) parts += stringResource(R.string.linux_files_meta_binary)
     }
     return parts.joinToString(" · ")
+}
+
+/** 选择模式的底栏：当前目录与“取消 / 选这个目录”；目录还没读完或读取失败时不能确认。 */
+@Composable
+private fun LinuxPickerBar(state: LinuxFilesUiState, picker: LinuxDirectoryPicker, actions: LinuxFilesActions) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.Small)
+            .testTag(UiTags.LINUX_FILES_PICKER_BAR),
+    ) {
+        Text(
+            state.path,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = InfinityMonospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(top = InfinitySpacing.XSmall),
+        ) {
+            TextButton(onClick = actions.onBack, modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget)) {
+                Text(stringResource(android.R.string.cancel))
+            }
+            Button(
+                onClick = { picker.onPick(state.path) },
+                enabled = !state.stale && !state.loading && state.error == null && !state.operating,
+                modifier = Modifier
+                    .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+                    .testTag(UiTags.LINUX_FILES_PICKER_CONFIRM),
+            ) { Text(picker.confirmLabel) }
+        }
+    }
 }
 
 @Composable

@@ -28,7 +28,8 @@ import com.promenar.infinity.R
 import com.promenar.infinity.share.core.ShareIndexStatus
 import com.promenar.infinity.share.core.ShareImportItem
 import com.promenar.infinity.share.core.ShareImportStatus
-import com.promenar.infinity.share.core.ShareImportTarget
+import com.promenar.infinity.share.core.ShareImportOptions
+import com.promenar.infinity.share.core.ShareLinuxAvailability
 import com.promenar.infinity.share.core.ShareRejectReason
 import com.promenar.infinity.share.core.ShareTargetKind
 import com.promenar.infinity.ui.testing.UiTags
@@ -45,15 +46,13 @@ class ShareImportSheetTest {
     fun targetMustBeExplicitAndPerItemFailureIsVisible() {
         var imported = false
         rule.setContent {
-            var selected by remember { mutableStateOf<String?>(null) }
+            var selected by remember { mutableStateOf<ShareTargetKind?>(null) }
             InfinityTheme {
                 ShareImportSheet(
                     state = ShareImportUiState(
                         visible = true,
-                        selectedWorkspaceRootUuid = selected,
-                        targets = listOf(
-                            ShareImportTarget("root", "Knowledge Base", ShareTargetKind.KnowledgeBase)
-                        ),
+                        selectedKind = selected,
+                        options = ShareImportOptions(null, "root", ShareLinuxAvailability.Unsupported),
                         items = listOf(
                             ShareImportItem(
                                 uri = Uri.parse("content://fixture/unsafe.pdf"),
@@ -133,10 +132,8 @@ class ShareImportSheetTest {
                         ShareImportSheet(
                             state = ShareImportUiState(
                                 visible = true,
-                                selectedWorkspaceRootUuid = "root",
-                                targets = listOf(
-                                    ShareImportTarget("root", "Knowledge Base", ShareTargetKind.KnowledgeBase),
-                                ),
+                                selectedKind = ShareTargetKind.KnowledgeBase,
+                                options = ShareImportOptions(null, "root", ShareLinuxAvailability.Unsupported),
                                 items = listOf(
                                     ShareImportItem(
                                         uri = Uri.parse("content://fixture/fail.pdf"),

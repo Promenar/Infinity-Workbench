@@ -8,7 +8,11 @@ import com.promenar.infinity.ShareRequest
 import com.promenar.infinity.share.core.ShareImportBatchResult
 import com.promenar.infinity.share.core.ShareImportItem
 import com.promenar.infinity.share.core.ShareImportStatus
-import com.promenar.infinity.share.core.ShareImportTarget
+import com.promenar.infinity.share.core.ShareImportDestination
+import com.promenar.infinity.share.core.ShareImportOptions
+import com.promenar.infinity.share.core.ShareKnowledgeFolder
+import com.promenar.infinity.share.core.ShareLinuxAvailability
+import com.promenar.infinity.share.core.ShareSessionChoice
 import com.promenar.infinity.share.core.ShareTargetKind
 import com.promenar.infinity.share.core.SharedFileImporter
 import io.mockk.*
@@ -73,10 +77,10 @@ class ShareImportViewModelTest {
         val viewModel = ShareImportViewModel(
             queue = queue,
             importer = importer,
-            targetProvider = {
+            targets = FakeTargets(options = {
                 if (attempts.incrementAndGet() == 1) throw IOException("targets unavailable")
-                listOf(ShareImportTarget(ROOT, "知识库", ShareTargetKind.KnowledgeBase))
-            },
+                KNOWLEDGE_ONLY
+            }),
         )
 
         viewModel.presentNext()
@@ -92,7 +96,7 @@ class ShareImportViewModelTest {
         assertThat(viewModel.state.value.presentation).isEqualTo(SharePresentationState.Visible)
         coVerify(exactly = 2) { queue.claimNextDurably() }
         coVerify(exactly = 1) { importer.inspect(request) }
-        coVerify(exactly = 0) { importer.import(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { importer.import(any(), any<ShareImportDestination>(), any()) }
     }
 
     @Test
@@ -110,7 +114,7 @@ class ShareImportViewModelTest {
         assertThat(fixture.viewModel.state.value.visible).isFalse()
         assertThat(fixture.viewModel.state.value.error).isNull()
         coVerify(exactly = 2) { fixture.queue.nackDurably("lease") }
-        coVerify(exactly = 0) { fixture.importer.import(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { fixture.importer.import(any(), any<ShareImportDestination>(), any()) }
     }
 
     @Test
@@ -135,14 +139,8 @@ class ShareImportViewModelTest {
         val pending = ShareImportItem(uri, "shared.txt", "text/plain", 4)
         val result = CompletableDeferred<ShareImportBatchResult>()
         coEvery { importer.inspect(any()) } returns listOf(pending)
-        coEvery { importer.import(any(), ROOT, null, ROOT) } coAnswers { result.await() }
-        val viewModel = ShareImportViewModel(
-            queue,
-            importer,
-            targetProvider = {
-                listOf(ShareImportTarget(ROOT, "知识库", ShareTargetKind.KnowledgeBase))
-            },
-        )
+        coEvery { importer.import(any(), ROOT_DESTINATION, null) } coAnswers { result.await() }
+        val viewModel = ShareImportViewModel(queue, importer, targets = FakeTargets())
 
         repeat(10) { viewModel.presentNext() }
         assertThat(viewModel.state.value.visible).isTrue()
@@ -216,6 +214,193 @@ class ShareImportViewModelTest {
             .isEqualTo(ShareIndexStatus.Failed)
     }
 
+    @Test
+    fun `有当前会话时默认选当前会话，没有时选资料库根目录`() = runTest(dispatcher) {
+        val withSession = selectionFixture(FakeTargets(options = { WITH_SESSION }))
+        withSession.viewModel.presentNext()
+        assertThat(withSession.viewModel.state.value.selectedKind).isEqualTo(ShareTargetKind.CurrentSession)
+
+        val knowledgeOnly = selectionFixture(FakeTargets())
+        knowledgeOnly.viewModel.presentNext()
+        assertThat(knowledgeOnly.viewModel.state.value.selectedKind).isEqualTo(ShareTargetKind.KnowledgeBase)
+        assertThat(knowledgeOnly.viewModel.state.value.canImportTo).isTrue()
+        knowledgeOnly.viewModel.selectTarget(ShareTargetKind.CurrentSession)
+        assertThat(knowledgeOnly.viewModel.state.value.selectedKind).isEqualTo(ShareTargetKind.KnowledgeBase)
+    }
+
+    @Test
+    fun `当前会话导入到它的本会话文件夹并记录落点`() = runTest(dispatcher) {
+        val fixture = selectionFixture(FakeTargets(options = { WITH_SESSION }))
+        fixture.viewModel.presentNext()
+        fixture.viewModel.importAll()
+
+        val expected = ShareImportDestination.SessionFolder(CURRENT.sessionId, "root-${CURRENT.sessionId}", current = true)
+        coVerify { fixture.queue.recordTargetDurably("request", expected) }
+        coVerify { fixture.importer.import(any(), expected, null) }
+    }
+
+    @Test
+    fun `其他会话必须用户亲手选，选之前不能导入`() = runTest(dispatcher) {
+        val fixture = selectionFixture(FakeTargets(options = { WITH_SESSION }))
+        fixture.viewModel.presentNext()
+
+        fixture.viewModel.selectTarget(ShareTargetKind.OtherSession)
+        val state = fixture.viewModel.state.value
+        assertThat(state.selectedKind).isEqualTo(ShareTargetKind.OtherSession)
+        assertThat(state.otherSession).isNull()
+        assertThat(state.canImportTo).isFalse()
+        // 会话列表打开但不预选；当前会话不在列表里。
+        assertThat(state.sessionPicker?.sessions).containsExactly(OTHER)
+        fixture.viewModel.importAll()
+        coVerify(exactly = 0) { fixture.importer.import(any(), any<ShareImportDestination>(), any()) }
+
+        fixture.viewModel.pickSession(OTHER)
+        assertThat(fixture.viewModel.state.value.sessionPicker).isNull()
+        assertThat(fixture.viewModel.state.value.canImportTo).isTrue()
+        fixture.viewModel.importAll()
+        coVerify {
+            fixture.importer.import(any(), ShareImportDestination.SessionFolder(OTHER.sessionId, "root-${OTHER.sessionId}", current = false), null)
+        }
+    }
+
+    @Test
+    fun `会话列表之外的会话不能被选中`() = runTest(dispatcher) {
+        val fixture = selectionFixture(FakeTargets(options = { WITH_SESSION }))
+        fixture.viewModel.presentNext()
+        fixture.viewModel.pickSession(OTHER)
+        assertThat(fixture.viewModel.state.value.otherSession).isNull()
+
+        fixture.viewModel.openSessionPicker()
+        fixture.viewModel.pickSession(ShareSessionChoice("forged", "伪造", 0L))
+        assertThat(fixture.viewModel.state.value.otherSession).isNull()
+    }
+
+    @Test
+    fun `Linux 不可用时这一项不能选`() = runTest(dispatcher) {
+        AVAILABILITY_NOT_READY.forEach { availability ->
+            val fixture = selectionFixture(FakeTargets(options = { WITH_SESSION.copy(linux = availability) }))
+            fixture.viewModel.presentNext()
+            fixture.viewModel.selectTarget(ShareTargetKind.Linux)
+            fixture.viewModel.pickLinuxDirectory("/root/inbox")
+            assertThat(fixture.viewModel.state.value.selectedKind).isEqualTo(ShareTargetKind.CurrentSession)
+            assertThat(fixture.viewModel.state.value.linuxDirectory).isNull()
+        }
+    }
+
+    @Test
+    fun `Linux 默认落到主目录，选目录后导入到该目录`() = runTest(dispatcher) {
+        val fixture = selectionFixture(FakeTargets(options = { WITH_SESSION.copy(linux = ShareLinuxAvailability.Ready) }))
+        fixture.viewModel.presentNext()
+        fixture.viewModel.selectTarget(ShareTargetKind.Linux)
+        assertThat(fixture.viewModel.state.value.linuxDirectory).isEqualTo("/root")
+
+        fixture.viewModel.pickLinuxDirectory("/root/inbox")
+        fixture.viewModel.importAll()
+
+        val expected = ShareImportDestination.LinuxDirectory("/root/inbox")
+        coVerify { fixture.queue.recordTargetDurably("request", expected) }
+        coVerify { fixture.importer.import(any(), expected, null) }
+    }
+
+    @Test
+    fun `资料库默认根目录，也能逐级选子文件夹`() = runTest(dispatcher) {
+        val fixture = selectionFixture(FakeTargets())
+        fixture.viewModel.presentNext()
+
+        fixture.viewModel.openFolderPicker()
+        assertThat(fixture.viewModel.state.value.folderPicker?.folders).containsExactly(DOCS)
+        fixture.viewModel.enterFolder(DOCS)
+        assertThat(fixture.viewModel.state.value.folderPicker?.folders).containsExactly(FINANCE)
+        fixture.viewModel.enterFolder(FINANCE)
+        fixture.viewModel.folderUp()
+        assertThat(fixture.viewModel.state.value.folderPicker?.trail).containsExactly(DOCS)
+        fixture.viewModel.enterFolder(FINANCE)
+        fixture.viewModel.confirmFolder()
+
+        assertThat(fixture.viewModel.state.value.folderPicker).isNull()
+        assertThat(fixture.viewModel.state.value.knowledgeFolder).isEqualTo(FINANCE)
+        fixture.viewModel.importAll()
+        coVerify {
+            fixture.importer.import(any(), ShareImportDestination.KnowledgeFolder(ROOT, FINANCE.uuid, FINANCE.path), null)
+        }
+    }
+
+    @Test
+    fun `收件箱里记录的落点在仍可用时恢复`() = runTest(dispatcher) {
+        val saved = listOf(
+            ShareImportDestination.SessionFolder(OTHER.sessionId, "root-${OTHER.sessionId}", current = false) to ShareTargetKind.OtherSession,
+            ShareImportDestination.LinuxDirectory("/root/inbox") to ShareTargetKind.Linux,
+            ShareImportDestination.KnowledgeFolder(ROOT, FINANCE.uuid, FINANCE.path) to ShareTargetKind.KnowledgeBase,
+        )
+        saved.forEach { (destination, kind) ->
+            val fixture = selectionFixture(
+                FakeTargets(options = { WITH_SESSION.copy(linux = ShareLinuxAvailability.Ready) }),
+                saved = destination,
+            )
+            fixture.viewModel.presentNext()
+            val state = fixture.viewModel.state.value
+            assertThat(state.selectedKind).isEqualTo(kind)
+            assertThat(state.canImportTo).isTrue()
+            fixture.viewModel.importAll()
+            coVerify { fixture.importer.import(any(), destination, null) }
+        }
+        // Linux 已不可用时不恢复，退回当前会话。
+        val fallback = selectionFixture(FakeTargets(options = { WITH_SESSION }), saved = ShareImportDestination.LinuxDirectory("/root/inbox"))
+        fallback.viewModel.presentNext()
+        assertThat(fallback.viewModel.state.value.selectedKind).isEqualTo(ShareTargetKind.CurrentSession)
+    }
+
+    private fun selectionFixture(targets: FakeTargets, saved: ShareImportDestination? = null): Fixture {
+        val uri = Uri.parse("content://fixture/shared.sqlite")
+        val request = ShareRequest(
+            uris = listOf(uri),
+            mimeType = "application/vnd.sqlite3",
+            fingerprint = "0".repeat(64),
+            canonicalSizeBytes = 1,
+            requestId = "request",
+        )
+        val lease = ShareLease("lease", request)
+        val queue = mockk<ShareIntentQueue>()
+        every { queue.durablePendingCount } returns MutableStateFlow(1)
+        coJustRun { queue.refreshDurableCount() }
+        coEvery { queue.claimNextDurably() } returns lease
+        coJustRun { queue.recordTargetDurably(any(), any<ShareImportDestination>()) }
+        coJustRun { queue.recordCreatedDurably(any(), any()) }
+        coEvery { queue.ackDurably(any()) } returns true
+        coEvery { queue.nackDurably(any()) } returns true
+        val pending = ShareImportItem(uri, "shared.sqlite", "application/vnd.sqlite3", 4, parseable = false)
+        val importer = mockk<SharedFileImporter>()
+        coEvery { importer.inspect(any()) } returns listOf(pending)
+        coEvery { importer.import(any(), any<ShareImportDestination>(), any()) } returns
+            ShareImportBatchResult(listOf(pending.copy(status = ShareImportStatus.Created)))
+        val viewModel = ShareImportViewModel(queue, importer, targets = targets)
+        if (saved != null) {
+            // 持久收件箱恢复出的请求带着上次的落点。
+            val restored = mockk<ShareRequest>()
+            every { restored.uris } returns request.uris
+            every { restored.mimeType } returns request.mimeType
+            every { restored.requestId } returns request.requestId
+            every { restored.targetDestination } returns saved
+            coEvery { queue.claimNextDurably() } returns ShareLease("lease", restored)
+        }
+        return Fixture(viewModel, queue, importer, MutableStateFlow(VectorizationQueue.QueueState(emptyList(), null, false, false)))
+    }
+
+    private class FakeTargets(
+        private val options: suspend () -> ShareImportOptions = { KNOWLEDGE_ONLY },
+    ) : ShareImportTargetSource {
+        override suspend fun options() = options.invoke()
+        override suspend fun sessions(excludeSessionId: String?) =
+            listOf(CURRENT, OTHER).filter { it.sessionId != excludeSessionId }
+        override suspend fun knowledgeFolders(parentUuid: String) = when (parentUuid) {
+            ROOT -> listOf(DOCS)
+            DOCS.uuid -> listOf(FINANCE)
+            else -> emptyList()
+        }
+        override suspend fun sessionDestination(sessionId: String, current: Boolean) =
+            ShareImportDestination.SessionFolder(sessionId, "root-$sessionId", current)
+    }
+
     private fun fixture(failurePoint: FailurePoint?): Fixture {
         val uri = Uri.parse("content://fixture/shared.txt")
         val request = ShareRequest(
@@ -252,15 +437,15 @@ class ShareImportViewModelTest {
         )
         coEvery { importer.inspect(any()) } returns listOf(created)
         if (failurePoint == FailurePoint.Import) {
-            coEvery { importer.import(any(), any(), null, any()) } throws IOException("import")
+            coEvery { importer.import(any(), any<ShareImportDestination>(), null) } throws IOException("import")
         } else {
-            coEvery { importer.import(any(), any(), null, any()) } returns ShareImportBatchResult(listOf(created))
+            coEvery { importer.import(any(), any<ShareImportDestination>(), null) } returns ShareImportBatchResult(listOf(created))
         }
         val indexState = MutableStateFlow(VectorizationQueue.QueueState(emptyList(), null, false, false))
         val viewModel = ShareImportViewModel(
             queue,
             importer,
-            targetProvider = { listOf(ShareImportTarget(ROOT, "知识库", ShareTargetKind.KnowledgeBase)) },
+            targets = FakeTargets(),
             indexQueueState = indexState,
         )
         return Fixture(viewModel, queue, importer, indexState)
@@ -277,6 +462,14 @@ class ShareImportViewModelTest {
 
     private companion object {
         const val ROOT = "knowledge-root"
+        val ROOT_DESTINATION = ShareImportDestination.KnowledgeFolder(ROOT, ROOT, "/")
+        val KNOWLEDGE_ONLY = ShareImportOptions(currentSession = null, knowledgeRootUuid = ROOT, linux = ShareLinuxAvailability.Unsupported)
+        val CURRENT = ShareSessionChoice("session-current", "Linux 迁移方案讨论", 2_000L)
+        val OTHER = ShareSessionChoice("session-other", "周报整理", 1_000L)
+        val WITH_SESSION = KNOWLEDGE_ONLY.copy(currentSession = CURRENT, linux = ShareLinuxAvailability.NeedsInstall)
+        val AVAILABILITY_NOT_READY = listOf(ShareLinuxAvailability.NeedsInstall, ShareLinuxAvailability.Unsupported)
+        val DOCS = ShareKnowledgeFolder("kb-docs", "资料", "/资料")
+        val FINANCE = ShareKnowledgeFolder("kb-finance", "财务", "/资料/财务")
         const val FILE = "11111111-1111-1111-1111-111111111111"
         const val TASK = "doc-ref-fixture"
     }

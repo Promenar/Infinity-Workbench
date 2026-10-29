@@ -2,26 +2,30 @@ package com.promenar.infinity.share.ui
 
 import com.promenar.infinity.ui.common.InfinitySheetHeight
 import com.promenar.infinity.ui.common.InfinityModalSheet
-import androidx.compose.foundation.clickable
-import com.promenar.infinity.ui.common.InfinityMetaLine
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,35 +34,69 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.share.core.ShareImportItem
 import com.promenar.infinity.share.core.ShareImportStatus
 import com.promenar.infinity.share.core.ShareIndexStatus
+import com.promenar.infinity.share.core.ShareKnowledgeFolder
+import com.promenar.infinity.share.core.ShareLinuxAvailability
 import com.promenar.infinity.share.core.ShareRejectReason
+import com.promenar.infinity.share.core.ShareSessionChoice
 import com.promenar.infinity.share.core.ShareTargetKind
+import com.promenar.infinity.ui.common.InfinityFullscreenDialog
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.linux.files.LinuxDirectoryPicker
+import com.promenar.infinity.ui.linux.files.LinuxFilesScreen
 import com.promenar.infinity.ui.testing.UiTags
+import com.promenar.infinity.ui.theme.InfinityMonospace
+import com.promenar.infinity.ui.theme.InfinitySpacing
 import java.util.Locale
+
+/** 会话列表、资料库文件夹与 Linux 目录三个选择器的回调；预览与截图测试传空实现。 */
+data class ShareImportPickerActions(
+    val onOpenSessionPicker: () -> Unit = {},
+    val onPickSession: (ShareSessionChoice) -> Unit = {},
+    val onDismissSessionPicker: () -> Unit = {},
+    val onOpenFolderPicker: () -> Unit = {},
+    val onEnterFolder: (ShareKnowledgeFolder) -> Unit = {},
+    val onFolderUp: () -> Unit = {},
+    val onConfirmFolder: () -> Unit = {},
+    val onDismissFolderPicker: () -> Unit = {},
+    val onPickLinuxDirectory: (String) -> Unit = {},
+    /** Linux 未安装时前往“Linux 环境”页面安装。 */
+    val onInstallLinux: () -> Unit = {},
+)
+
+/** Linux 模式会话里本会话文件夹的路径，写在“当前会话”一项的说明里。 */
+private const val LINUX_SESSION_FOLDER = "/home/session"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareImportSheet(
     state: ShareImportUiState,
-    onSelectTarget: (String) -> Unit,
+    onSelectTarget: (ShareTargetKind) -> Unit,
     onImport: () -> Unit,
     onRetry: () -> Unit,
     onClose: () -> Unit,
     onCancel: () -> Unit = {},
+    pickers: ShareImportPickerActions = ShareImportPickerActions(),
 ) {
     if (!state.visible) return
     var confirmCancel by remember { mutableStateOf(false) }
+    var linuxPickerOpen by rememberSaveable { mutableStateOf(false) }
     if (confirmCancel) {
         AlertDialog(
             onDismissRequest = { confirmCancel = false },
@@ -83,107 +121,496 @@ fun ShareImportSheet(
             .testTag(UiTags.SHARE_IMPORT_SHEET)
             .semantics { testTagsAsResourceId = true },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+        ShareImportSheetContent(
+            state = state,
+            onSelectTarget = onSelectTarget,
+            onImport = onImport,
+            onRetry = onRetry,
+            onClose = onClose,
+            onRequestCancel = { confirmCancel = true },
+            pickers = pickers,
+            onOpenLinuxPicker = { linuxPickerOpen = true },
+        )
+    }
+    state.sessionPicker?.let { ShareSessionPickerSheet(it, pickers) }
+    state.folderPicker?.let { ShareFolderPickerSheet(it, pickers) }
+    if (linuxPickerOpen && state.linuxReady) {
+        InfinityFullscreenDialog(
+            onDismissRequest = { linuxPickerOpen = false },
+            systemBarColor = MaterialTheme.colorScheme.background,
         ) {
-            Text(stringResource(R.string.share_import_title))
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.share_import_target_label))
-            state.targets.forEach { target ->
-                val targetModifier = if (target.kind == ShareTargetKind.KnowledgeBase) {
-                    Modifier.testTag(UiTags.SHARE_IMPORT_KNOWLEDGE_BASE_TARGET)
-                } else {
-                    Modifier
-                }
-                Row(
-                    modifier = targetModifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clickable(enabled = !state.importing) {
-                            onSelectTarget(target.workspaceRootUuid)
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(
-                        selected = state.selectedWorkspaceRootUuid == target.workspaceRootUuid,
-                        onClick = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(target.label)
-                }
-            }
-            if (state.targets.isEmpty()) {
-                Text(stringResource(R.string.share_import_no_target))
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            LazyColumn(
-                modifier = Modifier.weight(1f, fill = false),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.items, key = { it.uri.toString() }) { item -> ShareImportItemRow(item) }
-            }
-            state.error?.let { error ->
-                Text(
-                    text = stringResource(error.stringResource()),
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(
-                    onClick = onClose,
-                    enabled = !state.importing,
-                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_LATER).height(48.dp),
-                ) {
-                    Text(stringResource(R.string.share_import_later))
-                }
-                TextButton(
-                    onClick = { confirmCancel = true },
-                    enabled = !state.importing,
-                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL).height(48.dp),
-                ) {
-                    Text(stringResource(R.string.share_import_cancel))
-                }
-                if (state.error != null ||
-                    state.items.any { it.status == ShareImportStatus.Rejected && it.reason?.retryable == true } ||
-                    state.items.any { it.indexStatus in setOf(ShareIndexStatus.Failed, ShareIndexStatus.Partial) }
-                ) {
-                    TextButton(
-                        onClick = onRetry,
-                        enabled = !state.importing && (
-                            state.selectedWorkspaceRootUuid != null ||
-                                state.error in setOf(
-                                    ShareImportErrorCode.PRESENT_FAILED,
-                                    ShareImportErrorCode.POSTPONE_FAILED,
-                                    ShareImportErrorCode.CANCEL_FAILED,
-                                )
-                            ),
-                        modifier = Modifier.height(48.dp),
-                    ) { Text(stringResource(R.string.share_import_retry)) }
-                }
-                Button(
-                    onClick = onImport,
-                    enabled = !state.importing && state.selectedWorkspaceRootUuid != null &&
-                        state.items.any { it.status == ShareImportStatus.Pending },
-                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_ACTION).height(48.dp),
-                ) {
-                    Text(
-                        if (state.importing) stringResource(R.string.share_import_importing)
-                        else stringResource(R.string.share_import_action)
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+            LinuxFilesScreen(
+                onBack = { linuxPickerOpen = false },
+                onOpenTerminal = { _, _ -> },
+                onOpenEnvironment = { linuxPickerOpen = false; pickers.onInstallLinux() },
+                initialPath = state.linuxDirectory ?: state.options?.linuxDefaultDirectory ?: "/root",
+                picker = LinuxDirectoryPicker(
+                    title = stringResource(R.string.share_import_ext_linux_picker_title),
+                    confirmLabel = stringResource(R.string.share_import_ext_picker_use),
+                    onPick = { path ->
+                        linuxPickerOpen = false
+                        pickers.onPickLinuxDirectory(path)
+                    },
+                ),
+            )
         }
     }
+}
+
+/** 面板正文：分享来的文件、四个导入位置、结果说明与操作按钮；截图测试直接渲染这一层。 */
+@Composable
+internal fun ColumnScope.ShareImportSheetContent(
+    state: ShareImportUiState,
+    onSelectTarget: (ShareTargetKind) -> Unit,
+    onImport: () -> Unit,
+    onRetry: () -> Unit,
+    onClose: () -> Unit,
+    onRequestCancel: () -> Unit,
+    pickers: ShareImportPickerActions,
+    onOpenLinuxPicker: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f, fill = false)
+            .imePadding()
+            .padding(vertical = InfinitySpacing.Medium),
+    ) {
+        Text(
+            stringResource(R.string.share_import_title),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        Spacer(Modifier.height(InfinitySpacing.Small))
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall),
+        ) {
+            items(state.items, key = { it.uri.toString() }) { item -> ShareImportItemRow(item) }
+            item(key = "target_label") {
+                Text(
+                    stringResource(R.string.share_import_target_label),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = InfinitySpacing.Medium),
+                )
+            }
+            item(key = "targets") {
+                ShareImportTargets(state, onSelectTarget, pickers, onOpenLinuxPicker)
+            }
+            item(key = "note") { ShareImportNote(state) }
+        }
+        state.error?.let { error ->
+            Text(
+                text = stringResource(error.stringResource()),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = InfinitySpacing.Small),
+            )
+        }
+        Spacer(Modifier.height(InfinitySpacing.Medium))
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+        ) {
+            TextButton(
+                onClick = onClose,
+                enabled = !state.importing,
+                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_LATER).height(48.dp),
+            ) {
+                Text(stringResource(R.string.share_import_later))
+            }
+            TextButton(
+                onClick = onRequestCancel,
+                enabled = !state.importing,
+                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL).height(48.dp),
+            ) {
+                Text(stringResource(R.string.share_import_cancel))
+            }
+            if (state.error != null ||
+                state.items.any { it.status == ShareImportStatus.Rejected && it.reason?.retryable == true } ||
+                state.items.any { it.indexStatus in setOf(ShareIndexStatus.Failed, ShareIndexStatus.Partial) }
+            ) {
+                TextButton(
+                    onClick = onRetry,
+                    enabled = !state.importing && (
+                        state.canImportTo ||
+                            state.error in setOf(
+                                ShareImportErrorCode.PRESENT_FAILED,
+                                ShareImportErrorCode.POSTPONE_FAILED,
+                                ShareImportErrorCode.CANCEL_FAILED,
+                            )
+                        ),
+                    modifier = Modifier.height(48.dp),
+                ) { Text(stringResource(R.string.share_import_retry)) }
+            }
+            Button(
+                onClick = onImport,
+                enabled = !state.importing && state.canImportTo &&
+                    state.items.any { it.status == ShareImportStatus.Pending },
+                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_ACTION).height(48.dp),
+            ) {
+                Text(
+                    if (state.importing) stringResource(R.string.share_import_importing)
+                    else stringResource(R.string.share_import_action)
+                )
+            }
+        }
+    }
+}
+
+/** 四个导入位置，单选；选中的“其他会话 / Linux / 资料库”下方显示已选的会话或目录与更换按钮。 */
+@Composable
+private fun ShareImportTargets(
+    state: ShareImportUiState,
+    onSelectTarget: (ShareTargetKind) -> Unit,
+    pickers: ShareImportPickerActions,
+    onOpenLinuxPicker: () -> Unit,
+) {
+    val options = state.options
+    if (options == null) {
+        Text(
+            stringResource(R.string.share_import_no_target),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = InfinitySpacing.Small),
+        )
+        return
+    }
+    val enabled = !state.importing
+    Column(Modifier.fillMaxWidth().selectableGroup()) {
+        options.currentSession?.let { session ->
+            ShareTargetRow(
+                title = stringResource(R.string.share_import_ext_target_current),
+                subtitle = stringResource(R.string.share_import_ext_target_current_sub, session.title, LINUX_SESSION_FOLDER),
+                selected = state.selectedKind == ShareTargetKind.CurrentSession,
+                enabled = enabled,
+                onClick = { onSelectTarget(ShareTargetKind.CurrentSession) },
+                tag = UiTags.SHARE_IMPORT_TARGET_CURRENT,
+            )
+        }
+        ShareTargetRow(
+            title = stringResource(R.string.share_import_ext_target_other),
+            subtitle = stringResource(R.string.share_import_ext_target_other_sub),
+            selected = state.selectedKind == ShareTargetKind.OtherSession,
+            enabled = enabled,
+            onClick = { onSelectTarget(ShareTargetKind.OtherSession) },
+            tag = UiTags.SHARE_IMPORT_TARGET_OTHER,
+        )
+        if (state.selectedKind == ShareTargetKind.OtherSession) {
+            SharePathBox(
+                value = state.otherSession?.title ?: stringResource(R.string.share_import_ext_session_unselected),
+                action = stringResource(
+                    if (state.otherSession == null) R.string.share_import_ext_choose_session else R.string.share_import_ext_change
+                ),
+                enabled = enabled,
+                onAction = pickers.onOpenSessionPicker,
+            )
+        }
+        val linuxReady = options.linux == ShareLinuxAvailability.Ready
+        ShareTargetRow(
+            title = stringResource(R.string.share_import_ext_target_linux),
+            subtitle = stringResource(
+                when (options.linux) {
+                    ShareLinuxAvailability.Ready -> R.string.share_import_ext_target_linux_sub
+                    ShareLinuxAvailability.NeedsInstall -> R.string.share_import_ext_target_linux_needs_install
+                    ShareLinuxAvailability.Unsupported -> R.string.share_import_ext_target_linux_unsupported
+                }
+            ),
+            selected = state.selectedKind == ShareTargetKind.Linux,
+            enabled = enabled && linuxReady,
+            onClick = { onSelectTarget(ShareTargetKind.Linux) },
+            tag = UiTags.SHARE_IMPORT_TARGET_LINUX,
+        )
+        if (options.linux == ShareLinuxAvailability.NeedsInstall) {
+            TextButton(
+                onClick = pickers.onInstallLinux,
+                enabled = enabled,
+                modifier = Modifier
+                    .padding(start = 52.dp)
+                    .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+                    .testTag(UiTags.SHARE_IMPORT_LINUX_INSTALL),
+            ) { Text(stringResource(R.string.share_import_ext_linux_install)) }
+        }
+        if (state.selectedKind == ShareTargetKind.Linux && linuxReady) {
+            SharePathBox(
+                value = state.linuxDirectory ?: options.linuxDefaultDirectory,
+                action = stringResource(R.string.share_import_ext_choose_folder),
+                enabled = enabled,
+                monospace = true,
+                onAction = onOpenLinuxPicker,
+            )
+        }
+        ShareTargetRow(
+            title = stringResource(R.string.share_import_ext_target_kb),
+            subtitle = stringResource(R.string.share_import_ext_target_kb_sub),
+            selected = state.selectedKind == ShareTargetKind.KnowledgeBase,
+            enabled = enabled,
+            onClick = { onSelectTarget(ShareTargetKind.KnowledgeBase) },
+            tag = UiTags.SHARE_IMPORT_KNOWLEDGE_BASE_TARGET,
+        )
+        if (state.selectedKind == ShareTargetKind.KnowledgeBase) {
+            SharePathBox(
+                value = state.knowledgeFolder?.let { knowledgeFolderLabel(it.path) }
+                    ?: stringResource(R.string.share_import_ext_kb_root),
+                action = stringResource(R.string.share_import_ext_choose_folder),
+                enabled = enabled,
+                onAction = pickers.onOpenFolderPicker,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShareTargetRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    tag: String,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = InfinitySpacing.RowTwoLineHeight)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .alpha(if (enabled || selected) 1f else 0.42f)
+            .padding(horizontal = InfinitySpacing.Small, vertical = InfinitySpacing.Small)
+            .testTag(tag),
+    ) {
+        RadioButton(selected = selected, onClick = null, enabled = enabled, modifier = Modifier.padding(horizontal = InfinitySpacing.Small))
+        Spacer(Modifier.width(InfinitySpacing.Small))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SharePathBox(
+    value: String,
+    action: String,
+    enabled: Boolean,
+    onAction: () -> Unit,
+    monospace: Boolean = false,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 56.dp, end = 20.dp, bottom = InfinitySpacing.XSmall),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = InfinitySpacing.Medium),
+        ) {
+            Text(
+                value,
+                style = if (monospace) MaterialTheme.typography.bodyMedium.copy(fontFamily = InfinityMonospace)
+                else MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = onAction,
+                enabled = enabled,
+                modifier = Modifier
+                    .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+                    .testTag(UiTags.SHARE_IMPORT_TARGET_CHANGE),
+            ) { Text(action) }
+        }
+    }
+}
+
+/** 选中位置下的结果说明：文件去哪里、谁能看到、会不会建索引。 */
+@Composable
+private fun ShareImportNote(state: ShareImportUiState) {
+    val text = when (state.selectedKind) {
+        ShareTargetKind.CurrentSession -> stringResource(R.string.share_import_ext_note_current)
+        ShareTargetKind.OtherSession -> state.otherSession?.let {
+            stringResource(R.string.share_import_ext_note_other, it.title)
+        } ?: stringResource(R.string.share_import_ext_note_other_unselected)
+        ShareTargetKind.Linux -> stringResource(
+            R.string.share_import_ext_note_linux,
+            state.linuxDirectory ?: state.options?.linuxDefaultDirectory.orEmpty(),
+        )
+        ShareTargetKind.KnowledgeBase -> stringResource(
+            R.string.share_import_ext_note_kb,
+            state.knowledgeFolder?.let { knowledgeFolderLabel(it.path) } ?: stringResource(R.string.share_import_ext_kb_root),
+        )
+        null -> return
+    }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = InfinitySpacing.Small)
+            .testTag(UiTags.SHARE_IMPORT_NOTE),
+    ) {
+        Column(Modifier.padding(horizontal = InfinitySpacing.Medium, vertical = 10.dp)) {
+            Text(
+                stringResource(R.string.share_import_ext_result_title),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** 资料库路径按“资料 / 财务”的层级写法显示。 */
+internal fun knowledgeFolderLabel(path: String): String =
+    path.split('/').filter(String::isNotBlank).joinToString(" / ")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShareSessionPickerSheet(picker: ShareSessionPickerState, pickers: ShareImportPickerActions) {
+    InfinityModalSheet(
+        onDismissRequest = pickers.onDismissSessionPicker,
+        height = InfinitySheetHeight.Content,
+        modifier = Modifier.testTag(UiTags.SHARE_IMPORT_SESSION_PICKER),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(vertical = InfinitySpacing.Medium)) {
+            Text(
+                stringResource(R.string.share_import_ext_session_picker_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = InfinitySpacing.Small),
+            )
+            when {
+                picker.loading -> Unit
+                picker.failed -> SharePickerMessage(stringResource(R.string.share_import_error_present))
+                picker.sessions.isEmpty() -> SharePickerMessage(stringResource(R.string.share_import_ext_session_picker_empty))
+                else -> LazyColumn(Modifier.weight(1f, fill = false)) {
+                    items(picker.sessions, key = { it.sessionId }) { session ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = InfinitySpacing.RowTwoLineHeight)
+                                .selectable(selected = false, role = Role.Button) { pickers.onPickSession(session) }
+                                .padding(horizontal = 20.dp, vertical = 10.dp)
+                                .testTag(UiTags.shareImportSession(session.sessionId)),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text(session.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                android.text.format.DateUtils.getRelativeTimeSpanString(session.updatedAt).toString(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            TextButton(
+                onClick = pickers.onDismissSessionPicker,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(horizontal = InfinitySpacing.Medium)
+                    .heightIn(min = InfinitySpacing.MinimumTouchTarget),
+            ) { Text(stringResource(R.string.share_import_ext_picker_cancel)) }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShareFolderPickerSheet(picker: ShareFolderPickerState, pickers: ShareImportPickerActions) {
+    InfinityModalSheet(
+        onDismissRequest = pickers.onDismissFolderPicker,
+        height = InfinitySheetHeight.Content,
+        modifier = Modifier.testTag(UiTags.SHARE_IMPORT_FOLDER_PICKER),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(vertical = InfinitySpacing.Medium)) {
+            Text(
+                stringResource(R.string.share_import_ext_folder_picker_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = InfinitySpacing.Small),
+            )
+            Text(
+                picker.trail.lastOrNull()?.let { knowledgeFolderLabel(it.path) }
+                    ?: stringResource(R.string.share_import_ext_kb_root),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            HorizontalDivider(Modifier.padding(vertical = InfinitySpacing.Small))
+            LazyColumn(Modifier.weight(1f, fill = false)) {
+                if (picker.trail.isNotEmpty()) {
+                    item(key = "..") {
+                        SharePickerRow(
+                            text = stringResource(R.string.share_import_ext_picker_up),
+                            enabled = !picker.loading,
+                            tag = UiTags.SHARE_IMPORT_FOLDER_UP,
+                            onClick = pickers.onFolderUp,
+                        )
+                    }
+                }
+                when {
+                    picker.loading -> Unit
+                    picker.failed -> item(key = "error") { SharePickerMessage(stringResource(R.string.share_import_ext_picker_error)) }
+                    picker.folders.isEmpty() -> item(key = "empty") { SharePickerMessage(stringResource(R.string.share_import_ext_picker_empty)) }
+                    else -> items(picker.folders, key = { it.uuid }) { folder ->
+                        SharePickerRow(
+                            text = folder.name,
+                            enabled = true,
+                            tag = UiTags.shareImportFolder(folder.uuid),
+                            onClick = { pickers.onEnterFolder(folder) },
+                        )
+                    }
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small, Alignment.End),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = InfinitySpacing.Small),
+            ) {
+                TextButton(
+                    onClick = pickers.onDismissFolderPicker,
+                    modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget),
+                ) { Text(stringResource(R.string.share_import_ext_picker_cancel)) }
+                Button(
+                    onClick = pickers.onConfirmFolder,
+                    enabled = !picker.loading && !picker.failed,
+                    modifier = Modifier
+                        .heightIn(min = InfinitySpacing.MinimumTouchTarget)
+                        .testTag(UiTags.SHARE_IMPORT_FOLDER_CONFIRM),
+                ) { Text(stringResource(R.string.share_import_ext_picker_use)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SharePickerRow(text: String, enabled: Boolean, tag: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = InfinitySpacing.MinimumTouchTarget + 8.dp)
+            .selectable(selected = false, enabled = enabled, role = Role.Button, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = 20.dp)
+            .testTag(tag),
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun SharePickerMessage(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = InfinitySpacing.Large),
+    )
 }
 
 private fun ShareImportErrorCode.stringResource(): Int = when (this) {
@@ -207,7 +634,7 @@ fun SharePendingBanner(
     ) {
         Surface(
             onClick = onOpen,
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(16.dp),
             tonalElevation = 6.dp,
         ) {
             Text(
@@ -220,19 +647,33 @@ fun SharePendingBanner(
 
 @Composable
 private fun ShareImportItemRow(item: ShareImportItem) {
-    Column(Modifier.testTag(UiTags.SHARE_IMPORT_ITEM).fillMaxWidth()) {
-        Text(item.displayName)
+    Column(
+        Modifier
+            .testTag(UiTags.SHARE_IMPORT_ITEM)
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = InfinitySpacing.XSmall),
+    ) {
+        Text(item.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis)
         InfinityMetaLine(
             segments = listOfNotNull(
-                compactMimeType(item.mimeType),
+                shareFileTypeLabel(item.mimeType, item.displayName),
                 item.sizeBytes?.let(::formatShareBytes),
-                statusLabel(item),
+                if (item.status == ShareImportStatus.Pending) parseLabel(item) else statusLabel(item),
+                // 导入后仍标出“原样保存”，说明这一项不会建索引。
+                if (item.status == ShareImportStatus.Created && !item.parseable) parseLabel(item) else null,
             ),
             modifier = Modifier.testTag(UiTags.SHARE_IMPORT_STATUS),
         )
-        item.reason?.let { Text(rejectReasonLabel(it)) }
+        item.reason?.let {
+            Text(rejectReasonLabel(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
+
+@Composable
+private fun parseLabel(item: ShareImportItem): String = stringResource(
+    if (item.parseable) R.string.share_import_ext_parseable else R.string.share_import_ext_raw
+)
 
 internal fun compactMimeType(mimeType: String?): String? {
     if (mimeType == null) return null
@@ -243,6 +684,14 @@ internal fun compactMimeType(mimeType: String?): String? {
         "text/plain" -> "TXT"
         else -> mimeType
     }
+}
+
+/** 文件类型标签：常见格式用短名；其它格式优先用扩展名（SQLITE、EPUB），没有扩展名时退回 MIME。 */
+internal fun shareFileTypeLabel(mimeType: String?, displayName: String): String? {
+    val compact = compactMimeType(mimeType)
+    if (compact != null && compact != mimeType) return compact
+    val extension = displayName.substringAfterLast('.', "").takeIf { it.isNotBlank() && it.length <= 10 && it != displayName }
+    return extension?.uppercase(Locale.ROOT) ?: compact
 }
 
 @Composable
