@@ -23,8 +23,8 @@ class SettingsNavigationContractTest {
 
     @Test
     fun `navigation graph registers provider_list and default_models composables`() {
-        assertThat(navGraphSource).contains("composable(NavDestinations.PROVIDER_LIST)")
-        assertThat(navGraphSource).contains("composable(NavDestinations.DEFAULT_MODELS)")
+        assertThat(navGraphSource).contains("composablePage(NavDestinations.PROVIDER_LIST)")
+        assertThat(navGraphSource).contains("composablePage(NavDestinations.DEFAULT_MODELS)")
     }
 
     @Test
