@@ -4,8 +4,9 @@ import com.promenar.infinity.ui.common.motion.MobiusProjector
 import com.promenar.infinity.ui.common.motion.Tau
 import com.promenar.infinity.ui.common.motion.clamp01
 import com.promenar.infinity.ui.common.motion.motionHash
-import kotlin.math.ceil
 import kotlin.math.pow
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
  * 灯珠变形的时间轴：字标停 [WordSeconds] → [MorphSeconds] 变形成环 → 环停 [RingSeconds] → [GatherSeconds] 聚回字标，循环。
@@ -88,79 +89,159 @@ internal fun pairByHorizontalOrder(fromX: FloatArray, toX: FloatArray): IntArray
     return IntArray(fromX.size) { byRank[fromRank[it]] }
 }
 
-/** 环上的灯珠排布：带面上 [lanes] 列，沿 u 均匀排满 [count] 颗；返回 u 与单位带宽坐标 v（−1..1）交替的数组。 */
-internal fun ledMorphRingLayout(count: Int, lanes: Int = 7): FloatArray {
-    val out = FloatArray(count * 2)
-    if (count == 0) return out
-    val columns = ceil(count / lanes.toFloat()).toInt()
+/** 灯珠环带面上的列数（沿宽度方向的灯珠数）。灯珠环与灯珠变形共用。 */
+internal const val MobiusLedLanes = 7
+
+/** 灯珠环沿 u 方向的灯珠列数，[particleScale] 为设置页小预览的缩减比例。 */
+internal fun mobiusLedColumns(particleScale: Float): Int = (170 * particleScale).toInt().coerceAtLeast(60)
+
+/** 灯珠环第 [column] 列的 u（0..2π）。 */
+internal fun mobiusLedU(column: Int, columns: Int): Float = column.toFloat() / columns * Tau
+
+/** 灯珠环第 [lane] 行的单位带宽坐标 v（−1..1）。 */
+internal fun mobiusLedV(lane: Int): Float = -1 + 2f * lane / (MobiusLedLanes - 1)
+
+/** 字标星尘：dp 坐标，x、y 分开存放；[spacing] 为取点时要求的最小间距（dp）。 */
+internal class WordmarkStardust(val x: FloatArray, val y: FloatArray, val spacing: Float)
+
+/**
+ * 在字形内撒 [count] 个近似蓝噪声的点：先在 [WordmarkMask] 上按 0.5dp 步长取透明度高于 [threshold] 的候选点（格内随机抖动），
+ * 按固定种子洗牌后以最小间距 √(候选面积 / count) × 0.82 贪心接受，空间哈希网格加速；凑不满时从剩余候选点里按洗牌顺序补齐。
+ * 同一输入结果确定。
+ */
+internal fun sampleWordmarkStardust(mask: WordmarkMask, count: Int, seed: Int = 11, threshold: Int = 110): WordmarkStardust {
+    val step = 0.5f
+    // 先找笔画外接框，只在框内取候选点。
+    var minX = mask.width
+    var minY = mask.height
+    var maxX = -1
+    var maxY = -1
+    for (row in 0 until mask.height) for (column in 0 until mask.width) {
+        if ((mask.alpha[row * mask.width + column].toInt() and 0xFF) <= threshold) continue
+        if (column < minX) minX = column
+        if (column > maxX) maxX = column
+        if (row < minY) minY = row
+        if (row > maxY) maxY = row
+    }
+    val xs = FloatArray(count)
+    val ys = FloatArray(count)
+    if (maxX < 0 || count == 0) {
+        xs.fill(mask.width / 2f)
+        ys.fill(mask.height / 2f)
+        return WordmarkStardust(xs, ys, 0f)
+    }
+    val random = Random(seed)
+    val cellsX = (maxX - minX + 1) * 2
+    val cellsY = (maxY - minY + 1) * 2
+    val cx = FloatArray(cellsX * cellsY)
+    val cy = FloatArray(cellsX * cellsY)
+    var candidates = 0
+    for (row in 0 until cellsY) for (column in 0 until cellsX) {
+        val x = minX + (column + random.nextFloat()) * step
+        val y = minY + (row + random.nextFloat()) * step
+        if (mask.at(x, y) <= threshold) continue
+        cx[candidates] = x
+        cy[candidates] = y
+        candidates++
+    }
+    val order = IntArray(candidates) { it }
+    for (i in candidates - 1 downTo 1) {
+        val j = random.nextInt(i + 1)
+        val swap = order[i]
+        order[i] = order[j]
+        order[j] = swap
+    }
+    val spacing = sqrt(candidates * step * step / count) * 0.82f
+    // 网格边长 spacing/√2，每格至多一个已接受点，查周围 5×5 格即可。
+    val cell = (spacing / sqrt(2f)).coerceAtLeast(1e-3f)
+    val gridW = ((maxX - minX + 1) / cell).toInt() + 1
+    val gridH = ((maxY - minY + 1) / cell).toInt() + 1
+    val grid = IntArray(gridW * gridH) { -1 }
+    val accepted = BooleanArray(candidates)
+    val limit = spacing * spacing
     var n = 0
-    loop@ for (i in 0 until columns) for (j in 0 until lanes) {
-        if (n >= count) break@loop
-        out[n * 2] = i.toFloat() / columns * Tau
-        out[n * 2 + 1] = -1 + 2f * j / (lanes - 1)
+    for (index in order) {
+        if (n >= count) break
+        val x = cx[index]
+        val y = cy[index]
+        val gx = ((x - minX) / cell).toInt().coerceIn(0, gridW - 1)
+        val gy = ((y - minY) / cell).toInt().coerceIn(0, gridH - 1)
+        var free = true
+        search@ for (ny in maxOf(0, gy - 2)..minOf(gridH - 1, gy + 2)) for (nx in maxOf(0, gx - 2)..minOf(gridW - 1, gx + 2)) {
+            val other = grid[ny * gridW + nx]
+            if (other < 0) continue
+            val dx = xs[other] - x
+            val dy = ys[other] - y
+            if (dx * dx + dy * dy < limit) {
+                free = false
+                break@search
+            }
+        }
+        if (!free) continue
+        grid[gy * gridW + gx] = n
+        accepted[index] = true
+        xs[n] = x
+        ys[n] = y
         n++
     }
-    return out
+    // 凑不满时按洗牌顺序补上未接受的候选点；候选点本身不够时循环复用。
+    var cursor = 0
+    while (n < count && candidates > 0) {
+        val index = order[cursor % candidates]
+        if (cursor >= candidates || !accepted[index]) {
+            xs[n] = cx[index]
+            ys[n] = cy[index]
+            n++
+        }
+        cursor++
+    }
+    return WordmarkStardust(xs, ys, spacing)
 }
 
 /**
- * 灯珠变形的灯珠集：字标点阵上的每颗灯珠配一个环上的位置。字标坐标按栅格化时的位置记录（[WordmarkMask.centerY] 所在处），
- * 绘制时整体平移到当前中心。只在字标栅格或画布宽度变化时重建。
+ * 灯珠变形的灯珠集：灯珠数与灯珠环相同，每颗灯珠带着它在环上的编号与位置（与灯珠环同一公式），再配一个字标星尘点。
+ * 字标坐标（像素）按栅格化时的位置记录（[WordmarkMask.centerY] 所在处），绘制时整体平移到当前中心。只在字标栅格或画布宽度变化时重建。
  */
 internal class LedMorphBeads(val mask: WordmarkMask, val width: Float, val count: Int) {
     val wordX = FloatArray(count)
     val wordY = FloatArray(count)
-    val column = IntArray(count)
     val id = IntArray(count)
     val ringU = FloatArray(count)
     val ringV = FloatArray(count)
     val rank = FloatArray(count)
     val angle = FloatArray(count)
+    /** 字标形态下的亮度与尺寸差异，取 motionHash(id, 5.3)。 */
+    val dw = FloatArray(count)
 }
 
 /**
- * 按灯珠字标同一套栅格（[pitch] 间距、居中对齐）取出字标灯珠，生成同样数量的环上位置，
- * 两边都按默认视角下的横向位置排序后一一配对。
+ * 按灯珠环的排布（[columns] 列 × [MobiusLedLanes] 行）生成环上位置，在字形内撒同样数量的星尘点，
+ * 两边都按默认视角（yaw 0、pitch 0.78、半径 [radius]）下的横向位置排序后一一配对。
  */
-internal fun buildLedMorphBeads(mask: WordmarkMask, width: Float, height: Float, density: Float, pitch: Float, radius: Float): LedMorphBeads {
-    val cols = (width / pitch).toInt()
-    val rows = (height / pitch).toInt()
-    val ox = (width - cols * pitch) / 2 + pitch / 2
-    val oy = (height - rows * pitch) / 2 + pitch / 2
-    val xs = ArrayList<Float>()
-    val ys = ArrayList<Float>()
-    val cs = ArrayList<Int>()
-    val ids = ArrayList<Int>()
-    for (r in 0 until rows) for (c in 0 until cols) {
-        val x = ox + c * pitch
-        val y = oy + r * pitch
-        if (mask.at(x / density, y / density) <= 100) continue
-        xs += x
-        ys += y
-        cs += c
-        ids += r * cols + c
-    }
-    val beads = LedMorphBeads(mask, width, xs.size)
-    val ring = ledMorphRingLayout(beads.count)
+internal fun buildLedMorphBeads(mask: WordmarkMask, width: Float, density: Float, columns: Int, radius: Float): LedMorphBeads {
+    val count = columns * MobiusLedLanes
+    val beads = LedMorphBeads(mask, width, count)
+    val dust = sampleWordmarkStardust(mask, count)
     val projector = MobiusProjector().configure(radius = radius, cx = width / 2, cy = 0f, yaw = 0f, pitch = 0.78f)
     val point = FloatArray(3)
-    val ringX = FloatArray(beads.count) {
-        projector.project(ring[it * 2], ring[it * 2 + 1] * projector.halfWidth, point)
+    val ringX = FloatArray(count) { id ->
+        projector.project(mobiusLedU(id / MobiusLedLanes, columns), mobiusLedV(id % MobiusLedLanes) * projector.halfWidth, point)
         point[0]
     }
-    val wordX = FloatArray(beads.count) { xs[it] }
+    val wordX = FloatArray(count) { dust.x[it] * density }
     val pairs = pairByHorizontalOrder(wordX, ringX)
     val order = horizontalOrder(wordX)
-    val last = (beads.count - 1).coerceAtLeast(1)
-    for (i in 0 until beads.count) {
-        beads.wordX[i] = xs[i]
-        beads.wordY[i] = ys[i]
-        beads.column[i] = cs[i]
-        beads.id[i] = ids[i]
-        beads.ringU[i] = ring[pairs[i] * 2]
-        beads.ringV[i] = ring[pairs[i] * 2 + 1]
+    val last = (count - 1).coerceAtLeast(1)
+    for (i in 0 until count) {
+        val id = pairs[i]
+        beads.wordX[i] = wordX[i]
+        beads.wordY[i] = dust.y[i] * density
+        beads.id[i] = id
+        beads.ringU[i] = mobiusLedU(id / MobiusLedLanes, columns)
+        beads.ringV[i] = mobiusLedV(id % MobiusLedLanes)
         beads.rank[i] = order[i].toFloat() / last
-        beads.angle[i] = motionHash(ids[i].toFloat(), 7f) * Tau
+        beads.angle[i] = motionHash(id.toFloat(), 7f) * Tau
+        beads.dw[i] = motionHash(id.toFloat(), 5.3f)
     }
     return beads
 }

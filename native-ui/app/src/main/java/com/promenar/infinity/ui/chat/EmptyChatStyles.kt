@@ -40,6 +40,7 @@ import com.promenar.infinity.ui.theme.EmptyChatStyle
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.pow
@@ -160,7 +161,7 @@ internal fun LedEmptyChat(
                     EmptyChatStyle.MOBIUS_LED -> drawMobiusLed(scene, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.MORPH -> if (mask != null) drawMorph(scene, mask, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.LED_GLOBE -> drawLedGlobe(scene, centerY, time, delta, tapped, palette, particleScale)
-                    EmptyChatStyle.LED_MORPH -> if (mask != null) drawLedMorph(scene, mask, centerY, time, delta, tapped, palette)
+                    EmptyChatStyle.LED_MORPH -> if (mask != null) drawLedMorph(scene, mask, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.FLOW -> Unit
                 }
                 native.restore()
@@ -214,17 +215,16 @@ private fun DrawScope.drawLedWordmark(scene: EmptyChatScene, mask: WordmarkMask,
 }
 
 /**
- * 灯珠变形：灯珠字标与灯珠环之间往复变形（时间轴见 [LedMorphTimeline]）。两种形态灯珠数一致、按横向位置一一配对，
- * 变形时按横向位置错开出发，飞行途中带少量旋涡偏移。字标阶段数据光带从左往右扫过，环阶段两段光带沿 ∞ 流过，零星有琥珀灯。
+ * 灯珠变形：字标与灯珠环之间往复变形（时间轴见 [LedMorphTimeline]），两种形态共用同一组细沙粒。
+ * 灯珠数、环上排布与亮度规则都和灯珠环一致；字标形态是撒在字形内的近似蓝噪声星尘，数据光带从左往右扫过。
+ * 两种形态按横向位置一一配对、错开出发，飞行途中带少量旋涡偏移与零星闪光。
  * 点按跳到下一形态；环阶段拖动转视角。系统关闭动画时时钟不走，停在静态字标。
  */
-private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette) {
+private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette, particleScale: Float) {
     val k = density
-    val pitch = 4.2f * k
-    // 灯珠带比固定灯珠环宽，加上视角摆动与拖动，用同样半径会在窄屏两端出界，这里收小一档。
-    val radius = mobiusRadius(size.width, size.height) * 0.82f
-    val beads = scene.ledMorph?.takeIf { it.mask === mask && it.width == size.width }
-        ?: buildLedMorphBeads(mask, size.width, size.height, k, pitch, radius).also { scene.ledMorph = it }
+    val columns = mobiusLedColumns(particleScale)
+    val beads = scene.ledMorph?.takeIf { it.mask === mask && it.width == size.width && it.count == columns * MobiusLedLanes }
+        ?: buildLedMorphBeads(mask, size.width, k, columns, mobiusRadius(size.width, size.height)).also { scene.ledMorph = it }
     if (tapped) scene.ledMorphClock = LedMorphTimeline.skip(scene.ledMorphClock)
     scene.ledMorphClock += delta
     scene.bandClock += delta
@@ -233,7 +233,7 @@ private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, ce
     val gathering = LedMorphTimeline.stageAt(clock) == LedMorphTimeline.Stage.GATHER
     val view = mobiusView(scene, centerY, t)
     val offsetY = centerY - mask.centerY
-    val wordBead = pitch * 0.56f
+    val flashSlot = floor(t * 18)
     val p = scene.point
     scene.beads.reset()
     for (i in 0 until beads.count) {
@@ -244,24 +244,29 @@ private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, ce
         var x = wx
         var y = wy
         var level = 0f
-        var bead = wordBead
+        var bead = 0f
         if (e < 1f) {
-            val band = (0.5f + 0.5f * sin(beads.column[i] * 0.2f - scene.bandClock * 2.2f)).pow(14)
-            level = beadLevel(id, t, band, 0.32f) * (1 - e)
-            bead = wordBead * (1 - e)
+            val dw = beads.dw[i]
+            val band = (0.5f + 0.5f * sin(wx / k * 0.048f - scene.bandClock * 2.2f)).pow(14)
+            level = beadLevel(id, t, band, 0.2f) * (0.6f + 0.4f * dw)
+            bead = (0.7f + 0.8f * dw) * k
         }
+        val fly = sin(Math.PI.toFloat() * e)
         if (e > 0f) {
             val u = beads.ringU[i]
-            view.project(u, beads.ringV[i] * view.halfWidth, p)
-            val swirl = sin(Math.PI.toFloat() * e) * 14 * k
+            view.project(u, beads.ringV[i] * view.halfWidth, p, 0.6f)
+            val swirl = fly * 14 * k
             val angle = beads.angle[i] + t * 0.8f
             x = wx + (p[0] - wx) * e + cos(angle) * swirl
             y = wy + (p[1] - wy) * e + sin(angle) * swirl
             val band = (0.5f + 0.5f * sin(2 * u - scene.bandClock * 1.6f)).pow(14)
-            level += beadLevel(id, t, band, 0.22f) * (0.45f + 0.55f * p[2]) * e
-            bead += (1.2f + 1.0f * p[2]) * k * e
+            val ringLevel = beadLevel(id, t, band) * (0.35f + 0.65f * p[2])
+            val ringBead = (0.8f + 0.9f * p[2]) * k
+            level += (ringLevel - level) * e
+            bead += (ringBead - bead) * e
         }
-        scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.05f) 1 else 0, level, x, y, bead, bead * 1.8f)
+        if (fly > 0.05f && motionHash(id.toFloat(), flashSlot) > 0.82f) level = maxOf(level, 0.55f * fly)
+        scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.06f) 1 else 0, level, x, y, bead, bead * 1.8f)
     }
     flushBeads(scene, palette)
 }
@@ -321,13 +326,13 @@ private fun DrawScope.drawMobiusLed(scene: EmptyChatScene, centerY: Float, t: Fl
     if (tapped) scene.burstTime = t
     val view = mobiusView(scene, centerY, t)
     scene.bandClock += delta * (1 + 3 * view.burst)
-    val columns = (170 * particleScale).toInt().coerceAtLeast(60)
-    val lanes = 7
+    val columns = mobiusLedColumns(particleScale)
+    val lanes = MobiusLedLanes
     val p = scene.point
     scene.beads.reset()
     for (i in 0 until columns) for (j in 0 until lanes) {
-        val u = i.toFloat() / columns * Tau
-        val v = (-1 + 2f * j / (lanes - 1)) * view.halfWidth
+        val u = mobiusLedU(i, columns)
+        val v = mobiusLedV(j) * view.halfWidth
         val id = i * lanes + j
         view.project(u, v, p, 0.6f)
         val level = beadLevel(id, t, (0.5f + 0.5f * sin(2 * u - scene.bandClock * 1.6f)).pow(14))
