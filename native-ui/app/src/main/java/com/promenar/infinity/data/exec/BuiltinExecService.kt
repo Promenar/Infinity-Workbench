@@ -59,6 +59,7 @@ class BuiltinExecService(
     private val messages: RunModeMessages = RunModeMessages(),
     /** 分支保留创建 worktree 时的父挂载；解析失败须抛出异常，null 只表示普通会话。 */
     private val linuxLaunchBinding: suspend (sessionId: String) -> com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace? = { null },
+    private val wakeInbox: suspend (String) -> File? = { null },
 ) {
     suspend fun runModeForSession(sessionId: String?): SessionRunMode? = sessionMode(sessionId)
 
@@ -82,7 +83,8 @@ class BuiltinExecService(
         val workspaceDirectory = (selected as? SessionWorkspace.Directory)?.takeIf {
             it.kind == com.promenar.infinity.data.local.db.entity.WorkspaceEntity.KIND_LINUX_HOME
         }?.let { com.promenar.infinity.data.workspace.LinuxWorkspaceLocation.workingDirectory(it.workspace) }
-        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("INFINITY_SKILLS")), home, launchBinding, workspaceDirectory)
+        val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("INFINITY_SKILLS")), home, launchBinding, workspaceDirectory,
+            wakeInbox = sessionId?.let { wakeInbox(it) })
         val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
         BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment + ("TERM" to "xterm-256color"), stdin, seconds, terminal = true)
     }

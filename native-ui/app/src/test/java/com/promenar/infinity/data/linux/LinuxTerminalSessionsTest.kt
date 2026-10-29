@@ -24,6 +24,16 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LinuxTerminalSessionsTest {
+    @Test fun `会话终端透传唤醒收件箱而目录终端不创建`() = runTest {
+        val f = fixture()
+        f.wakeBox = File("/wake-box")
+        f.manager.open(LinuxTerminalLocation.SessionWorkspace("chat"))
+        assertThat(f.runtime.specs.last().wakeInbox).isEqualTo(f.wakeBox)
+        assertThat(f.wakeSessions).containsExactly("chat")
+        f.manager.open(LinuxTerminalLocation.Directory())
+        assertThat(f.runtime.specs.last().wakeInbox).isNull()
+        assertThat(f.wakeSessions).containsExactly("chat")
+    }
 
     @org.junit.After fun resetBarrier() { com.promenar.infinity.startup.StartupWriteBarrier.resetForTesting() }
 
@@ -384,6 +394,8 @@ class LinuxTerminalSessionsTest {
         var workspace: File? = File("/workspace-host")
         var resolveFailure: Exception? = null
         var failStart = false
+        var wakeBox: File? = null
+        val wakeSessions = mutableListOf<String>()
         val manager = LinuxTerminalSessionsImpl(runtime, scope.backgroundScope, LinuxHostServices(keep,
             sessionHome = { File("/private-$it") }, reconcileSession = { reconciled += it }) { id ->
             resolved += id
@@ -392,7 +404,8 @@ class LinuxTerminalSessionsTest {
         }, LinuxPtyFactory { launch, client ->
             launches += launch
             Pty(client, failStart).also { ptys += it }
-        }, StandardTestDispatcher(scope.testScheduler), StandardTestDispatcher(scope.testScheduler), { 123L })
+        }, StandardTestDispatcher(scope.testScheduler), StandardTestDispatcher(scope.testScheduler), { 123L },
+            wakeInbox = { wakeSessions += it; wakeBox })
     }
 
     private class Runtime : LinuxRuntime by UnavailableLinuxRuntime(

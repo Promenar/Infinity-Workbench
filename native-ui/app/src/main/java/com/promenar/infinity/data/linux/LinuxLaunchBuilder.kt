@@ -40,6 +40,11 @@ class LinuxLaunchBuilder(
             Files.createDirectories(LinuxRootfsFiles.safePath(rootfs, "home/session").toPath())
             arguments += listOf("-b", "${it.absolutePath}:/home/session")
         }
+        spec.wakeInbox?.let {
+            require(Files.isDirectory(it.toPath(), NOFOLLOW_LINKS) && ':' !in it.path && '\u0000' !in it.path) { messages(LinuxRuntimeMessage.HOST_MOUNT) }
+            Files.createDirectories(LinuxRootfsFiles.safePath(rootfs, LinuxWakeLimits.GUEST_DIRECTORY.removePrefix("/")).toPath())
+            arguments += listOf("-b", "${it.absolutePath}:${LinuxWakeLimits.GUEST_DIRECTORY}")
+        }
         spec.mounts.forEach { bind ->
             val guest = bind.guestPath
             require(guest.startsWith("/mnt/") && guest.split('/').none { it == ".." } &&
@@ -66,9 +71,11 @@ class LinuxLaunchBuilder(
         if (spec.workspace != null) environment["INFINITY_WORKSPACE"] = "/workspace"
         environment.putAll(tailnetEnvironment().filterKeys { it in PROXY_KEYS })
         environment.putAll(spec.environment)
+        if (spec.wakeInbox != null) environment[LinuxWakeLimits.ENVIRONMENT_VARIABLE] = LinuxWakeLimits.GUEST_DIRECTORY
         val runtimeEnvironment = environment.withLegacyWorkspaceAliases()
         // 旧受管忽略区块清理失败不阻止命令启动；修复启动不改 rootfs 配置。
         if (maintainHomeConfiguration) runCatching { LinuxLaunchGitIgnore.cleanupOnce(rootfs, runtimeEnvironment) }
+        if (maintainHomeConfiguration) LinuxWakeScript.installForLaunch(rootfs)
         return LinuxProcessLaunch(proot.executable.path, arguments, runtimeEnvironment, spec.workspace ?: rootfs)
     }
 

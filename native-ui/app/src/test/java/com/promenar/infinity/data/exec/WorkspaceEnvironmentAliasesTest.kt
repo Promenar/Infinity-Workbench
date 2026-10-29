@@ -11,6 +11,13 @@ import java.io.File
 import org.junit.Test
 
 class WorkspaceEnvironmentAliasesTest {
+    @Test fun `Linux提示说明脚本唤醒的使用方式和边界`() {
+        val guidance = SystemPromptSections.LINUX_SHELL_GUIDANCE
+        for (part in listOf("infinity-wake [--key K] [--title T] [消息]", "stdin", "background:true", "60 秒", "4096", "同 key", "应用运行期间")) {
+            assertThat(guidance).contains(part)
+        }
+    }
+
     @Test fun `Linux命令构造时为普通和分支起始目录导出兼容别名`() {
         for (directory in listOf(null, "/worktrees/feature")) {
             val environment = linuxExecSpec("pwd", File("workspace"), "project", emptyList(), File("skills"),

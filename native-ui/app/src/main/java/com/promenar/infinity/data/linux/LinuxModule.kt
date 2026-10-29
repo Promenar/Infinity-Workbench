@@ -71,6 +71,8 @@ class LinuxHostServices(
     val sessionHome: suspend (sessionId: String) -> File? = { null },
     /** 将终端写入的会话私有空间收敛到 Room；启动前也执行以恢复上次意外退出。 */
     val reconcileSession: suspend (sessionId: String) -> Unit = {},
+    /** 准备会话收件箱并开始监听；维护终端不调用。 */
+    val wakeInbox: suspend (sessionId: String) -> File? = { null },
     /** 会话工作区的宿主根目录，不持工作区写锁；会话工作区不可用时为 null。 */
     val sessionWorkspaceRoot: suspend (sessionId: String) -> File?,
 )

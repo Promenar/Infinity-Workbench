@@ -21,6 +21,7 @@ internal fun linuxExecSpec(
     sessionHome: File = workspace,
     launchBinding: com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace? = null,
     workspaceDirectory: String? = null,
+    wakeInbox: File? = null,
 ): LinuxLaunchSpec {
     val binds = mounts.filterNot { it.isUserSkills }.mapNotNull { mount ->
         if (runCatching { ExternalMountPaths.validateAlias(mount.alias) }.getOrNull() != mount.alias) return@mapNotNull null
@@ -29,7 +30,7 @@ internal fun linuxExecSpec(
     } + LinuxBind(skills, "/mnt/skills")
     val cwd = launchBinding?.workingDirectory ?: workspaceDirectory
     return LinuxLaunchSpec.shell(command, launchBinding?.baseRoot ?: workspace, binds).copy(
-        sessionHome = sessionHome, workingDirectory = cwd, environment = mapOf(
+        sessionHome = sessionHome, wakeInbox = wakeInbox, workingDirectory = cwd, environment = mapOf(
         "INFINITY_WORKSPACE" to (cwd ?: "/workspace"),
         "INFINITY_WORKSPACE_KIND" to kind,
         "INFINITY_BACKEND" to "linux",

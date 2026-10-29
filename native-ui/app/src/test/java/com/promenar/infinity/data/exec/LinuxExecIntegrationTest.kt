@@ -28,6 +28,16 @@ import org.junit.Before
 import org.junit.Test
 
 class LinuxExecIntegrationTest {
+    @Test fun `前台与后台Linux命令都传递会话唤醒收件箱`() = runBlocking<Unit> {
+        val box = File(root, "wake-box").apply { mkdirs() }
+        val exec = service(wakeInbox = { assertThat(it).isEqualTo("s"); box })
+        assertThat(shell(exec, "true").exitCode).isEqualTo(0)
+        assertThat(runtime.specs.last().wakeInbox).isEqualTo(box)
+        val prepared = exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "true", null,
+            BackgroundJobLocation(workspace, workspace, true, false, sessionId = "s"), 1, "s")
+        assertThat(runtime.specs.last().wakeInbox).isEqualTo(box)
+        prepared.close()
+    }
     private lateinit var root: File
     private lateinit var workspace: File
     private lateinit var runtime: FakeLinuxRuntime
@@ -84,7 +94,8 @@ class LinuxExecIntegrationTest {
     }
 
     private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null, selected: com.promenar.infinity.data.workspace.SessionWorkspace = com.promenar.infinity.data.workspace.SessionWorkspace.Private,
-        resolveSelected: suspend () -> com.promenar.infinity.data.workspace.SessionWorkspace = { selected }) = BuiltinExecService(
+        resolveSelected: suspend () -> com.promenar.infinity.data.workspace.SessionWorkspace = { selected },
+        wakeInbox: suspend (String) -> File? = { null }) = BuiltinExecService(
         workspace = host ?: object : WorkspaceCommandHost {
             override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
                 val result = block(workspace)
@@ -96,6 +107,7 @@ class LinuxExecIntegrationTest {
         environment = BuiltinExecEnvironment(PackagedPython(File(root, "absent")), File(root, "home"), File(root, "tmp"), { null }, inherited = mapOf("PATH" to "/usr/bin:/bin")),
         shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance, sessionWorkspace = { resolveSelected() },
         visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" }, sessionMode = { mode }, sessionHome = { homeResolutions++; workspace },
+        wakeInbox = wakeInbox,
     )
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
