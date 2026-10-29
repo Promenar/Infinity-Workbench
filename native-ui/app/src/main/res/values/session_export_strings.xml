@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 会话导出面板：从会话菜单或不带参数的 /export 打开 -->
+    <string name="session_export_title">Export chat</string>
+    <string name="session_export_subtitle">%1$s · %2$s</string>
+    <plurals name="session_export_message_count">
+        <item quantity="one">%d message</item>
+        <item quantity="other">%d messages</item>
+    </plurals>
+    <string name="session_export_section_format">Format</string>
+    <string name="session_export_section_include">Include</string>
+
+    <!-- 格式按钮：格式名，下方小字为扩展名 -->
+    <string name="session_export_format_markdown">Markdown</string>
+    <string name="session_export_format_txt">Plain text</string>
+    <string name="session_export_format_html">Web page</string>
+    <string name="session_export_format_pdf">PDF</string>
+    <string name="session_export_format_png">Image</string>
+
+    <!-- 包含开关 -->
+    <string name="session_export_thinking">Thinking</string>
+    <string name="session_export_thinking_desc">The model\'s reasoning</string>
+    <string name="session_export_tools">Tool calls</string>
+    <string name="session_export_tools_desc">Only tool names and result summaries; command output may contain paths or keys and is never exported</string>
+    <string name="session_export_attachments">Attachments</string>
+    <string name="session_export_attachments_desc_text">Text attachments inline; images and other files go into a .zip with the same name</string>
+    <string name="session_export_attachments_desc_html">Images embedded in the page; other files go into a .zip with the same name</string>
+
+    <!-- 预计输出 -->
+    <string name="session_export_estimate_title">Estimated output</string>
+    <string name="session_export_estimate_loading">Estimating…</string>
+    <string name="session_export_estimate_unavailable">Can\'t estimate right now</string>
+    <plurals name="session_export_estimate_files">
+        <item quantity="one">%1$d .%2$s file</item>
+        <item quantity="other">%1$d .%2$s files</item>
+    </plurals>
+    <plurals name="session_export_estimate_images">
+        <item quantity="one">%d long image</item>
+        <item quantity="other">%d long images</item>
+    </plurals>
+    <plurals name="session_export_estimate_pages">
+        <item quantity="one">A4 portrait, about %d page</item>
+        <item quantity="other">A4 portrait, about %d pages</item>
+    </plurals>
+    <string name="session_export_estimate_with_zip">%1$s plus a .zip with the same name</string>
+    <string name="session_export_estimate_size">about %1$s</string>
+    <string name="session_export_estimate_join">%1$s, %2$s</string>
+
+    <!-- 各格式说明 -->
+    <string name="session_export_footer_markdown">Share opens the system share sheet so you can send it straight to another app.</string>
+    <string name="session_export_footer_txt">Plain text keeps no formatting or images.</string>
+    <string name="session_export_footer_html">Open it in a browser; code blocks and charts stay as they are.</string>
+    <string name="session_export_footer_pdf">Images are embedded in the PDF; other attachments are listed by name.</string>
+    <string name="session_export_footer_png">Long chats are split into several images, shared in order.</string>
+
+    <!-- 操作与结果 -->
+    <string name="session_export_save">Save to…</string>
+    <string name="session_export_share">Share</string>
+    <string name="session_export_running">Generating %1$s…</string>
+    <string name="session_export_cancel">Cancel</string>
+    <string name="session_export_share_chooser">Share chat</string>
+    <string name="session_export_saved">Saved %1$s</string>
+    <plurals name="session_export_saved_files">
+        <item quantity="one">Saved %d file</item>
+        <item quantity="other">Saved %d files</item>
+    </plurals>
+    <string name="session_export_failed">Export failed</string>
+    <string name="session_export_save_failed">Couldn\'t save the export</string>
+    <string name="session_export_no_target">No app can receive this export</string>
+</resources>

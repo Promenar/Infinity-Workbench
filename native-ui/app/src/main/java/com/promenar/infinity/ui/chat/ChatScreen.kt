@@ -91,6 +91,7 @@ import com.promenar.infinity.ui.common.rememberInfinityPopoverAnchor
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.IosShare
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Description
@@ -331,6 +332,8 @@ data class ChatScreenActions(
     val onOpenPromptEditor: () -> Unit = {},
     val onOpenClearDialog: () -> Unit = {},
     val onOpenRenameDialog: () -> Unit = {},
+    /** 打开导出会话面板。 */
+    val onOpenExport: () -> Unit = {},
     val onOpenDeleteDialog: () -> Unit = {},
     val onContentChange: (String, String) -> Unit = { _, _ -> },
     val onCopy: (String) -> Unit = {},
@@ -716,6 +719,7 @@ fun ChatScreenContent(
                     onSessionPrompt = actions.onOpenPromptEditor,
                     onClearHistory = actions.onOpenClearDialog,
                     onRename = actions.onOpenRenameDialog,
+                    onExport = actions.onOpenExport,
                     onDeleteSession = actions.onOpenDeleteDialog,
                     artifacts = com.promenar.infinity.ui.canvas.LocalCanvasSession.current?.let { canvasSession ->
                         chatTopBarArtifacts(inspectorMode, canvasSession.artifacts.size, canvasSession.openList)
@@ -2053,6 +2057,7 @@ fun ChatTopBar(
     onClearHistory: () -> Unit,
     onRename: () -> Unit,
     onDeleteSession: () -> Unit,
+    onExport: () -> Unit = {},
     showDivider: Boolean = false,
     windowInsets: WindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     /** 窄窗口选项菜单首项的产物入口；宽窗口由检视器页签承载，传 null。 */
@@ -2401,6 +2406,22 @@ fun ChatTopBar(
                         onClick = {
                             showMenu = false
                             onRename()
+                        }
+                    )
+                    InfinityMenuItem(
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.IosShare,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        text = { Text(stringResource(R.string.session_export_title), style = InfinityTypography.labelLarge) },
+                        modifier = Modifier.testTag(com.promenar.infinity.ui.chat.export.SessionExportTags.MENU),
+                        onClick = {
+                            showMenu = false
+                            onExport()
                         }
                     )
                     InfinityMenuItem(

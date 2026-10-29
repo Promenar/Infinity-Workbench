@@ -2,7 +2,7 @@ package com.promenar.infinity.ui.chat.command
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.domain.model.ExecutionMode
-import com.promenar.infinity.domain.usecase.ExportSessionUseCase
+import com.promenar.infinity.domain.export.SessionExportFormat
 import org.junit.Test
 
 class BuiltinSlashCommandResolverTest {
@@ -69,14 +69,31 @@ class BuiltinSlashCommandResolverTest {
             .isEqualTo(SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_TOGGLE, "maybe"))
     }
 
-    @Test fun `export 缺少参数导出 Markdown，txt 导出纯文本，没有消息或格式未知时拒绝`() {
-        assertThat(resolve(BuiltinSlashCommand.EXPORT)).isEqualTo(SlashCommandAction.Export(ExportSessionUseCase.Format.MARKDOWN))
-        assertThat(resolve(BuiltinSlashCommand.EXPORT, "MD")).isEqualTo(SlashCommandAction.Export(ExportSessionUseCase.Format.MARKDOWN))
-        assertThat(resolve(BuiltinSlashCommand.EXPORT, "txt")).isEqualTo(SlashCommandAction.Export(ExportSessionUseCase.Format.TXT))
-        assertThat(resolve(BuiltinSlashCommand.EXPORT, "纯文本")).isEqualTo(SlashCommandAction.Export(ExportSessionUseCase.Format.TXT))
-        assertThat(resolve(BuiltinSlashCommand.EXPORT, "pdf"))
-            .isEqualTo(SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_EXPORT_FORMAT, "pdf"))
+    @Test fun `export 缺少参数打开导出面板，格式参数与中文别名直接导出，没有消息或格式未知时拒绝`() {
+        assertThat(resolve(BuiltinSlashCommand.EXPORT)).isEqualTo(SlashCommandAction.OpenExportSheet)
+        assertThat(resolve(BuiltinSlashCommand.EXPORT, "  ")).isEqualTo(SlashCommandAction.OpenExportSheet)
+        mapOf(
+            "MD" to SessionExportFormat.MARKDOWN,
+            "markdown" to SessionExportFormat.MARKDOWN,
+            ".md" to SessionExportFormat.MARKDOWN,
+            "txt" to SessionExportFormat.TXT,
+            "纯文本" to SessionExportFormat.TXT,
+            "文本" to SessionExportFormat.TXT,
+            "HTML" to SessionExportFormat.HTML,
+            "网页" to SessionExportFormat.HTML,
+            "pdf" to SessionExportFormat.PDF,
+            " PDF " to SessionExportFormat.PDF,
+            "png" to SessionExportFormat.PNG,
+            "图片" to SessionExportFormat.PNG,
+            "长图" to SessionExportFormat.PNG,
+        ).forEach { (argument, format) ->
+            assertThat(resolve(BuiltinSlashCommand.EXPORT, argument)).isEqualTo(SlashCommandAction.Export(format))
+        }
+        assertThat(resolve(BuiltinSlashCommand.EXPORT, "docx"))
+            .isEqualTo(SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_EXPORT_FORMAT, "docx"))
         assertThat(resolve(BuiltinSlashCommand.EXPORT, context = SlashCommandContext()))
+            .isEqualTo(SlashCommandAction.Reject(SlashCommandRejection.NOTHING_TO_EXPORT))
+        assertThat(resolve(BuiltinSlashCommand.EXPORT, "pdf", SlashCommandContext()))
             .isEqualTo(SlashCommandAction.Reject(SlashCommandRejection.NOTHING_TO_EXPORT))
     }
 }

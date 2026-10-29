@@ -22,7 +22,7 @@
     <string name="slash_cmd_tools_name">Tool use</string>
     <string name="slash_cmd_tools_desc">Turn tool use on or off for this chat</string>
     <string name="slash_cmd_export_name">Export chat</string>
-    <string name="slash_cmd_export_desc">Save this chat as Markdown; add txt for plain text</string>
+    <string name="slash_cmd_export_desc">Choose a format and what to include; add md, txt, html, pdf or png to export directly</string>
 
     <!-- 执行结果 -->
     <string name="slash_feedback_renamed">Renamed to “%1$s”</string>
@@ -41,7 +41,7 @@
     <string name="slash_reject_nothing_to_export">This chat has no messages to export</string>
     <string name="slash_reject_unknown_mode">Unknown option “%1$s”. Use ask for commands or no approvals</string>
     <string name="slash_reject_unknown_toggle">Use /tools on or /tools off</string>
-    <string name="slash_reject_unknown_format">Export supports md or txt only</string>
+    <string name="slash_reject_unknown_format">Export supports md, txt, html, pdf or png</string>
     <string name="slash_block_disabled">Skill /%1$s is off. Turn it on in chat settings under Tools</string>
     <string name="slash_block_pending_trust">Skill /%1$s isn\'t trusted yet. Review it in chat settings under Tools</string>
     <string name="slash_block_broken">Skill /%1$s can\'t be loaded. Check its SKILL.md</string>
