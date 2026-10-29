@@ -132,7 +132,7 @@ class ShareImportViewModelTest {
         every { queue.durablePendingCount } returns pendingCount
         coJustRun { queue.refreshDurableCount() }
         coEvery { queue.claimNextDurably() } returns ShareLease("lease", request)
-        coJustRun { queue.recordTargetDurably(any(), any()) }
+        coJustRun { queue.recordTargetDurably(any(), any<ShareImportDestination>()) }
         coJustRun { queue.recordCreatedDurably(any(), any()) }
         coEvery { queue.ackDurably("lease") } answers { pendingCount.value = 0; true }
         val importer = mockk<SharedFileImporter>()
@@ -415,8 +415,8 @@ class ShareImportViewModelTest {
         coJustRun { queue.refreshDurableCount() }
         coEvery { queue.claimNextDurably() } returns ShareLease("lease", request)
         if (failurePoint == FailurePoint.RecordTarget) {
-            coEvery { queue.recordTargetDurably(any(), any()) } throws IOException("target")
-        } else coJustRun { queue.recordTargetDurably(any(), any()) }
+            coEvery { queue.recordTargetDurably(any(), any<ShareImportDestination>()) } throws IOException("target")
+        } else coJustRun { queue.recordTargetDurably(any(), any<ShareImportDestination>()) }
         if (failurePoint == FailurePoint.RecordCreated) {
             coEvery { queue.recordCreatedDurably(any(), any()) } throws IOException("created")
         } else coJustRun { queue.recordCreatedDurably(any(), any()) }
