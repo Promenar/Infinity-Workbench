@@ -894,7 +894,7 @@ internal fun ModelSpecLibraryFailureNotice(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(scheme.errorContainer.copy(alpha = 0.45f))
+            .background(scheme.error.copy(alpha = 0.08f))
             .semantics { liveRegion = LiveRegionMode.Polite }
             .padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)
             .testTag(UiTags.PROVIDER_MODELS_SPEC_FAILURE),

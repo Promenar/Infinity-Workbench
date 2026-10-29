@@ -11,8 +11,8 @@ class ReleaseConfigurationTest {
 
     @Test
     fun `v0_2_2 beta 发行元数据与本地推理能力按构建类型隔离`() {
-        assertThat(gradle).contains("versionCode = 5")
-        assertThat(gradle).contains("versionName = \"0.3.0-beta\"")
+        assertThat(gradle).contains("versionCode = 6")
+        assertThat(gradle).contains("versionName = \"0.4.0-beta\"")
         assertThat(buildTypeBody("debug"))
             .contains("buildConfigField(\"boolean\", \"LOCAL_INFERENCE_AVAILABLE\", \"true\")")
         assertThat(buildTypeBody("release"))

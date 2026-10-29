@@ -128,8 +128,7 @@ class ProviderModelReleaseBlockersTest {
         val success = coordinator.states.value.getValue("provider-a::remote-a") as ModelTestState.Success
         assertThat(success.latencyMs).isAtLeast(0)
         assertThat(captured!!.model).isEqualTo("remote-a")
-        assertThat(captured!!.maxTokens).isEqualTo(16)
-        assertThat(captured!!.maxTokens).isEqualTo(ProviderModelTestCoordinator.PROBE_MAX_OUTPUT_TOKENS)
+        assertThat(captured!!.maxTokens).isNull()
         assertThat(captured!!.messages).containsExactly(ProtocolMessage("user", "Reply OK."))
     }
 

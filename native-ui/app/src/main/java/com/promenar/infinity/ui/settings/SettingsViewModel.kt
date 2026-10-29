@@ -231,11 +231,11 @@ internal class ProviderModelTestCoordinator(
                 ),
             )
         }
+        // 不传输出上限：首包即取消，上限反而会让隐藏推理的模型在可见输出前被截断，或被只认 max_completion_tokens 的接口拒绝。
         return router.createClient(resolved).sendStream(
             params = StreamTextParams(
                 messages = listOf(ProtocolMessage(role = "user", content = "Reply OK.")),
                 model = resolved.remoteModelId,
-                maxOutputTokens = PROBE_MAX_OUTPUT_TOKENS,
                 streamTimeout = timeoutMillis,
             ),
             config = StreamConfig(),
@@ -253,11 +253,6 @@ internal class ProviderModelTestCoordinator(
     private sealed interface ProbeOutcome {
         data class Success(val receivedAtNanos: Long) : ProbeOutcome
         data class Failed(val error: ModelTestState.Error) : ProbeOutcome
-    }
-
-    companion object {
-        // OpenAI Responses 与百炼 Responses 的 max_output_tokens 最小值为 16。
-        const val PROBE_MAX_OUTPUT_TOKENS = 16
     }
 }
 
