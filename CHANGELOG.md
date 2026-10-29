@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 文档
+
+- 仓库首页重构为英文 `README.md` 与中文 `README.zh-CN.md` 两版，精简为亮点、真机截图、安装与构建；原首页详细章节迁入 `docs/guide/` 六篇使用指南。
+
 ## [0.5.1-beta] - 2026-10-30
 
 ### 修复
