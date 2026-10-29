@@ -52,18 +52,18 @@ class InfinityHapticsTest {
 
     @Test
     fun `单选只在选中项变化时振动，打开触感的回应不受旧偏好限制`() {
-        val view = mockk<View> { every { performHapticFeedback(any()) } returns true }
+        val view = mockk<View> { every { performHapticFeedback(any<Int>()) } returns true }
         val haptics = InfinityHaptics(view = view, interaction = true, status = true)
         haptics.select(alreadySelected = true)
-        verify(exactly = 0) { view.performHapticFeedback(any()) }
+        verify(exactly = 0) { view.performHapticFeedback(any<Int>()) }
         haptics.select(alreadySelected = false)
-        verify(exactly = 1) { view.performHapticFeedback(any()) }
+        verify(exactly = 1) { view.performHapticFeedback(any<Int>()) }
 
-        val offView = mockk<View> { every { performHapticFeedback(any()) } returns true }
+        val offView = mockk<View> { every { performHapticFeedback(any<Int>()) } returns true }
         val off = InfinityHaptics(view = offView, interaction = false, status = false)
         off.select(alreadySelected = false)
-        verify(exactly = 0) { offView.performHapticFeedback(any()) }
+        verify(exactly = 0) { offView.performHapticFeedback(any<Int>()) }
         off.confirmEnabled()
-        verify(exactly = 1) { offView.performHapticFeedback(any()) }
+        verify(exactly = 1) { offView.performHapticFeedback(any<Int>()) }
     }
 }

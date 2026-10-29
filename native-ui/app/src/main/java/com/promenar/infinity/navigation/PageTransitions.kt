@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
@@ -37,8 +38,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.promenar.infinity.ui.theme.InfinityMotion
 
-/** 一次换页的种类：迁移初始层级时直接出现；栏内换根页面为同级叠化；其余为视差推入的前进与返回。 */
-internal enum class PageChange { INSTANT, SAME_LEVEL, PUSH, POP }
+/**
+ * 一次换页的种类：迁移初始层级时直接出现；栏内换根页面为同级叠化；其余为视差推入的前进与返回。
+ * [PREDICTIVE_POP] 是系统返回手势拖动中的返回：位移与 [POP] 相同，按手势进度跟手，松手后完成或回弹。
+ */
+internal enum class PageChange { INSTANT, SAME_LEVEL, PUSH, POP, PREDICTIVE_POP }
 
 /** 换页中页面所处的层：上层带左缘阴影，下层随进度压暗；叠化与无动画时都不画。 */
 internal enum class PageLayer { NONE, TOP, UNDER }
@@ -54,40 +58,48 @@ internal fun pageChange(pop: Boolean, instant: Boolean, sameLevel: Boolean): Pag
 /** 换页双方的层（目标页在前、离开页在后）：前进时新页在上；返回时被弹出的页在上，下层页从压暗中恢复。 */
 internal fun PageChange.layers(): Pair<PageLayer, PageLayer> = when (this) {
     PageChange.PUSH -> PageLayer.TOP to PageLayer.UNDER
-    PageChange.POP -> PageLayer.UNDER to PageLayer.TOP
+    PageChange.POP, PageChange.PREDICTIVE_POP -> PageLayer.UNDER to PageLayer.TOP
     PageChange.INSTANT, PageChange.SAME_LEVEL -> PageLayer.NONE to PageLayer.NONE
 }
 
+/** 条目在最近一次换页中的层，以及那次换页的种类。 */
+internal data class PageRole(val layer: PageLayer, val change: PageChange)
+
 /**
- * 压暗进度的曲线跟哪个方向的位移：只有下层页需要压暗，离开时是被推入盖住（前进），进入时是从下层回来（返回）；
- * 其余页面不压暗，返回 null（立即到位，不拉长整个换页）。
+ * 压暗进度跟随哪次换页的位移曲线：只有下层页需要压暗，曲线与该次换页的位移一致
+ * （前进时被推入盖住，返回或跟手返回时从下层回来）；其余页面不压暗，返回 null（立即到位，不拉长整个换页）。
  */
-internal fun pageDimFollowsPop(layer: PageLayer, entering: Boolean): Boolean? =
-    if (layer == PageLayer.UNDER) entering else null
+internal fun pageDimFollows(role: PageRole): PageChange? = role.change.takeIf { role.layer == PageLayer.UNDER }
+
+private val NoRole = PageRole(PageLayer.NONE, PageChange.INSTANT)
 
 /**
  * 一个 NavHost 内各条目当前所处的层：转场回调决定动效时登记，目的地外框在组合与绘制时读取。
  * 同一条目先后作为上层和下层时以最近一次换页为准；条目离开组合时清除。
+ * 跟手返回时导航库按手势进度反复定位同一次转场，登记结果不变；取消后被拉出的下层页离开组合即清除，
+ * 留在原位的上层页静止时既不画阴影也不压暗，下一次换页会重新登记两页。
  */
 @Stable
 internal class PageLayers {
-    private val layers = mutableStateMapOf<String, PageLayer>()
+    private val roles = mutableStateMapOf<String, PageRole>()
 
-    fun layerOf(entryId: String): PageLayer = layers[entryId] ?: PageLayer.NONE
+    fun roleOf(entryId: String): PageRole = roles[entryId] ?: NoRole
+
+    fun layerOf(entryId: String): PageLayer = roleOf(entryId).layer
 
     fun record(targetId: String, initialId: String, change: PageChange) {
         val (target, initial) = change.layers()
-        set(targetId, target)
-        set(initialId, initial)
+        set(targetId, PageRole(target, change))
+        set(initialId, PageRole(initial, change))
     }
 
     fun clear(entryId: String) {
-        layers.remove(entryId)
+        roles.remove(entryId)
     }
 
     // 转场回调在组合期间执行，同值不重复写入，避免无谓的重组。
-    private fun set(entryId: String, layer: PageLayer) {
-        if (layers[entryId] != layer) layers[entryId] = layer
+    private fun set(entryId: String, role: PageRole) {
+        if (roles[entryId] != role) roles[entryId] = role
     }
 }
 
@@ -98,6 +110,8 @@ private val LocalPageLayers = staticCompositionLocalOf<PageLayers?> { null }
  * 栏内的位移、阴影与压暗不会盖到相邻列表栏或分隔线上。
  * [isSameLevel] 判定前进的目标页是否与当前页同级（栏内换根页面），是则改为叠化；
  * [isInstant] 判定的目标页（开合屏迁移的初始层级）直接出现。
+ * 系统返回手势拖动时同样是视差返回，按手势进度跟手（见 [InfinityMotion.pagePredictiveEnter]）；
+ * 栈里只有一页时导航库不拦截返回，交给外层处理。
  * 目的地须用 [composablePage] 注册，才有不透明底色、左缘阴影与压暗。
  */
 @Composable
@@ -117,6 +131,9 @@ internal fun InfinityPageNavHost(
     val backward: AnimatedContentTransitionScope<NavBackStackEntry>.() -> PageChange = {
         PageChange.POP.also { layers.record(targetState.id, initialState.id, it) }
     }
+    val predictiveBackward: AnimatedContentTransitionScope<NavBackStackEntry>.() -> PageChange = {
+        PageChange.PREDICTIVE_POP.also { layers.record(targetState.id, initialState.id, it) }
+    }
     CompositionLocalProvider(LocalPageLayers provides layers) {
         NavHost(
             navController = navController,
@@ -126,6 +143,9 @@ internal fun InfinityPageNavHost(
             exitTransition = { pageExitFor(forward()) },
             popEnterTransition = { pageEnterFor(backward()) },
             popExitTransition = { pageExitFor(backward()) },
+            // 不传时导航库在手势中改用淡入与缩小，这里换成同样的视差位移。
+            predictivePopEnterTransition = { pageEnterFor(predictiveBackward()) },
+            predictivePopExitTransition = { pageExitFor(predictiveBackward()) },
             builder = builder,
         )
     }
@@ -136,6 +156,7 @@ private fun pageEnterFor(change: PageChange): EnterTransition = when (change) {
     PageChange.SAME_LEVEL -> InfinityMotion.paneRootEnter
     PageChange.PUSH -> InfinityMotion.pageEnter(pop = false)
     PageChange.POP -> InfinityMotion.pageEnter(pop = true)
+    PageChange.PREDICTIVE_POP -> InfinityMotion.pagePredictiveEnter()
 }
 
 private fun pageExitFor(change: PageChange): ExitTransition = when (change) {
@@ -143,6 +164,15 @@ private fun pageExitFor(change: PageChange): ExitTransition = when (change) {
     PageChange.SAME_LEVEL -> InfinityMotion.paneRootExit
     PageChange.PUSH -> InfinityMotion.pageExit(pop = false)
     PageChange.POP -> InfinityMotion.pageExit(pop = true)
+    PageChange.PREDICTIVE_POP -> InfinityMotion.pagePredictiveExit()
+}
+
+/** 压暗进度用的曲线：与 [change] 的位移曲线一致，跟手返回时同样按手势进度。 */
+private fun <T> pageSlideSpec(change: PageChange): FiniteAnimationSpec<T> = when (change) {
+    PageChange.PUSH -> InfinityMotion.pageSpec(pop = false)
+    PageChange.POP -> InfinityMotion.pageSpec(pop = true)
+    PageChange.PREDICTIVE_POP -> InfinityMotion.pagePredictiveSpec()
+    PageChange.INSTANT, PageChange.SAME_LEVEL -> snap()
 }
 
 /** 注册页面级目的地：与 [composable] 相同，另包一层 [PageFrame]。 */
@@ -162,6 +192,7 @@ internal fun NavGraphBuilder.composablePage(
  * 目的地外框：铺一层不透明背景，换页时两页叠在一起也不会透出下层；
  * 作为上层时在左缘外侧画一道阴影，作为下层时按位移进度叠一层黑色压暗。
  * 阴影只在换页进行中绘制，压暗在静止时为 0；系统移除动画时换页立即结束，两者都不残留。
+ * 跟手返回时两者都挂在同一个转场上，随手势进度前进或回退，取消回弹后转场回到静止，同样不残留。
  */
 @Composable
 private fun PageFrame(scope: AnimatedContentScope, entryId: String, content: @Composable () -> Unit) {
@@ -176,8 +207,8 @@ private fun PageFrame(scope: AnimatedContentScope, entryId: String, content: @Co
     val transition = scope.transition
     val dim = transition.animateFloat(
         transitionSpec = {
-            val follows = layers?.let { pageDimFollowsPop(it.layerOf(entryId), entering = targetState == EnterExitState.Visible) }
-            if (follows == null) snap() else InfinityMotion.pageSpec(follows)
+            val follows = layers?.let { pageDimFollows(it.roleOf(entryId)) }
+            if (follows == null) snap() else pageSlideSpec(follows)
         },
         label = "page-under-dim",
     ) { state ->
