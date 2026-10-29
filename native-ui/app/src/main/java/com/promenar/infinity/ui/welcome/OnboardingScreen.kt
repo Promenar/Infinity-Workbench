@@ -244,7 +244,7 @@ private fun OnboardingHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                AnimatedVisibility(visible = back != null, enter = fadeIn(), exit = fadeOut()) {
+                androidx.compose.animation.AnimatedVisibility(visible = back != null, enter = fadeIn(), exit = fadeOut()) {
                     IconButton(
                         onClick = { back?.invoke() },
                         enabled = !state.busy,

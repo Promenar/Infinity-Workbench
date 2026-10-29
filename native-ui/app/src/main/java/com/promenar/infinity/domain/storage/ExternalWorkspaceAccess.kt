@@ -21,6 +21,10 @@ interface ExternalWorkspaceAccess : IExternalFolderManager {
     suspend fun completeMoveBackup(sessionId: String, backupId: String)
     suspend fun deleteSessionMounts(sessionId: String)
     fun backend(sessionId: String, mountIds: Map<String, String> = emptyMap()): ExternalFolderBackend
+
+    /** 流式读取虚拟路径，语义同 [ExternalFolderBackend.readStream]；默认实现退回 [read]。 */
+    suspend fun <T> readStream(sessionId: String, virtualPath: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+        consume(read(sessionId, virtualPath, maxBytes).inputStream())
     suspend fun version(sessionId: String, path: String, hash: String): ByteArray?
 
     /**

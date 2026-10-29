@@ -1,6 +1,7 @@
 package com.promenar.infinity.domain.storage
 
 import com.promenar.infinity.domain.workspace.WorkspaceInternalPaths
+import java.io.InputStream
 import java.util.Locale
 
 data class ExternalFolderEntry(
@@ -17,6 +18,13 @@ interface ExternalFolderBackend {
     suspend fun stat(path: String): ExternalFolderEntry?
     suspend fun list(path: String): List<ExternalFolderEntry>
     suspend fun read(path: String, maxBytes: Long = 8L * 1024 * 1024): ByteArray
+
+    /**
+     * 流式读取：把文件内容交给 [consume] 逐块处理，适合大文件复制。[maxBytes] 与 [read] 同义，超出时抛出 `TOO_LARGE`。
+     * 默认实现退回 [read]，仍会把整个文件载入内存；能直接打开文件句柄的后端应覆盖。
+     */
+    suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (InputStream) -> T): T =
+        consume(read(path, maxBytes).inputStream())
     suspend fun write(
         path: String,
         content: ByteArray,

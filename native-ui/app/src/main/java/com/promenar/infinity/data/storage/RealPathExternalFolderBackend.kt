@@ -93,6 +93,43 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (InputStream) -> T): T = io {
+        if (maxBytes < 0) fail("INVALID_ARGUMENT", "读取上限无效")
+        val normalized = ExternalFolderPaths.normalize(path)
+        if (normalized == "/") fail("IS_DIRECTORY", "目标是目录")
+        withRoot { root ->
+            withParent(root, normalized) { parent, name ->
+                requireFile(parent.stat(name) ?: fail("NOT_FOUND", "文件不存在"))
+                parent.openRead(name).use { source ->
+                    val before = source.state()
+                    requireFile(before)
+                    if (before.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
+                    val result = consume(BoundedInput(source.input, maxBytes))
+                    if (source.state().revision != before.revision) fail("CONFLICT", "文件在读取期间发生变化")
+                    result
+                }
+            }
+        }
+    }
+
+    /** 读满 [limit] 后再读到数据即判定超限，防止读取期间文件被追加。 */
+    private class BoundedInput(private val input: InputStream, private val limit: Long) : InputStream() {
+        private var total = 0L
+        override fun read(): Int {
+            val value = input.read()
+            if (value >= 0 && ++total > limit) fail("TOO_LARGE", "文件超过读取上限")
+            return value
+        }
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val count = input.read(buffer, offset, length)
+            if (count > 0) {
+                total += count
+                if (total > limit) fail("TOO_LARGE", "文件超过读取上限")
+            }
+            return count
+        }
+    }
+
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry = io {
         val normalized = mutationPath(path)
         withRoot { root ->

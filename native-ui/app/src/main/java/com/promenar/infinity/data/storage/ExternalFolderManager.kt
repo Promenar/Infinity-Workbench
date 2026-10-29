@@ -170,6 +170,10 @@ class ExternalFolderManager(
         access(sessionId, virtualPath) { mount, backend, path -> backend.read(path, maxBytes).also { remember(mount.id, path, it) } }
     }
 
+    // 流式读取不记录版本快照：快照只保留 1 MiB 以内的小文件，大文件复制走这里。
+    override suspend fun <T> readStream(sessionId: String, virtualPath: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+        withContext(Dispatchers.IO) { access(sessionId, virtualPath) { _, backend, path -> backend.readStream(path, maxBytes, consume) } }
+
     override suspend fun entry(sessionId: String, path: String): FileEntry? = withContext(Dispatchers.IO) {
         if (!branchWorkspacePaths(sessionId) && ExternalFolderPaths.normalize(path) == "/mnt") return@withContext FileEntry(
             ExternalMountPaths.ROOT_UUID, "", null, "mnt", "", isDirectory = true,
@@ -350,6 +354,9 @@ class ExternalFolderManager(
         }
         override suspend fun read(path: String, maxBytes: Long) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { mount, backend, relative -> backend.read(relative, maxBytes).also { remember(mount.id, relative, it) } }
+        }
+        override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T = withContext(Dispatchers.IO) {
+            access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.readStream(relative, maxBytes, consume) }
         }
         override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) = writeReceipt(sessionId, path, content, expectedSha256, createOnly, bindings).receipt
         override suspend fun createDirectory(path: String) = withContext(Dispatchers.IO) { mutex.withLock {

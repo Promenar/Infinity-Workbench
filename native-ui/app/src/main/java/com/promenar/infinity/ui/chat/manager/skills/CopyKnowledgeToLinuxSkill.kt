@@ -108,22 +108,29 @@ class CopyKnowledgeToLinuxSkill(
                         else rootfs.directory(destination, create = true)
                     } else {
                         require(bytes <= MAX_BYTES - entry.size) { "复制总量超过100 MiB" }
-                        val data = backend.read(entry.path, MAX_BYTES - bytes)
-                        require(bytes <= MAX_BYTES - data.size) { "复制总量超过100 MiB" }
+                        val remaining = MAX_BYTES - bytes
                         val parent = destination.substringBeforeLast('/').ifEmpty { "/" }
-                        if (root != null) {
-                            validatePrivate(root.physicalRootPath, destination)
-                            val parentEntry = ensurePrivateDirectory(root.uuid, root.physicalRootPath, parent)
-                            require(workspace.getByMaterializedPath(root.uuid, destination) == null) { "目标已存在：$destination" }
-                            val created = workspace.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), entry.name,
-                                "application/octet-stream", parentEntry.uuid, destination, maxOf(1L, MAX_BYTES - bytes)) { it.write(data) }
-                            try { workspace.confirmCreatedEntry(root.uuid, created.uuid) }
-                            catch (failure: Throwable) {
-                                withContext(NonCancellable) { workspace.rollbackCreatedEntry(root.uuid, created.uuid) }
-                                throw failure
-                            }
-                        } else rootfs.create(parent, entry.name, MAX_BYTES - bytes) { it.write(data) }
-                        bytes += data.size
+                        val parentEntry = root?.let {
+                            validatePrivate(it.physicalRootPath, destination)
+                            val directory = ensurePrivateDirectory(it.uuid, it.physicalRootPath, parent)
+                            require(workspace.getByMaterializedPath(it.uuid, destination) == null) { "目标已存在：$destination" }
+                            directory
+                        }
+                        // 逐块转写，不把整个文件载入内存；读取端按剩余额度限长。
+                        val written = backend.readStream(entry.path, remaining) { input ->
+                            var count = 0L
+                            if (root != null && parentEntry != null) {
+                                val created = workspace.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), entry.name,
+                                    "application/octet-stream", parentEntry.uuid, destination, maxOf(1L, remaining)) { count = input.copyTo(it) }
+                                try { workspace.confirmCreatedEntry(root.uuid, created.uuid) }
+                                catch (failure: Throwable) {
+                                    withContext(NonCancellable) { workspace.rollbackCreatedEntry(root.uuid, created.uuid) }
+                                    throw failure
+                                }
+                            } else rootfs.create(parent, entry.name, remaining) { count = input.copyTo(it) }
+                            count
+                        }
+                        bytes += written
                         copied++
                     }
                 }

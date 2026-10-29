@@ -155,6 +155,18 @@ class LinuxSessionExternalWorkspaceAccess(
         bytes
     }
 
+    override suspend fun <T> readStream(sessionId: String, virtualPath: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T = operation {
+        val current = namespace(sessionId)
+        val target = route(current, normalize(current, virtualPath))
+        when (target.kind) {
+            LinuxSessionPathKind.PRIVATE -> privateBackend(current).readStream(target.path, maxBytes, consume)
+            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.readStream(sessionId, target.path, maxBytes, consume) }
+            LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.readStream(sessionId, it, maxBytes, consume) }
+            LinuxSessionPathKind.ROOTFS -> rootfs(current).readStream(target.path, maxBytes, consume)
+            LinuxSessionPathKind.MOUNTS -> fail("IS_DIRECTORY", "目标是目录")
+        }
+    }
+
     override suspend fun write(sessionId: String, path: String, bytes: ByteArray, expectedSha256: String?, createOnly: Boolean): FileEntry = operation {
         val current = namespace(sessionId)
         val normalized = mutation(current, path)
@@ -248,6 +260,8 @@ class LinuxSessionExternalWorkspaceAccess(
         override suspend fun stat(path: String) = bound { entry(sessionId, path)?.let { ExternalFolderEntry(it.materializedPath, it.name, it.isDirectory, it.sizeBytes, it.updatedAt, it.hash, it.uuid) } }
         override suspend fun list(path: String) = bound { this@LinuxSessionExternalWorkspaceAccess.list(sessionId, path) }
         override suspend fun read(path: String, maxBytes: Long) = bound { this@LinuxSessionExternalWorkspaceAccess.read(sessionId, path, maxBytes) }
+        override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+            bound { this@LinuxSessionExternalWorkspaceAccess.readStream(sessionId, path, maxBytes, consume) }
         override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) = bound {
             this@LinuxSessionExternalWorkspaceAccess.write(sessionId, path, content, expectedSha256, createOnly).let { ExternalFolderEntry(it.materializedPath, it.name, false, it.sizeBytes, it.updatedAt, it.hash, it.uuid) }
         }

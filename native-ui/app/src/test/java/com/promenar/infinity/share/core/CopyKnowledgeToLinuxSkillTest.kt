@@ -55,6 +55,8 @@ class CopyKnowledgeToLinuxSkillTest {
             override suspend fun stat(path: String) = base.stat(relative(path))?.copy(path = path, name = if (path == "/mnt/knowledge") "knowledge" else path.substringAfterLast('/'))
             override suspend fun list(path: String) = base.list(relative(path)).map { it.copy(path = "/mnt/knowledge" + it.path) }
             override suspend fun read(path: String, maxBytes: Long) = base.read(relative(path), maxBytes)
+            override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+                base.readStream(relative(path), maxBytes, consume)
         }
         every { access.backend("s", mapOf("knowledge" to "mount-id")) } returns backend
         val workspace = ShareWorkspaceFixture(temporary.newFolder())

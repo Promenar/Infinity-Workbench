@@ -39,6 +39,18 @@ class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         assertEquals(listOf(".gitignore"), File(root, ".infinity").list()!!.toList())
     }
 
+    @Test fun `流式读取逐块交出内容并按上限拒绝`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val content = ByteArray(64 * 1024) { (it % 251).toByte() }
+        File(root, "big.bin").writeBytes(content)
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        assertArrayEquals(content, backend.readStream("/big.bin", content.size.toLong()) { it.readBytes() })
+        val tooLarge = runCatching { backend.readStream("/big.bin", content.size - 1L) { it.readBytes() } }.exceptionOrNull()
+        assertEquals("TOO_LARGE", (tooLarge as ExternalFolderException).code)
+        val directory = runCatching { backend.readStream("/", 1L) { it.read() } }.exceptionOrNull()
+        assertEquals("IS_DIRECTORY", (directory as ExternalFolderException).code)
+    }
+
     @Test fun `根隐藏目录的忽略规则仅在创建时写入`() = runBlocking {
         val root = temporaryFolder.newFolder().canonicalFile
         val backend = JvmBoundRealPathFileSystem().backend(root)

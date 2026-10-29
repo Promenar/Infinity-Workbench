@@ -806,6 +806,8 @@ private fun rejectReasonLabel(reason: ShareRejectReason?): String = stringResour
         ShareRejectReason.ReadFailed -> R.string.share_import_reason_read
         ShareRejectReason.WriteFailed -> R.string.share_import_reason_write
         ShareRejectReason.IndexScheduleFailed -> R.string.share_import_reason_index
+        ShareRejectReason.LinuxUnavailable -> R.string.share_import_ext_reason_linux_unavailable
+        ShareRejectReason.LinuxPathInvalid -> R.string.share_import_ext_reason_linux_path
         null -> R.string.resource_explorer_reason_unknown
     },
 )

@@ -153,7 +153,8 @@ class ShareImportDestinationsTest {
                 override fun createFile(name: String): com.promenar.infinity.data.storage.BoundRealPathWrite {
                     val file = directory.createFile(name)
                     return object : com.promenar.infinity.data.storage.BoundRealPathWrite by file {
-                        override fun sync() { if (name == "bad.sqlite") throw android.system.ErrnoException("fsync", android.system.OsConstants.ENOSPC) else file.sync() }
+                        // Robolectric 下 OsConstants 的 errno 常量未初始化（均为 0），ErrnoException 会被当成 EACCES；这里直接抛 IO 失败。
+                        override fun sync() { if (name == "bad.sqlite") throw java.io.IOException("fsync: ENOSPC") else file.sync() }
                     }
                 }
             }
