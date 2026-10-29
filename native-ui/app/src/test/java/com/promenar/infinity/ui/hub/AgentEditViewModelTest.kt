@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.promenar.infinity.data.agent.AgentRagConfig
 import com.promenar.infinity.data.agent.AgentRetrievalConfig
 import com.promenar.infinity.data.agent.AgentRetrievalMode
+import com.promenar.infinity.data.agent.AgentSubagentModelPolicy
 import com.promenar.infinity.data.agent.KnowledgeFileAccess
 import com.promenar.infinity.data.repository.AgentRepository
 import com.promenar.infinity.domain.model.Agent
@@ -270,6 +271,48 @@ class AgentEditViewModelTest {
         vm.setMcpServerEnabled("m1", false)
         runCurrent()
         coVerify { repo.update(match { it.mcpServerIds == listOf("m2") && it.executionMode == ExecutionMode.FULL_ACCESS }) }
+    }
+
+    @Test
+    fun `子代理模型设置立即持久化到检索配置并保留记忆权限与旧检索参数`() = runTest {
+        val policy = com.promenar.infinity.data.agent.AgentMemoryPolicy(shareWithOtherAgents = false)
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称",
+            retrievalConfig = AgentRetrievalConfig(memoryLimit = 11, memoryPolicy = policy)))
+        val vm = AgentEditViewModel(repo)
+        backgroundScope.launch { vm.hasChanges.collect {} }
+        vm.loadAgent("a1")
+        runCurrent()
+        assertThat(vm.subagentModels.value).isEqualTo(AgentSubagentModelPolicy())
+
+        vm.updateSubagentModels { it.copy(defaultModelId = "p::cheap") }
+        runCurrent()
+        coVerify(exactly = 1) { repo.update(match {
+            it.subagentModelPolicy == AgentSubagentModelPolicy(defaultModelId = "p::cheap") &&
+                it.memoryPolicy == policy && it.retrievalConfig?.memoryLimit == 11
+        }) }
+
+        vm.updateSubagentModels { it.copy(allowPerTaskModel = true, selectableModelIds = listOf("p::a", "p::b", "p::a")) }
+        runCurrent()
+        assertThat(vm.subagentModels.value.selectableModelIds).containsExactly("p::a", "p::b").inOrder()
+        coVerify { repo.update(match {
+            it.subagentModelPolicy == AgentSubagentModelPolicy("p::cheap", true, listOf("p::a", "p::b"))
+        }) }
+        // 明确提交后基线随之更新，不留下未保存提示。
+        assertThat(vm.hasChanges.value).isFalse()
+
+        vm.updateSubagentModels { it.copy(defaultModelId = null) }
+        runCurrent()
+        coVerify { repo.update(match { it.subagentModelPolicy.defaultModelId == null && it.subagentModelPolicy.allowPerTaskModel }) }
+    }
+
+    @Test
+    fun `未设置子代理模型的智能体保存其它字段时不写入检索配置`() = runTest {
+        every { repo.observeById("a1") } returns flowOf(Agent("a1", "名称"))
+        val vm = AgentEditViewModel(repo)
+        vm.loadAgent("a1")
+        vm.setExecutionMode(ExecutionMode.FULL_ACCESS)
+        runCurrent()
+        coVerify(exactly = 1) { repo.update(match { it.retrievalConfig == null && it.subagentModelPolicy == AgentSubagentModelPolicy() }) }
     }
 
     @Test

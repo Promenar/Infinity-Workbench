@@ -113,6 +113,8 @@ data class SubagentRun(
     val allowedTools: List<String>? = null,
     /** 启动时不存在或超出档位的请求工具名，供工具回执说明。 */
     val ignoredTools: List<String> = emptyList(),
+    /** 模型由智能体在 task.model 中指定；false 表示默认子代理模型或会话模型，旧记录为 false。 */
+    val modelChosenByAgent: Boolean = false,
 )
 
 /** 父会话一次 `agent_task` 调用派生的全部子代理，按该调用的执行步骤 id 归档。 */
@@ -150,6 +152,8 @@ data class SubagentSpec(
     val preset: SubagentPreset?,
     val toolProfile: SubagentToolProfile,
     val allowedTools: List<String>? = null,
+    /** task.model 原值经 trim 后保存；空串视为未传。 */
+    val model: String? = null,
 )
 
 object SubagentLimits {

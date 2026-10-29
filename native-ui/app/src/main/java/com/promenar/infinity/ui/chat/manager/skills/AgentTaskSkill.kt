@@ -1,9 +1,11 @@
 package com.promenar.infinity.ui.chat.manager.skills
 
+import com.promenar.infinity.data.agent.AgentSubagentModelPolicy
 import com.promenar.infinity.data.model.ToolResult
 import com.promenar.infinity.data.subagent.SubagentLauncher
 import com.promenar.infinity.data.subagent.SubagentLimits
 import com.promenar.infinity.data.subagent.SubagentModelUnavailable
+import com.promenar.infinity.data.subagent.SubagentModelSelection
 import com.promenar.infinity.data.subagent.SubagentPreset
 import com.promenar.infinity.data.subagent.SubagentRun
 import com.promenar.infinity.data.subagent.SubagentSpec
@@ -21,12 +23,16 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 
 /** 派生子代理：后台回执与前台等待均复用应用级执行者。 */
-class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefinition {
+class AgentTaskSkill(
+    private val policyFor: suspend (SkillExecutionContext) -> AgentSubagentModelPolicy = { AgentSubagentModelPolicy() },
+    private val modelSupportsToolCalling: (String) -> Boolean = { true },
+    private val launcher: () -> SubagentLauncher,
+) : SkillDefinition {
     override val id = SubagentLimits.TOOL_NAME
     override val name = SubagentLimits.TOOL_NAME
     override val description = "Delegate self-contained subtasks to application-owned subagents. Background is the default: return IDs immediately and receive conclusions automatically. " +
-        "Use background=false when the results are required to continue, or agent_wait to wait later. Stopping this turn does not stop subagents. Each subagent works with this session's " +
-        "model, workspace and approval rules, cannot ask the user anything, and returns only its final answer. List up to " +
+        "Use background=false when the results are required to continue, or agent_wait to wait later. Stopping this turn does not stop subagents. Each subagent uses this agent's " +
+        "default subagent model (the session model when unset), and this session's workspace and approval rules, cannot ask the user anything, and returns only its final answer. List up to " +
         "${SubagentLimits.MAX_PARALLEL} independent tasks in one call to run them in parallel. Write each prompt as a complete brief: " +
         "goal, relevant paths or facts, constraints and the expected answer format. Use preset \"explorer\" for read-only research. " +
         "Use each task's optional tools list to restrict the tools available to that subagent; it cannot grant tools outside tool_profile."
@@ -46,6 +52,7 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
                     "properties":{
                         "description":{"type":"string","description":"Short task title shown to the user, at most 60 characters"},
                         "prompt":{"type":"string","description":"Complete, self-contained instructions for the subagent"},
+                        "model":{"type":"string","description":"Model selection is disabled for this agent. Do not pass model; omit it to use the default subagent model."},
                         "preset":{"type":"string","enum":["explorer"],"description":"Optional preset; explorer is read-only"},
                         "tool_profile":{"type":"string","enum":["read_only","inherit"],"description":"read_only allows only read tools; inherit uses this session's tools. Defaults to inherit, or read_only for explorer"},
                         "tools":{"type":"array","items":{"type":"string"},"description":"Optional tool-name allowlist to further restrict tool_profile; cannot grant tools outside that profile. Unknown or unavailable names are ignored and listed in the result; an empty list disables all tools"}
@@ -65,6 +72,7 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
         val specs = parse(args) ?: return failure(
             "Invalid agent_task arguments: supply tasks with 1 to ${SubagentLimits.MAX_PARALLEL} items, each with a non-empty description and prompt.",
         )
+        SubagentModelSelection.validationError(specs, policyFor(context), modelSupportsToolCalling)?.let { return failure(it) }
         val stepId = context.toolStepId ?: "agent_task_${System.currentTimeMillis()}"
         val runs = try {
             launcher().launch(context, stepId, specs, background = (args["background"] as? JsonPrimitive)?.booleanOrNull ?: true,
@@ -103,6 +111,7 @@ class AgentTaskSkill(private val launcher: () -> SubagentLauncher) : SkillDefini
                     else -> profile ?: SubagentToolProfile.INHERIT
                 },
                 allowedTools = (task["tools"] as? JsonArray)?.map { (it as JsonPrimitive).content }?.distinct(),
+                model = text("model")?.takeIf(String::isNotEmpty),
             )
         }
     }

@@ -29,14 +29,14 @@ import com.promenar.infinity.ui.theme.InfinityThemePreferences
 @Preview(name = "子代理分组卡 三种状态 深色", widthDp = 411, heightDp = 460, locale = "zh-rCN")
 @Composable
 fun subagentGroupCardDarkPreview() = SubagentFrame {
-    SubagentGroupCardContent(groupBatch(zh = true), onOpen = {}, now = NOW)
+    SubagentGroupCardContent(groupBatch(zh = true), onOpen = {}, now = NOW, modelName = { "DeepSeek V3.2" })
 }
 
 @PreviewTest
 @Preview(name = "Subagent group card English 360dp font130", widthDp = 360, heightDp = 640, locale = "en", fontScale = 1.3f)
 @Composable
 fun subagentGroupCardNarrowEnglishPreview() = SubagentFrame(dark = false) {
-    SubagentGroupCardContent(groupBatch(zh = false), onOpen = {}, now = NOW)
+    SubagentGroupCardContent(groupBatch(zh = false), onOpen = {}, now = NOW, modelName = { "DeepSeek V3.2" })
 }
 
 @PreviewTest
@@ -104,14 +104,14 @@ fun subagentViewerWaitingLightPreview() = SubagentFrame(dark = false) {
 @Preview(name = "子代理分组卡 主会话等待中 深色", widthDp = 411, heightDp = 520, locale = "zh-rCN")
 @Composable
 fun subagentGroupCardWaitingDarkPreview() = SubagentFrame {
-    SubagentGroupCardContent(backgroundBatch(zh = true), onOpen = {}, now = NOW, onDetach = {}, onStop = {})
+    SubagentGroupCardContent(backgroundBatch(zh = true), onOpen = {}, now = NOW, modelName = { "DeepSeek V3.2" }, onDetach = {}, onStop = {})
 }
 
 @PreviewTest
 @Preview(name = "Subagent group card background English 360dp font130", widthDp = 360, heightDp = 760, locale = "en", fontScale = 1.3f)
 @Composable
 fun subagentGroupCardBackgroundEnglishPreview() = SubagentFrame(dark = false) {
-    SubagentGroupCardContent(backgroundBatch(zh = false).copy(wait = null), onOpen = {}, now = NOW, onDetach = {}, onStop = {})
+    SubagentGroupCardContent(backgroundBatch(zh = false).copy(wait = null), onOpen = {}, now = NOW, modelName = { "DeepSeek V3.2" }, onDetach = {}, onStop = {})
 }
 
 @PreviewTest

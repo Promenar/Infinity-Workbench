@@ -25,6 +25,7 @@ class SubagentLauncher(
     private val contextWindow: suspend (String) -> Int? = { null },
     private val writeResult: suspend (Session, SubagentRun, String) -> String = { _, _, _ -> error("结论文件存储不可用") },
     private val texts: SubagentRuntimeTexts = SubagentRuntimeTexts(),
+    private val modelPolicyFor: suspend (Session) -> com.promenar.infinity.data.agent.AgentSubagentModelPolicy = { com.promenar.infinity.data.agent.AgentSubagentModelPolicy() },
 ) : SubagentControls {
     private data class Work(val sessionId: String, val stepId: String, val id: String, val parent: SkillExecutionContext, val resume: Boolean = false)
     private class Waiter(val ids: Set<String>) { val release = CompletableDeferred<SubagentEvent.Actor>() }
@@ -65,7 +66,9 @@ class SubagentLauncher(
         require(maxTurns == null || maxTurns > 0) { "max_turns 必须为正整数" }
         initialize()
         val parent = session(context.sessionId) ?: throw SubagentModelUnavailable("会话不存在")
-        val model = modelFor(parent)?.takeIf(String::isNotBlank) ?: throw SubagentModelUnavailable("会话没有可用模型")
+        val policy = modelPolicyFor(parent)
+        val sessionModel = if (specs.any { it.model.isNullOrBlank() } && policy.defaultModelId.isNullOrBlank()) modelFor(parent) else null
+        val models = specs.map { SubagentModelSelection.resolve(it.model, policy, sessionModel) }
         val effort = reasoningEffortFor(parent)
         val tokenLimit = taskTokenLimit()
         val ignoredTools = specs.map { runner.ignoredTools(parent, it) }
@@ -81,7 +84,8 @@ class SubagentLauncher(
                         var id: String
                         do { id = "sa_" + kotlin.random.Random.nextLong(2_176_782_336L).toString(36).padStart(6, '0') } while (!allocated.add(id))
                         SubagentRun(index, id = id, preset = spec.preset?.wireName, description = spec.description, prompt = spec.prompt,
-                            toolProfile = spec.toolProfile, modelId = model, reasoningEffort = effort, maxSteps = 0, maxTurns = maxTurns,
+                            toolProfile = spec.toolProfile, modelId = models[index].modelId, modelChosenByAgent = models[index].chosenByAgent,
+                            reasoningEffort = effort, maxSteps = 0, maxTurns = maxTurns,
                             maxTokens = if (tokenLimit <= 0) 0 else (tokenLimit / specs.size).coerceIn(1, Int.MAX_VALUE.toLong()).toInt(),
                             status = SubagentStatus.QUEUED, startedAt = clock(),
                             allowedTools = spec.allowedTools?.distinct()?.filterNot { it in ignoredTools[index] },

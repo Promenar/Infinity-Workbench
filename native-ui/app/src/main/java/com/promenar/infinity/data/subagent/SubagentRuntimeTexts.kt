@@ -8,4 +8,6 @@ data class SubagentRuntimeTexts(
     val persistenceFailed: String = "子代理记录持久化失败，执行已结束；重启后可能显示为中断。",
     val stopPersistenceFailed: String = "停止状态持久化失败，执行已取消。",
     val contextLimit: String = SubagentRunner.CONTEXT_LIMIT,
+    val modelUnavailable: (String) -> String = { "子代理模型“$it”当前不可用；没有改用其它模型。" },
+    val modelToolCallingUnsupported: String = "模型不支持工具调用。",
 )

@@ -17,6 +17,8 @@ class DefaultSessionToolResolver(
     private val longTermMemoryAllowed: (Session) -> Boolean = { false },
     private val knowledgeSearchAllowed: (Session) -> Boolean = { false },
     private val knowledgeAccessAllowed: (Session) -> Boolean = { false },
+    private val subagentModelPolicy: (Session) -> com.promenar.infinity.data.agent.AgentSubagentModelPolicy = { com.promenar.infinity.data.agent.AgentSubagentModelPolicy() },
+    private val modelName: (String) -> String? = { null },
     private val mediaCapabilities: (Session) -> com.promenar.infinity.data.model.ModelCapabilities = { com.promenar.infinity.data.model.ModelCapabilities() },
 ) : SessionToolResolver {
     override fun resolve(session: Session): List<ProtocolTool> {
@@ -44,7 +46,12 @@ class DefaultSessionToolResolver(
                 "mcp" -> tool.mcpServerId != null && tool.mcpServerId in session.activeMcpServerIds
                 else -> false
             }
-        }.map { tool -> SessionRunModeToolDefinitions.forSession(tool, session.runMode) }
+        }.map { tool ->
+            val definition = SessionRunModeToolDefinitions.forSession(tool, session.runMode)
+            if (definition.sourceId == "builtin" && definition.function.name == com.promenar.infinity.data.subagent.SubagentLimits.TOOL_NAME)
+                com.promenar.infinity.data.subagent.SubagentModelToolDefinitions.forSession(definition, subagentModelPolicy(session), modelName)
+            else definition
+        }
     }
 
     companion object {

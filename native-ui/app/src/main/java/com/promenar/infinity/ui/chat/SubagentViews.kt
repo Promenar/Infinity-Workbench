@@ -106,6 +106,8 @@ class SubagentRunsAccess(
     val observe: (stepId: String) -> Flow<SubagentBatch?>,
     val snapshot: (stepId: String) -> SubagentBatch?,
     val onOpen: (stepId: String, index: Int) -> Unit,
+    /** 子代理实际模型的显示名；查不到时显示模型 ID。 */
+    val modelName: (modelId: String) -> String = { it },
 )
 
 val LocalSubagentRuns = staticCompositionLocalOf<SubagentRunsAccess?> { null }
@@ -133,6 +135,7 @@ internal fun SubagentGroupCard(stepId: String, modifier: Modifier = Modifier) {
             current,
             onOpen = { index -> access.onOpen(stepId, index) },
             modifier = modifier,
+            modelName = access.modelName,
             onDetach = controls?.let { { it.releaseWait(current.sessionId, stepId) } },
             onStop = controls?.let { { run: SubagentRun -> scope.launch {
                 // 停止一旦发出就做完，卡片滚出屏幕时也不中途取消。
@@ -150,6 +153,7 @@ internal fun SubagentGroupCardContent(
     now: Long? = null,
     onDetach: (() -> Unit)? = null,
     onStop: ((SubagentRun) -> Unit)? = null,
+    modelName: (String) -> String = { it },
 ) {
     val active = batch.runs.any { it.status.isActive }
     var clock by remember { mutableLongStateOf(now ?: System.currentTimeMillis()) }
@@ -222,6 +226,7 @@ internal fun SubagentGroupCardContent(
                 SubagentRunRow(
                     run,
                     now ?: clock,
+                    modelName = modelName(run.modelId),
                     onClick = { onOpen(run.index) },
                     onStop = onStop?.takeIf { run.status.isActive && run.id.isNotEmpty() }?.let { stop -> { stop(run) } },
                 )
@@ -231,7 +236,7 @@ internal fun SubagentGroupCardContent(
 }
 
 @Composable
-private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit, onStop: (() -> Unit)? = null) {
+private fun SubagentRunRow(run: SubagentRun, now: Long, modelName: String, onClick: () -> Unit, onStop: (() -> Unit)? = null) {
     val name = subagentName(run.preset, run.index)
     val openLabel = stringResource(R.string.subagent_open_cd)
     Column(
@@ -279,6 +284,7 @@ private fun SubagentRunRow(run: SubagentRun, now: Long, onClick: () -> Unit, onS
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 24.dp, end = 8.dp),
         )
+        SubagentModelTag(subagentModelLabel(run, modelName), Modifier.padding(start = 24.dp, end = 8.dp, top = 2.dp))
         if (run.status == SubagentStatus.COMPLETED) {
             run.result?.let(::subagentResultSummary)?.let { summary ->
                 Text(
@@ -312,6 +318,28 @@ internal fun subagentResultSummary(result: String): String? {
 
 private val LIST_MARKER = Regex("""^([-*+]|\d+[.)])\s+""")
 private val INLINE_MARKUP = Regex("""\*\*|__|`|~~""")
+
+/** 子代理实际使用的模型；由智能体在任务里指定时加注“智能体指定”。 */
+@Composable
+internal fun subagentModelLabel(run: SubagentRun, modelName: String): String =
+    if (run.modelChosenByAgent) stringResource(R.string.subagent_model_chosen_by_agent, modelName) else modelName
+
+/** 卡片上的模型标签：始终显示，次要容器色的小圆角块。 */
+@Composable
+private fun SubagentModelTag(label: String, modifier: Modifier = Modifier) {
+    if (label.isBlank()) return
+    Text(
+        text = label,
+        style = InfinityTypography.labelSmall,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .testTag("CHAT_SUBAGENT_MODEL"),
+    )
+}
 
 @Composable
 private fun SubagentStatusIcon(status: SubagentStatus) {
@@ -621,7 +649,7 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
         SubagentFact(stringResource(R.string.subagent_viewer_profile), stringResource(
             if (run.toolProfile == SubagentToolProfile.READ_ONLY) R.string.subagent_profile_read_only else R.string.subagent_profile_inherit,
         ))
-        SubagentFact(stringResource(R.string.subagent_viewer_model), modelName)
+        SubagentFact(stringResource(R.string.subagent_viewer_model), subagentModelLabel(run, modelName))
         SubagentFact(
             stringResource(R.string.subagent_viewer_turn_limit),
             (run.maxTurns ?: run.maxSteps.takeIf { it > 0 })?.toString() ?: stringResource(R.string.subagent_viewer_unlimited),
