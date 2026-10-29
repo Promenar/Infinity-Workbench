@@ -586,6 +586,8 @@ internal fun SshHostActionsContent(
                 icon = Icons.Rounded.SwapHoriz,
                 onCheckedChange = { onToggleForward() },
                 enabled = enabled && forwardReason == null,
+                // 灰显原因较长，允许换到第二行，避免截断。
+                descriptionMaxLines = if (forwardReason != null) 2 else 1,
             )
             SshActionItem(Icons.Rounded.DeleteOutline, stringResource(R.string.ssh_delete), enabled, onDelete, destructive = true)
         }

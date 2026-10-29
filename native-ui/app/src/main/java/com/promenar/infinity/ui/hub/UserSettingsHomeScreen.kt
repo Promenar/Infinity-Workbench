@@ -151,6 +151,7 @@ fun UserSettingsHomeScreen(
         }
     }
 
+    val repositoryUrl = stringResource(R.string.ux2_project_repository_url)
     val actions = UserSettingsHomeScreenActions(
             onChangeAvatar = {
                 avatarCropLauncher.launch()
@@ -165,7 +166,7 @@ fun UserSettingsHomeScreen(
                 context.startActivity(
                     android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(context.getString(R.string.ux2_project_repository_url)),
+                        android.net.Uri.parse(repositoryUrl),
                     ),
                 )
             },
@@ -173,7 +174,7 @@ fun UserSettingsHomeScreen(
                 context.startActivity(
                     android.content.Intent(
                         android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(context.getString(R.string.ux2_project_repository_url)),
+                        android.net.Uri.parse(repositoryUrl),
                     ),
                 )
             },

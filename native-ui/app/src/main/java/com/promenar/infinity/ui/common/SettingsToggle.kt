@@ -18,10 +18,12 @@ fun SettingsToggle(
     modifier: Modifier = Modifier,
     switchModifier: Modifier = Modifier,
     leadingSpacer: Boolean = false,
+    descriptionMaxLines: Int = 1,
 ) {
     val haptics = LocalInfinityHaptics.current
     InfinitySettingsRowLayout(
         title = title, subtitle = description, icon = icon, enabled = enabled, leadingSpacer = leadingSpacer,
+        subtitleMaxLines = descriptionMaxLines,
         modifier = modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = {
             haptics.toggle(it)
             onCheckedChange(it)

@@ -547,6 +547,8 @@ class SessionStateMemoryIntegrationTest {
         assertThat(processed.toList()).containsExactly("a1", "a2").inOrder()
         assertThat(queue.snapshotState().queue).isEmpty()
         assertThat(queue.state.value.isDocumentIndexing).isFalse()
+        // 本用例的处理协程跑在 Dispatchers.Default 上：关库前等它收尾，避免完成后的清理查询撞上已关闭的库并泄漏到下一个用例。
+        queue.shutdownForReplacement()
     }
 
     private fun TestScope.processor(

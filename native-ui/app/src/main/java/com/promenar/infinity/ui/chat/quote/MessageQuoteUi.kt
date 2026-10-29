@@ -43,7 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.ClipEntry
@@ -351,6 +351,7 @@ internal fun UserMessageQuotes(quotes: List<MessageQuote>, maxWidth: Dp, fontSiz
 }
 
 /** 引文左侧的细竖条，与 Markdown 引用块的视觉一致。 */
-private fun Modifier.quoteAccentBar(color: androidx.compose.ui.graphics.Color): Modifier = drawBehind {
+private fun Modifier.quoteAccentBar(color: androidx.compose.ui.graphics.Color): Modifier = drawWithContent {
     drawRect(color = color, size = Size(3.dp.toPx(), size.height))
+    drawContent()
 }

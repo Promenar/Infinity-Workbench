@@ -71,10 +71,10 @@ internal fun RowScope.ThinkingPreview(reasoning: String, rate: ThinkingRateHolde
     val measurer = rememberTextMeasurer()
     val engine = remember(measurer, style) {
         ThinkingPreviewEngine { value -> measurer.measure(value, style, softWrap = false, maxLines = 1).size.width.toFloat() }
+            .also { it.update(reasoning, System.nanoTime() / 1_000_000) }
     }
     val latest by rememberUpdatedState(reasoning)
     var tick by remember { mutableIntStateOf(0) }
-    remember(engine) { engine.update(reasoning, System.nanoTime() / 1_000_000) }
     LaunchedEffect(engine) {
         snapshotFlow { latest }.collectLatest {
             do {
