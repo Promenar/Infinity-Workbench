@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.ui.chat.ComposerIslandCorner
+import com.promenar.infinity.ui.chat.ComposerToolbarInset
 import com.promenar.infinity.ui.chat.ComposerIslandLights
 import com.promenar.infinity.ui.chat.ComposerIslandSurface
 import com.promenar.infinity.ui.chat.LocalComposerBackdrop
@@ -335,7 +336,7 @@ private fun ComposerPreview(style: ComposerGlowStyle, generating: Boolean = true
                         modifier = Modifier.padding(start = 16.dp, top = 14.dp),
                     )
                     Box(
-                        Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 8.dp).size(40.dp)
+                        Modifier.align(Alignment.BottomEnd).padding(end = ComposerToolbarInset, bottom = ComposerToolbarInset).size(40.dp)
                             .clip(CircleShape).background(MaterialTheme.colorScheme.onSurface),
                         contentAlignment = Alignment.Center,
                     ) {

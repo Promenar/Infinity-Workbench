@@ -169,13 +169,13 @@ private fun frostedRenderEffect(radiusPx: Float): RenderEffect {
 
 /**
  * 环境光柔光的中心（像素）：点阵屏在浮岛顶沿时取输入区上沿正中，其余样式取输入行右侧点阵屏所在处
- * （距右缘 [ScopeScreenSpec.InputRowMaxWidthDp] 一半加留白，距底边 72dp），中心不高于浮岛 30% 高度。
+ * （距右缘 [ScopeScreenSpec.InputRowMaxWidthDp] 一半加 [ComposerInputRowEndDp]，距底边 [ComposerInputRowCenterDp]），中心不高于浮岛 30% 高度。
  */
 internal fun composerWashAnchor(styles: InfinityMotionStyles, width: Float, height: Float, lightsTop: Float, dp: Float): Offset {
     val topEdge = styles.composer == ComposerGlowStyle.SCOPE_SCREEN && styles.scopePlacement == ScopeScreenPlacement.TOP_EDGE
     if (topEdge) return Offset(width / 2, lightsTop.coerceIn(0f, height))
-    val x = (width - (14 + ScopeScreenSpec.InputRowMaxWidthDp / 2) * dp).coerceAtLeast(width * 0.5f)
-    val y = (height - 72 * dp).coerceAtLeast(height * 0.3f)
+    val x = (width - (ComposerInputRowEndDp + ScopeScreenSpec.InputRowMaxWidthDp / 2) * dp).coerceAtLeast(width * 0.5f)
+    val y = (height - ComposerInputRowCenterDp * dp).coerceAtLeast(height * 0.3f)
     return Offset(x, y)
 }
 

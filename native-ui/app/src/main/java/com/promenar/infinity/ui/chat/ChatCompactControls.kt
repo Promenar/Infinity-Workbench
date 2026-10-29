@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+/** 紧凑图标按钮的可见与布局尺寸。 */
+internal val ChatCompactIconSize = 40.dp
+
 /** 可见尺寸与布局尺寸一致；clickable 按平台的最小触控尺寸向外扩展命中范围。 */
 @Composable
 internal fun ChatCompactIconButton(
@@ -30,7 +33,7 @@ internal fun ChatCompactIconButton(
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier = modifier.size(40.dp).clip(CircleShape).background(containerColor)
+        modifier = modifier.size(ChatCompactIconSize).clip(CircleShape).background(containerColor)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }

@@ -1,6 +1,6 @@
 package com.promenar.infinity.ui.chat
 
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.rounded.Check
@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -129,14 +131,19 @@ internal fun reasoningEffortLabel(effort: ReasoningEffort): String = stringResou
     },
 )
 
+/** 工具行胶囊（模型名、推理档位）的可见高度；点击区仍为 40dp 高。 */
+internal val ComposerChipHeight = 32.dp
+
 /**
- * 模型选择器右侧的推理强度胶囊。多档模型点开下拉选择；只能开关的模型点一下切换。
- * 模型默认时为灰色，选择后为强调色。
+ * 模型选择器右侧的推理强度胶囊，与模型胶囊同为无描边的填充胶囊。多档模型点开下拉选择；只能开关的模型点一下切换。
+ * 模型默认时为灰字，选择后换成主色淡底与主色文字。
  */
 @Composable
 internal fun ChatReasoningChip(
     control: ChatReasoningControl,
     onChange: (ReasoningEffort?) -> Unit,
+    /** 模型默认时的胶囊填充色，与模型胶囊相同。 */
+    containerColor: Color,
     modifier: Modifier = Modifier,
     /** 窄屏只显示灯泡，档位由无障碍状态与菜单给出，把宽度留给模型名。 */
     compact: Boolean = false,
@@ -153,6 +160,7 @@ internal fun ChatReasoningChip(
         accent -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val fill = if (accent) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f).compositeOver(containerColor) else containerColor
     val chipDescription = stringResource(R.string.reasoning_effort_title)
     val chipState = if (accent) label else stringResource(R.string.reasoning_effort_model_default_state, label)
     Box(modifier) {
@@ -176,15 +184,11 @@ internal fun ChatReasoningChip(
         ) {
             Row(
                 modifier = Modifier
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .border(
-                        width = 1.dp,
-                        color = if (accent) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(14.dp),
-                    )
-                    .padding(horizontal = if (compact) 6.dp else 8.dp),
+                    .height(ComposerChipHeight)
+                    .clip(CircleShape)
+                    .background(fill)
+                    // 紧凑时左右各 8dp，与 16dp 灯泡正好拼成 32dp 圆。
+                    .padding(horizontal = if (compact) 8.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {

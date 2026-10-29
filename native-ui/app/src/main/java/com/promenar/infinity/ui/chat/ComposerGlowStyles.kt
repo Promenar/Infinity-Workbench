@@ -58,10 +58,19 @@ import kotlin.math.roundToInt
 internal fun composerBreath(timeSeconds: Float): Float = 0.5f - 0.5f * cos(2 * PI.toFloat() * timeSeconds / 2.6f)
 
 /**
- * 浮岛内的停止键位置：工具栏行高 40dp、底部留白 8dp、右侧留白 12dp，停止键 40dp，
- * 因此圆心距右边缘 32dp、距底边 28dp。灯效都避开以它为圆心、半径 21dp 的区域。
+ * 浮岛内的停止键位置：停止键 40dp，距右边缘与底边都是 [ComposerToolbarInset]（8dp），
+ * 因此圆心距右边缘、底边都是 28dp，与浮岛圆角同心。灯效都避开以它为圆心、半径 21dp 的区域。
  */
-internal fun composerStopCenter(width: Float, height: Float, dp: Float): Pair<Float, Float> = (width - 32 * dp) to (height - 28 * dp)
+internal fun composerStopCenter(width: Float, height: Float, dp: Float): Pair<Float, Float> {
+    val inset = (ComposerToolbarInset.value + 20) * dp
+    return (width - inset) to (height - inset)
+}
+
+/** 输入行右侧点阵屏与柔光的右缘距浮岛右边缘：停止键右缘再往里 2dp。 */
+internal const val ComposerInputRowEndDp = 10f
+
+/** 单行输入文字的中心距浮岛底边：底部留白 8dp + 工具行 40dp + 输入行 48dp 里文字下方 9dp + 半个 22sp 行高。 */
+internal const val ComposerInputRowCenterDp = 68f
 
 /** 浮岛外圈与描边所需的可复用画笔；每个浮岛持有一份。 */
 internal class ComposerOutlinePaints {
@@ -602,8 +611,8 @@ private fun DrawScope.drawInputRowScope(canvas: ComposeCanvas, phase: Generation
     val rows = ScopeScreenSpec.InputRowRows
     val pitch = ScopeScreenSpec.PitchDp * k
     val inset = ScopeScreenSpec.InsetDp * k
-    val x1 = size.width - 14 * k
-    val cy = size.height - 72 * k
+    val x1 = size.width - ComposerInputRowEndDp * k
+    val cy = size.height - ComposerInputRowCenterDp * k
     val x0 = max(size.width * ScopeScreenSpec.InputRowMinStartFraction, x1 - ScopeScreenSpec.InputRowMaxWidthDp * k)
     val cols = max(12, ((x1 - x0 - 2 * inset) / pitch).toInt())
     val sw = cols * pitch + 2 * inset
