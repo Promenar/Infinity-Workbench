@@ -452,9 +452,9 @@
     <string name="chat_menu_export">Export Chat</string>
     <string name="chat_input_placeholder">Message %1$s</string>
     <string name="chat_input_placeholder_default">Message</string>
-    <string name="chat_execution_mode_cd">Execution mode: %1$s</string>
+    <string name="chat_execution_mode_cd">Approvals: %1$s</string>
     <string name="chat_execution_mode_workspace_hint">Commands need your approval</string>
-    <string name="chat_execution_mode_full_access_hint">No approvals, full app data access</string>
+    <string name="chat_execution_mode_full_access_hint">Commands run without asking, full app data access</string>
     <string name="chat_input_placeholder_generating">Queue your next message</string>
     <string name="chat_empty_prompt">What would you like to do today?</string>
     <string name="chat_cd_workspace">Workspace</string>
@@ -623,7 +623,7 @@
     <string name="sheet_tool_session_skills">Session custom skills</string>
     <string name="sheet_tool_custom_unsandboxed">Custom scripts aren\'t available yet.</string>
     <string name="sheet_tool_user_skills">User Skills</string>
-    <string name="sheet_tool_execution_mode">Execution Mode</string>
+    <string name="sheet_tool_execution_mode">Approvals</string>
     <string name="sheet_tool_code_analysis">Code Analysis</string>
     <string name="sheet_tool_web_search">Web Search</string>
     <string name="sheet_tool_filesystem_server">Filesystem Server</string>
@@ -1721,8 +1721,8 @@
     <string name="tailscale_allowlist_all">All devices</string>
     <string name="tailscale_allowlist_format">One entry per line or comma-separated: device name, MagicDNS name or tailnet IP.</string>
     <string name="tailscale_auth_key_hint">Paste an auth key starting with tskey-</string>
-    <string name="common_mode_workspace">Workspace</string>
-    <string name="common_mode_full_access">Full access</string>
+    <string name="common_mode_workspace">Ask for commands</string>
+    <string name="common_mode_full_access">No approvals</string>
     <string name="common_mode_workspace_desc">File tools work freely inside the workspace; every command asks first.</string>
     <string name="common_mode_full_access_desc">Commands also run without asking, with this app\'s permissions and access to all app data.</string>
     <string name="chat_runtime_changes_title">Critical app data changed</string>

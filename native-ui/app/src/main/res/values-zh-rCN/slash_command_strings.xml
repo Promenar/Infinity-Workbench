@@ -17,8 +17,8 @@
     <string name="slash_cmd_compact_desc">把较早的对话压缩成摘要，腾出上下文空间</string>
     <string name="slash_cmd_clear_name">清空历史</string>
     <string name="slash_cmd_clear_desc">确认后删除本会话的全部消息</string>
-    <string name="slash_cmd_mode_name">执行模式</string>
-    <string name="slash_cmd_mode_desc">切换执行模式：工作区或完全访问</string>
+    <string name="slash_cmd_mode_name">审批</string>
+    <string name="slash_cmd_mode_desc">切换审批：命令需批准或免批准</string>
     <string name="slash_cmd_tools_name">工具调用</string>
     <string name="slash_cmd_tools_desc">为本会话开启或关闭工具调用</string>
     <string name="slash_cmd_export_name">导出会话</string>
@@ -29,7 +29,7 @@
     <string name="slash_feedback_prompt_saved">会话提示词已更新</string>
     <string name="slash_feedback_prompt_failed">会话提示词保存失败</string>
     <string name="slash_feedback_compacting">正在压缩上下文…</string>
-    <string name="slash_feedback_mode">执行模式已切换为%1$s</string>
+    <string name="slash_feedback_mode">审批已切换为“%1$s”</string>
     <string name="slash_feedback_tools_on">已开启工具调用</string>
     <string name="slash_feedback_tools_off">已关闭工具调用</string>
     <string name="slash_feedback_exported">已导出 %1$s</string>
@@ -39,7 +39,7 @@
     <!-- 无法执行 -->
     <string name="slash_reject_nothing_to_clear">本会话还没有可清空的消息</string>
     <string name="slash_reject_nothing_to_export">本会话还没有可导出的消息</string>
-    <string name="slash_reject_unknown_mode">没有“%1$s”模式，可用：工作区或完全访问</string>
+    <string name="slash_reject_unknown_mode">没有“%1$s”，可用：命令需批准或免批准</string>
     <string name="slash_reject_unknown_toggle">用法：/tools on 或 /tools off</string>
     <string name="slash_reject_unknown_format">导出只支持 md 或 txt</string>
     <string name="slash_block_disabled">技能 /%1$s 已停用，可在会话设置的“工具”中启用</string>

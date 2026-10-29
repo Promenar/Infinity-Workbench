@@ -5,8 +5,8 @@
 
     <string name="agent_reach_run_mode_linux">Linux 模式</string>
     <string name="agent_reach_run_mode_builtin">内置模式</string>
-    <string name="agent_reach_permission_workspace">工作区权限</string>
-    <string name="agent_reach_permission_full_access">完全访问</string>
+    <string name="agent_reach_permission_workspace">命令需批准</string>
+    <string name="agent_reach_permission_full_access">免批准</string>
     <string name="agent_reach_workspace_storage">%1$s · %2$s</string>
     <string name="agent_reach_workspace_unavailable">工作区当前不可用</string>
 

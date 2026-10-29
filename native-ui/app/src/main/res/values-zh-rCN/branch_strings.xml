@@ -8,8 +8,8 @@
     <string name="branch_work_worktree">新建 worktree</string>
     <string name="branch_context_fresh">全新</string>
     <string name="branch_context_inherit">继承主会话</string>
-    <string name="branch_mode_full_access">完全访问</string>
-    <string name="branch_mode_workspace">工作区 · 命令逐条审批</string>
+    <string name="branch_mode_full_access">免批准</string>
+    <string name="branch_mode_workspace">命令需批准</string>
     <string name="branch_mode_same_as_parent">%1$s · 沿用主会话</string>
     <string name="branch_mode_differs_stricter">与主会话不同：分支里的每条命令都要你批准。</string>
     <string name="branch_mode_differs_looser">与主会话不同：分支里的命令无需批准，并可访问全部应用数据。</string>

@@ -52,8 +52,8 @@ enum class SlashCommandRejection {
 /** 内置命令的参数解析与可用性判断，纯函数。 */
 object BuiltinSlashCommandResolver {
     private val MODE_ALIASES = mapOf(
-        ExecutionMode.WORKSPACE to setOf("workspace", "工作区", "默认", "default"),
-        ExecutionMode.FULL_ACCESS to setOf("full_access", "full access", "完全访问"),
+        ExecutionMode.WORKSPACE to setOf("workspace", "工作区", "默认", "default", "命令需批准", "需批准", "ask for commands", "ask"),
+        ExecutionMode.FULL_ACCESS to setOf("full_access", "full access", "完全访问", "免批准", "no approvals"),
     )
     private val ON = setOf("on", "开", "开启", "打开", "启用", "enable", "true", "1")
     private val OFF = setOf("off", "关", "关闭", "停用", "禁用", "disable", "false", "0")

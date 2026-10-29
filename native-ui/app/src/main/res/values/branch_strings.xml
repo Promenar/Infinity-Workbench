@@ -8,8 +8,8 @@
     <string name="branch_work_worktree">New worktree</string>
     <string name="branch_context_fresh">Fresh</string>
     <string name="branch_context_inherit">Inherit from main</string>
-    <string name="branch_mode_full_access">Full access</string>
-    <string name="branch_mode_workspace">Workspace · approve commands</string>
+    <string name="branch_mode_full_access">No approvals</string>
+    <string name="branch_mode_workspace">Ask for commands</string>
     <string name="branch_mode_same_as_parent">%1$s · same as main</string>
     <string name="branch_mode_differs_stricter">Differs from the main session: every command in the branch needs your approval.</string>
     <string name="branch_mode_differs_looser">Differs from the main session: the branch runs commands without approval and can access all app data.</string>

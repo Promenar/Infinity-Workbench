@@ -10,7 +10,7 @@
     <string name="p0_reset_consent">重置授权</string>
     <string name="p0_decrease_setting">减少%1$s</string>
     <string name="p0_increase_setting">增加%1$s</string>
-    <string name="p0_auto_confirm_title">允许不限轮次的完全访问？</string>
+    <string name="p0_auto_confirm_title">允许不限轮次且免批准？</string>
     <string name="p0_auto_confirm_body">命令将不再逐条确认，以应用身份连续运行。你可以随时停止，Token 上限仍然有效。</string>
     <string name="p0_loop_title">检测到重复工具调用</string>
     <string name="p0_loop_body">智能体在重复同一个调用，可能陷入了循环。</string>
