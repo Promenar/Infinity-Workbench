@@ -15,6 +15,7 @@ import com.promenar.infinity.data.model.ProviderListItem
 import com.promenar.infinity.data.model.catalog.MetadataSource
 import com.promenar.infinity.data.remote.protocol.ProtocolType
 import com.promenar.infinity.data.remote.provider.ProviderConnectionProbeFailure
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.theme.InfinityColorSource
 import com.promenar.infinity.ui.theme.InfinityTheme
 import com.promenar.infinity.ui.theme.InfinityThemeMode
@@ -172,7 +173,32 @@ fun providerFormProvidersModels() = ProvidersModelsTheme(dark = true) {
                 hint = null,
                 builtIn = BuiltInTailscaleStatus.CONNECTED,
             ),
-            deletable = true,
+            deleteEntry = UnavailableReasons.ProviderDeleteEntry.ENABLED,
+        ),
+        actions = ProviderFormActions(),
+    )
+}
+
+@PreviewTest
+@Preview(name = "内置提供商编辑 删除行灰显 深色中文 411", widthDp = 411, heightDp = 1100, locale = "zh-rCN")
+@Composable
+fun providerFormBuiltinDeleteGreyedProvidersModels() = ProvidersModelsTheme(dark = true) {
+    ProviderFormContent(
+        state = ProviderFormUiState(
+            isEditing = true,
+            isExistingProvider = true,
+            name = "DeepSeek",
+            selectedPreset = PROVIDER_PRESETS.first { it.name == "DeepSeek" },
+            baseUrl = "https://api.deepseek.com",
+            hasStoredCredential = true,
+            connectionTestState = ProviderConnectionTestState.Success,
+            apiSource = ProviderApiSourceState(
+                selected = ProviderApiSource.PUBLIC,
+                detected = ProviderApiSource.PUBLIC,
+                hint = null,
+                builtIn = BuiltInTailscaleStatus.CONNECTED,
+            ),
+            deleteEntry = UnavailableReasons.ProviderDeleteEntry.DISABLED_BUILTIN,
         ),
         actions = ProviderFormActions(),
     )

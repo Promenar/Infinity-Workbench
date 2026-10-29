@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.ui.common.InfinityFieldRow
 import com.promenar.infinity.ui.common.InfinityGroupDivider
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySettingsGroup
 import com.promenar.infinity.ui.common.InfinityStatusKind
 import com.promenar.infinity.ui.common.InfinityStatusStrip
@@ -127,8 +128,8 @@ internal data class ProviderFormUiState(
     /** 云端提供商的 API 源（公网或 Tailscale 内网）；本地推理为 null。 */
     val apiSource: ProviderApiSourceState? = null,
     val tailnetInfo: ProviderTailnetInfo = ProviderTailnetInfo(),
-    /** 已保存的提供商（非内置默认）显示“删除提供商”行。 */
-    val deletable: Boolean = false,
+    /** “删除提供商”行：已保存的提供商可删，内置默认灰显并说明原因，新建时不出现。 */
+    val deleteEntry: UnavailableReasons.ProviderDeleteEntry = UnavailableReasons.ProviderDeleteEntry.HIDDEN,
 )
 
 internal data class ProviderFormActions(
@@ -552,7 +553,7 @@ fun ProviderFormScreen(
                 tailnetName = tailnetState.summary?.tailnetName,
                 peers = tailnetState.peers,
             ),
-            deletable = providerId != null && providerId != "default",
+            deleteEntry = UnavailableReasons.providerDeleteEntry(providerId),
         ),
         actions = ProviderFormActions(
             onBack = onNavigateBack,
@@ -710,13 +711,16 @@ internal fun ProviderFormContent(
                         )
                     }
                 }
-                if (state.deletable) {
+                if (state.deleteEntry != UnavailableReasons.ProviderDeleteEntry.HIDDEN) {
                     animatedFormItem("delete") {
+                        val deleteEnabled = state.deleteEntry == UnavailableReasons.ProviderDeleteEntry.ENABLED
                         InfinitySettingsGroup {
                             InfinitySettingsItem(
                                 title = stringResource(R.string.provider_form_delete),
+                                subtitle = if (deleteEnabled) null else stringResource(R.string.ux2_unavailable_provider_builtin_delete),
                                 icon = Icons.Rounded.Delete,
                                 titleColor = MaterialTheme.colorScheme.error,
+                                enabled = deleteEnabled,
                                 onClick = actions.onDelete,
                                 modifier = Modifier.testTag(UiTags.PROVIDER_FORM_DELETE),
                             )

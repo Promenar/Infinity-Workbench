@@ -60,6 +60,7 @@ import com.promenar.infinity.domain.model.SessionRunMode
 import com.promenar.infinity.ui.common.InfinityBottomSheet
 import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.linux.settings.linuxBytes
 import com.promenar.infinity.ui.linux.settings.linuxFailureText
 import com.promenar.infinity.ui.linux.settings.linuxStepTitle
@@ -162,15 +163,18 @@ fun RunModeChip(
     }
 }
 
-/** 会话菜单与首次选择共用的两项模式列表；Play 版只有内置。 */
+/** 会话菜单与首次选择共用的两项模式列表；Play 版没有 Linux，该项保留并灰显、写明原因。 */
 @Composable
 fun RunModeOptions(selected: SessionRunMode?, linuxSupported: Boolean, onSelect: (SessionRunMode) -> Unit) {
-    val modes = if (linuxSupported) SessionRunMode.entries else listOf(SessionRunMode.BUILTIN)
-    modes.forEach { mode ->
+    SessionRunMode.entries.forEach { mode ->
+        val unavailableReason = if (mode == SessionRunMode.LINUX) UnavailableReasons.linuxRunMode(linuxSupported) else null
         InfinitySettingsItem(
             horizontalPadding = 0.dp,
             title = stringResource(mode.labelRes()),
-            subtitle = stringResource(if (mode == SessionRunMode.LINUX) R.string.run_mode_linux_desc else R.string.run_mode_builtin_desc),
+            subtitle = stringResource(
+                unavailableReason ?: if (mode == SessionRunMode.LINUX) R.string.run_mode_linux_desc else R.string.run_mode_builtin_desc,
+            ),
+            enabled = unavailableReason == null,
             subtitleMaxLines = 3,
             role = Role.RadioButton,
             selected = mode == selected,

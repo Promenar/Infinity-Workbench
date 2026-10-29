@@ -87,6 +87,7 @@ import com.promenar.infinity.ui.common.InfinityCommandBlock
 import com.promenar.infinity.ui.common.InfinityIdentifierText
 import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
 import com.promenar.infinity.ui.common.InfinitySettingsSection
 import com.promenar.infinity.ui.common.SettingsToggle
@@ -460,15 +461,17 @@ internal fun TermuxSettingsContent(
                 title = stringResource(R.string.settings_batch1_termux_key_section),
                 footer = stringResource(if (state.keyHosts.isEmpty()) R.string.termux_key_missing else R.string.termux_key_copy_description),
             ) {
-                if (state.keyHosts.isNotEmpty()) {
+                // 没有可复用的 SSH 主机时保留这三项并灰显，第一行写明原因。
+                val keyReason = UnavailableReasons.termuxKeyActions(state.keyHosts.isNotEmpty())
+                run {
                     Box {
                         InfinitySettingsItem(
                             icon = Icons.Rounded.Key,
                             title = stringResource(R.string.termux_reuse_key),
-                            subtitle = selectedKeyHost?.alias,
-                            subtitleIsIdentifier = true,
+                            subtitle = keyReason?.let { stringResource(it) } ?: selectedKeyHost?.alias,
+                            subtitleIsIdentifier = keyReason == null,
                             onClick = { keyMenuOpen = true },
-                            enabled = !state.busy,
+                            enabled = !state.busy && keyReason == null,
                             trailingContent = {
                                 Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             },
@@ -485,13 +488,13 @@ internal fun TermuxSettingsContent(
                     InfinitySettingsItem(
                         icon = Icons.Rounded.Key,
                         title = stringResource(R.string.termux_copy_public_key),
-                        enabled = !state.busy,
+                        enabled = !state.busy && keyReason == null,
                         onClick = actions.onCopyPublicKey,
                     )
                     InfinitySettingsItem(
                         icon = Icons.Rounded.Key,
                         title = stringResource(R.string.termux_copy_key_command),
-                        enabled = !state.busy,
+                        enabled = !state.busy && keyReason == null,
                         onClick = actions.onCopyPublicKeyCommand,
                     )
                 }

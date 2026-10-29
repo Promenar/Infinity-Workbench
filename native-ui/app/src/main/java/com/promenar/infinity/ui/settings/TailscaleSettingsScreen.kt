@@ -77,6 +77,7 @@ import com.promenar.infinity.data.tailnet.TailnetSettingsProblem
 import com.promenar.infinity.data.tailnet.TailnetState
 import com.promenar.infinity.data.tailnet.TailnetStatusSummary
 import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
 import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import com.promenar.infinity.ui.common.InfinitySettingsSection
@@ -360,17 +361,16 @@ private fun TailscaleStatusSection(state: TailscaleSettingsUiState, actions: Tai
             )
             else -> Unit
         }
-        if (tailnet.phase == TailnetPhase.RUNNING || tailnet.phase == TailnetPhase.NEEDS_LOGIN) {
-            InfinitySettingsItem(
-                icon = Icons.Rounded.CloudOff,
-                title = stringResource(R.string.tailscale_logout),
-                subtitle = stringResource(R.string.tailscale_logout_desc),
-                onClick = actions.onLogout,
-                enabled = !state.busy,
-                titleColor = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag("tailscale_logout"),
-            )
-        }
+        val logoutReason = UnavailableReasons.tailscaleLogout(tailnet.phase)
+        InfinitySettingsItem(
+            icon = Icons.Rounded.CloudOff,
+            title = stringResource(R.string.tailscale_logout),
+            subtitle = stringResource(logoutReason ?: R.string.tailscale_logout_desc),
+            onClick = actions.onLogout,
+            enabled = !state.busy && logoutReason == null,
+            titleColor = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag("tailscale_logout"),
+        )
     }
 }
 

@@ -28,6 +28,7 @@ import com.promenar.infinity.ui.chat.reasoningEffortLabel
 import com.promenar.infinity.ui.common.InfinityDropdownMenu
 import com.promenar.infinity.ui.common.InfinitySettingsSection
 import com.promenar.infinity.ui.common.InfinityValueRow
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.params.ParameterSchemeSection
 import com.promenar.infinity.ui.common.params.SamplingEditorActions
 import com.promenar.infinity.ui.common.params.SamplingEditorState
@@ -97,6 +98,19 @@ internal fun AgentDefaultParamsContent(
                         }
                     }
                 }
+            }
+        } else {
+            // 模型不提供推理强度调节时保留该分组，灰显并说明原因。
+            InfinitySettingsSection(title = stringResource(R.string.params_section_reasoning)) {
+                InfinityValueRow(
+                    title = stringResource(R.string.agent_edit_reasoning_effort),
+                    value = stringResource(R.string.params_scheme_model_default),
+                    subtitle = UnavailableReasons.reasoningEffort(modelSelected = modelName != null, reasoningAdjustable = false)
+                        ?.let { stringResource(it) },
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.testTag("agent_params_reasoning"),
+                )
             }
         }
         ParameterSchemeSection(

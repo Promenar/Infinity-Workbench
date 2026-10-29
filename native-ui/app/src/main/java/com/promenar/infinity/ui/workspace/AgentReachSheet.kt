@@ -294,7 +294,7 @@ private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
             val subtitle = if (backend.status == ReachBackendStatus.READY && backend.count == null) stringResource(scope)
             else backendStatusText(backend)
             val tag = Modifier.testTag("agent_reach_backend_${backend.kind.name.lowercase()}")
-            val openLinux = actions.onOpenLinux.takeIf { backend.kind == ReachBackendKind.LINUX && backend.status != ReachBackendStatus.UNAVAILABLE }
+            val openLinux = actions.onOpenLinux.takeIf { backend.kind == ReachBackendKind.LINUX && !backend.status.isUnavailable() }
             if (openLinux != null) {
                 // Linux 的安装、修复与开关都在环境页完成，行本身就是去处理的入口。
                 InfinitySettingsItem(
@@ -312,7 +312,7 @@ private fun BackendSection(state: AgentReachState, actions: AgentReachActions) {
                     subtitle = subtitle,
                     icon = icon,
                     subtitleMaxLines = 2,
-                    enabled = backend.status != ReachBackendStatus.DISABLED,
+                    enabled = backend.status != ReachBackendStatus.DISABLED && !backend.status.isUnavailable(),
                     modifier = tag,
                 )
             }
@@ -336,7 +336,11 @@ private fun backendStatusText(backend: ReachBackend): String = when (backend.sta
     ReachBackendStatus.INSTALLING -> stringResource(R.string.linux_reach_installing)
     ReachBackendStatus.BROKEN -> stringResource(R.string.linux_reach_broken)
     ReachBackendStatus.UNAVAILABLE -> stringResource(R.string.linux_reach_unavailable)
+    ReachBackendStatus.CHANNEL_UNAVAILABLE -> stringResource(R.string.ux2_unavailable_linux_environment_channel)
 }
+
+private fun ReachBackendStatus.isUnavailable(): Boolean =
+    this == ReachBackendStatus.UNAVAILABLE || this == ReachBackendStatus.CHANNEL_UNAVAILABLE
 
 @Composable
 private fun ApprovalSection(state: AgentReachState) {

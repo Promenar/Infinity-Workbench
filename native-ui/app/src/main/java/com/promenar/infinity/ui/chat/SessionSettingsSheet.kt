@@ -500,7 +500,10 @@ private fun ToolsPanel(
             }
         }
         if (selectableMcpServers.isNotEmpty()) {
-            InfinitySettingsSection(title = stringResource(R.string.sheet_tool_mcp_servers)) {
+            InfinitySettingsSection(
+                title = stringResource(R.string.sheet_tool_mcp_servers),
+                footer = UnavailableReasons.executionMode(options.toolsEnabled)?.let { stringResource(it) },
+            ) {
                 selectableMcpServers.forEach { server ->
                     SettingsToggle(
                         title = server.name,
@@ -561,21 +564,23 @@ internal fun SessionToolsContent(
                 onCheckedChange = { onToolToggle("toolsEnabled", it) },
                 modifier = Modifier.testTag("session_tools_enabled"),
             )
-            if (toolCallingSupported) {
-                SettingsToggle(
-                    title = stringResource(R.string.settings_ia_keep_web_search),
-                    description = stringResource(R.string.settings_ia_keep_web_search_desc),
-                    checked = options.keepWebSearchWhenToolsOff,
-                    leadingSpacer = true,
-                    onCheckedChange = { onToolToggle("keepWebSearchWhenToolsOff", it) },
-                    modifier = Modifier.testTag("session_keep_web_search"),
-                )
-            }
+            val keepWebSearchReason = UnavailableReasons.keepWebSearch(toolCallingSupported)
+            SettingsToggle(
+                title = stringResource(R.string.settings_ia_keep_web_search),
+                description = stringResource(keepWebSearchReason ?: R.string.settings_ia_keep_web_search_desc),
+                checked = options.keepWebSearchWhenToolsOff,
+                leadingSpacer = true,
+                enabled = keepWebSearchReason == null,
+                onCheckedChange = { onToolToggle("keepWebSearchWhenToolsOff", it) },
+                modifier = Modifier.testTag("session_keep_web_search"),
+            )
+            val executionModeReason = UnavailableReasons.executionMode(toolsEnabled)
             InfinityValueRow(
                 title = stringResource(R.string.sheet_tool_execution_mode),
                 value = stringResource(selectedExecutionMode.labelRes),
+                subtitle = executionModeReason?.let { stringResource(it) },
                 onClick = { if (!modePickerAnchor.consumeRecentDismiss()) showModePicker = true },
-                enabled = toolsEnabled,
+                enabled = executionModeReason == null,
                 modifier = Modifier.infinityPopoverAnchor(modePickerAnchor).testTag("session_execution_mode_picker"),
             )
         }

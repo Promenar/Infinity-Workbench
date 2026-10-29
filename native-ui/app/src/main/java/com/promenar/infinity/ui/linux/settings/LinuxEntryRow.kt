@@ -20,12 +20,23 @@ import com.promenar.infinity.ui.common.InfinitySettingsItem
 import com.promenar.infinity.ui.testing.UiTags
 
 /**
- * 工具页“本机与远端”中的 Linux 环境入口；渠道不提供时不显示。
+ * 工具页“本机与远端”中的 Linux 环境入口；渠道不提供时灰显并说明原因，状态未知时不显示。
  * [defaultModeLinux] 为新会话默认模式是否为 Linux（侧载版与 `LinuxRuntime.agentEnabled` 一致）。
  */
 @Composable
 internal fun LinuxEntryRow(state: LinuxRuntimeState?, defaultModeLinux: Boolean, onClick: () -> Unit) {
-    if (state == null || state == LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION)) return
+    if (state == null) return
+    if (state == LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION)) {
+        InfinitySettingsItem(
+            icon = Icons.Rounded.Terminal,
+            title = stringResource(R.string.linux_entry_title),
+            subtitle = stringResource(R.string.ux2_unavailable_linux_environment_channel),
+            onClick = {},
+            enabled = false,
+            modifier = Modifier.testTag(UiTags.LINUX_ENTRY),
+        )
+        return
+    }
     val subtitle = when (state) {
         is LinuxRuntimeState.Unavailable -> stringResource(R.string.linux_entry_unsupported_abi)
         is LinuxRuntimeState.NotInstalled -> stringResource(R.string.linux_entry_not_installed)

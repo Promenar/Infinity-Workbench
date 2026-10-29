@@ -82,6 +82,7 @@ import androidx.compose.material3.LocalTextStyle
 import com.promenar.infinity.ui.common.SecretField
 import com.promenar.infinity.ui.common.InfinitySettingsPageLayout
 import com.promenar.infinity.ui.common.InfinitySettingsItem
+import com.promenar.infinity.ui.common.UnavailableReasons
 import com.promenar.infinity.ui.common.InfinitySettingsSection
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -512,20 +513,25 @@ internal fun BackupSettingsScreenContent(
                         checked = uiState.webdavEnabled,
                         onCheckedChange = actions.onWebDavEnabledChange,
                     )
+                    // WebDAV 关闭时上传、刷新与恢复保留在原位置并灰显，副标题写明开启方式；云端备份列表只在开启后出现。
+                    val webDavOffReason = UnavailableReasons.webDavActions(uiState.webdavEnabled)?.let { stringResource(it) }
+                    val webDavReady = uiState.webdavEnabled && uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready
+                    InfinitySettingsItem(
+                        icon = Icons.Rounded.Upload,
+                        title = stringResource(R.string.backup_upload_cloud),
+                        subtitle = webDavOffReason,
+                        onClick = actions.onUpload,
+                        enabled = webDavReady,
+                    )
+                    InfinitySettingsItem(
+                        icon = Icons.Rounded.Refresh,
+                        title = stringResource(R.string.backup_remote_refresh),
+                        subtitle = webDavOffReason,
+                        onClick = actions.onRefreshRemote,
+                        enabled = webDavReady,
+                    )
                     AnimatedVisibility(visible = uiState.webdavEnabled) {
                         Column {
-                            InfinitySettingsItem(
-                                icon = Icons.Rounded.Upload,
-                                title = stringResource(R.string.backup_upload_cloud),
-                                onClick = actions.onUpload,
-                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
-                            )
-                            InfinitySettingsItem(
-                                icon = Icons.Rounded.Refresh,
-                                title = stringResource(R.string.backup_remote_refresh),
-                                onClick = actions.onRefreshRemote,
-                                enabled = uiState.canExecute && uiState.webDavReadiness == WebDavReadiness.Ready,
-                            )
                             if (uiState.operation is BackupOperation.ListingRemote) {
                                 Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(modifier = Modifier.size(20.dp))
@@ -548,16 +554,17 @@ internal fun BackupSettingsScreenContent(
                                     modifier = Modifier.semantics { this.selected = selected },
                                 )
                             }
-                            if (uiState.selectedRemote != null) {
-                                InfinitySettingsItem(
-                                    icon = Icons.Rounded.Restore,
-                                    title = stringResource(R.string.backup_restore_cloud),
-                                    enabled = uiState.canExecute,
-                                    onClick = actions.onRestoreRemote,
-                                )
-                            }
                         }
                     }
+                    val restoreReason = UnavailableReasons.webDavActions(uiState.webdavEnabled)
+                        ?: UnavailableReasons.cloudRestore(uiState.selectedRemote != null)
+                    InfinitySettingsItem(
+                        icon = Icons.Rounded.Restore,
+                        title = stringResource(R.string.backup_restore_cloud),
+                        subtitle = restoreReason?.let { stringResource(it) },
+                        enabled = restoreReason == null && uiState.canExecute,
+                        onClick = actions.onRestoreRemote,
+                    )
                     InfinitySettingsItem(
                         icon = Icons.Rounded.Link,
                         title = stringResource(R.string.backup_config_webdav),

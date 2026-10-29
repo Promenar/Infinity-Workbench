@@ -57,13 +57,16 @@ internal enum class ReachBackendStatus {
     INSTALLING,
     BROKEN,
     UNAVAILABLE,
+    /** 安装渠道不包含 Linux 环境：保留该行并灰显，说明原因。 */
+    CHANNEL_UNAVAILABLE,
 }
 
 /** [count] 只用于 SSH 的已登记主机数。 */
 internal data class ReachBackend(val kind: ReachBackendKind, val status: ReachBackendStatus, val count: Int? = null, val destination: String? = null)
 
 internal fun linuxReachStatus(state: LinuxRuntimeState, agentEnabled: Boolean): ReachBackendStatus = when (state) {
-    is LinuxRuntimeState.Unavailable -> ReachBackendStatus.UNAVAILABLE
+    is LinuxRuntimeState.Unavailable ->
+        if (state.reason == LinuxUnavailableReason.DISTRIBUTION) ReachBackendStatus.CHANNEL_UNAVAILABLE else ReachBackendStatus.UNAVAILABLE
     is LinuxRuntimeState.NotInstalled -> ReachBackendStatus.NOT_INSTALLED
     is LinuxRuntimeState.Installing, is LinuxRuntimeState.Maintaining -> ReachBackendStatus.INSTALLING
     is LinuxRuntimeState.InstallInterrupted, is LinuxRuntimeState.Broken -> ReachBackendStatus.BROKEN
@@ -130,13 +133,12 @@ internal fun reachBackends(
     sshHostCount: Int?,
     linuxState: LinuxRuntimeState = LinuxExecRouting.state,
     linuxAgentEnabled: Boolean = LinuxExecRouting.agentEnabled,
-): List<ReachBackend> = listOfNotNull(
+): List<ReachBackend> = listOf(
     ReachBackend(ReachBackendKind.FILES, ReachBackendStatus.READY),
     ReachBackend(ReachBackendKind.BUILTIN, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.SHELL_ONLY),
     ReachBackend(ReachBackendKind.SANDBOX, if (pythonAvailable) ReachBackendStatus.READY else ReachBackendStatus.JS_ONLY),
-    // 渠道本身不提供 Linux 环境时不列出，避免让用户以为可以安装。
-    ReachBackend(ReachBackendKind.LINUX, linuxReachStatus(linuxState, linuxAgentEnabled), destination = "linux_environment")
-        .takeUnless { linuxState == LinuxRuntimeState.Unavailable(LinuxUnavailableReason.DISTRIBUTION) },
+    // 渠道不提供 Linux 环境时仍列出该行，状态为不可用并说明原因；该行不带跳转，不会让人误以为可安装。
+    ReachBackend(ReachBackendKind.LINUX, linuxReachStatus(linuxState, linuxAgentEnabled), destination = "linux_environment"),
     ReachBackend(ReachBackendKind.TERMUX, termuxReachStatus(termuxEnabled, termuxAvailability)),
     ReachBackend(
         ReachBackendKind.SSH,
