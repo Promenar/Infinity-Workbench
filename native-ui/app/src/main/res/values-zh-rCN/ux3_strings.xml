@@ -10,4 +10,7 @@
     <!-- 外观：空会话动画 -->
     <string name="motion_empty_led_morph">灯珠变形</string>
     <string name="motion_empty_led_morph_desc">灯珠在字标与莫比乌斯灯珠环之间往复变形；点按切到下一形态，环上拖动可转视角。</string>
+    <!-- 设置首页：关于 -->
+    <string name="settings_about_version">%1$s（%2$d）· %3$s</string>
+    <string name="settings_about_commit">提交 %1$s</string>
 </resources>

@@ -10,4 +10,7 @@
     <!-- 外观：空会话动画 -->
     <string name="motion_empty_led_morph">LED morph</string>
     <string name="motion_empty_led_morph_desc">LED beads shift between the wordmark and the Möbius ring. Tap to skip ahead; drag the ring to rotate.</string>
+    <!-- 设置首页：关于 -->
+    <string name="settings_about_version">%1$s (%2$d) · %3$s</string>
+    <string name="settings_about_commit">Commit %1$s</string>
 </resources>
