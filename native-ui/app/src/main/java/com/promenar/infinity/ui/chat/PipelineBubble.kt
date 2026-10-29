@@ -1,7 +1,6 @@
 package com.promenar.infinity.ui.chat
 
 import com.promenar.infinity.ui.theme.InfinityMonospace
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.rounded.TextFields
 import com.promenar.infinity.ui.common.InfinityBottomSheet
 import com.promenar.infinity.ui.common.LocalInfinityHaptics
@@ -78,6 +77,8 @@ import com.promenar.infinity.ui.renderer.ImageLightbox
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.InfinityTypography
 import com.promenar.infinity.ui.testing.UiTags
+import com.promenar.infinity.ui.chat.quote.QuotableSelectionContainer
+import com.promenar.infinity.ui.chat.quote.UserMessageQuotes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -337,6 +338,7 @@ fun PipelineBubble(
                             isStreaming = isLastInGroup && isGenerating,
                             showStreamingCursor = renderPlan.showContentCursor,
                             fontSize = fontSize,
+                            sourceMessageId = sourceMessage?.id ?: group.messages.lastOrNull { it.role == MessageRole.ASSISTANT }?.id,
                             onContentChange = sourceMessage?.let { msg ->
                                 onMessageContentChange?.let { handler -> { content: String -> handler(msg.id, content) } }
                             } ?: onContentChange,
@@ -1416,7 +1418,7 @@ internal fun ExpandableToolText(
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * 助手正文。生成结束后长按直接进入系统文字选择（复制、全选），正文不再弹消息菜单：
+ * 助手正文。生成结束后长按直接进入系统文字选择（复制、全选、引用），正文不再弹消息菜单：
  * 复制、重新生成、分支与删除由本轮末尾的操作栏提供。生成中不开放选择，避免选区随文字增长跳动。
  */
 @Composable
@@ -1426,6 +1428,8 @@ internal fun ContentSegment(
     showStreamingCursor: Boolean,
     fontSize: Int,
     onContentChange: ((String) -> Unit)?,
+    /** 正文所属消息；引用时作为来源，为 null 时工具条不出现“引用”。 */
+    sourceMessageId: String? = null,
 ) {
     val body = @Composable {
         MarkdownText(
@@ -1438,7 +1442,7 @@ internal fun ContentSegment(
         )
     }
     Box(modifier = Modifier.fillMaxWidth().testTag("CHAT_ASSISTANT_BODY")) {
-        if (isStreaming) body() else SelectionContainer { body() }
+        if (isStreaming) body() else QuotableSelectionContainer(sourceMessageId) { body() }
     }
 }
 
@@ -1529,6 +1533,7 @@ fun UserMessageBubble(
                     }
                 }
                 if (legacyAttachments.isNotEmpty()) LegacyAttachmentSummary(legacyAttachments)
+                UserMessageQuotes(message.quotes.orEmpty(), maxWidth = bubbleMaxWidth, fontSize = fontSize)
                 if (message.content.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(20.dp),
@@ -1558,12 +1563,15 @@ fun UserMessageBubble(
             )
         }
     }
-    MessageTextSelectionSheet(show = showSelection, text = message.content, fontSize = fontSize, onDismiss = { showSelection = false })
+    MessageTextSelectionSheet(
+        show = showSelection, text = message.content, sourceMessageId = message.id, fontSize = fontSize,
+        onDismiss = { showSelection = false },
+    )
 }
 
-/** 用户气泡的长按留给消息菜单，自由选字放进底部面板：长按或双击文字即可选择。 */
+/** 用户气泡的长按留给消息菜单，自由选字放进底部面板：长按或双击文字即可选择；选中后可以引用，引用后面板收起。 */
 @Composable
-private fun MessageTextSelectionSheet(show: Boolean, text: String, fontSize: Int, onDismiss: () -> Unit) {
+private fun MessageTextSelectionSheet(show: Boolean, text: String, sourceMessageId: String, fontSize: Int, onDismiss: () -> Unit) {
     InfinityBottomSheet(
         show = show,
         onDismiss = onDismiss,
@@ -1571,7 +1579,7 @@ private fun MessageTextSelectionSheet(show: Boolean, text: String, fontSize: Int
         scrollContent = true,
         modifier = Modifier.testTag(UiTags.CHAT_MESSAGE_SELECTION_SHEET),
     ) {
-        SelectionContainer {
+        QuotableSelectionContainer(sourceMessageId, onQuoted = onDismiss) {
             Text(
                 text = text,
                 style = InfinityTypography.bodyLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.5).sp).forReading(),

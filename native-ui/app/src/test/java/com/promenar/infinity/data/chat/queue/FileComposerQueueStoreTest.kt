@@ -127,6 +127,19 @@ class FileComposerQueueStoreTest {
         assertThat(restored.snapshot("s").pauseReason).isNull()
     }
 
+    @Test fun `排队消息的引用批注写盘后可恢复，旧队列文件缺字段时视为无引用`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val quote = com.promenar.infinity.data.model.MessageQuote("ai-1", "引文", "批注")
+        val store = FileComposerQueueStore(folder.root, { null }, dispatcher)
+        store.enqueue("s", "", quotes = listOf(quote))
+        assertThat(FileComposerQueueStore(folder.root, { null }, dispatcher).snapshot("s").items.single().quotes).containsExactly(quote)
+
+        val file = folder.root.walkTopDown().single { it.name == "queue.json" }
+        file.writeText(file.readText().replace(Regex(""",?"quotes":\[[^\]]*\]"""), ""))
+        assertThat(file.readText()).doesNotContain("quotes")
+        assertThat(FileComposerQueueStore(folder.root, { null }, dispatcher).snapshot("s").items.single().quotes).isEmpty()
+    }
+
     @Test fun `损坏JSON丢弃队列及其图片`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val store = FileComposerQueueStore(folder.root, { ByteArrayInputStream(byteArrayOf(1, 2)) }, dispatcher)

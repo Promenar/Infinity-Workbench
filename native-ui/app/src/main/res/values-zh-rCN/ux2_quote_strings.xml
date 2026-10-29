@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux2_quote_action">引用</string>
+    <string name="ux2_quote_annotation_placeholder">写下批注（留空的引用不发送）</string>
+    <string name="ux2_quote_annotation_cd">这段引用的批注</string>
+    <string name="ux2_quote_remove_cd">移除引用</string>
+    <string name="ux2_quote_collapsed_summary">%1$d 段引用 · %2$d 段已写批注</string>
+    <string name="ux2_quote_expand">展开</string>
+    <string name="ux2_quote_collapse">收起引用</string>
+    <string name="ux2_quote_bubble_jump_cd">引文，点按跳到原消息</string>
+    <string name="ux2_quote_source_missing">引用的原消息已不在本会话中</string>
+</resources>
