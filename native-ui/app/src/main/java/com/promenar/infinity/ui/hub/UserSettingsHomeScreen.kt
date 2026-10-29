@@ -1,6 +1,6 @@
 package com.promenar.infinity.ui.hub
 
-import android.app.Activity
+import androidx.activity.compose.LocalActivity
 import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
@@ -201,7 +201,7 @@ fun UserSettingsHomeScreen(
     }
 
     if (showLanguageDialog) {
-        val activity = LocalContext.current as? Activity
+        val activity = LocalActivity.current
         LanguageSelectorSheet(
             currentLanguage = language,
             onSelect = { lang ->
