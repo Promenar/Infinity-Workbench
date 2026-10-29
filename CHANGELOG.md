@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### 变更
 
+- 聊天输入框浮岛精修：圆角 24dp 改为 28dp，工具行左右与底部统一 8dp，发送键与外圈同心；正文与占位文字左缘对齐工具行“＋”号笔画（约 22dp），不再落进圆角弧线。占位文案改为“给 Misty 发消息”（中英之间留空格、去掉省略号），颜色减淡一档。模型名与推理档位统一为 32dp 高、无描边的填充胶囊；上下文用量环不变。
 - 返回手势改为跟手的预测性返回：从屏幕边缘拖动时，当前页随手指向右滑出，下层页从左侧四分之一处跟着回到原位并逐渐褪去压暗；松手越过阈值完成返回，否则回弹到原页。内屏设置右列与首页会话列有子页时，同样只在本栏内跟手。Android 13–15 也启用系统返回回调（`enableOnBackInvokedCallback`），与 Android 16 起的默认行为一致。自己处理返回的页面（文档编辑、SSH 终端、各类面板与弹层）仍按原逻辑先处理，不跟手。
 - 导航库 `navigation-compose` 由 2.7.7 升至 2.10.2，`activity-compose` 随之升至 1.13.0；新增显式依赖 `navigationevent-compose` 1.1.2。导航库 2.10 及其带入的 lifecycle 2.11 要求按 API 37 编译，`compileSdk` 由 36 改为 37；`targetSdk` 仍为 36，运行行为不变。返回处理改由 NavigationEvent 统一派发，被遮住的面板层同步改挂到不接收返回的调度器，层级优先顺序与此前一致。
 
