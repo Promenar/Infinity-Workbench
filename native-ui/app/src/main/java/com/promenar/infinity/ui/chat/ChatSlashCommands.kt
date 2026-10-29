@@ -22,6 +22,7 @@ import com.promenar.infinity.ui.chat.command.SlashCommandController
 import com.promenar.infinity.ui.chat.command.SlashCommandRejection
 import com.promenar.infinity.ui.chat.command.SlashCommandViewModel
 import com.promenar.infinity.ui.chat.command.rememberBuiltinSlashCommands
+import com.promenar.infinity.ui.chat.export.labelRes
 import com.promenar.infinity.ui.common.SnackbarType
 import kotlinx.coroutines.launch
 
@@ -112,7 +113,14 @@ internal fun rememberChatSlashCommands(
             }
             SlashCommandAction.OpenExportSheet -> requestOverlay(ChatOverlay.ExportSession)
             // 按默认开关生成后让用户选保存位置；保存流程与结果提示由导出面板宿主负责。
-            is SlashCommandAction.Export -> sessionExportViewModel.exportDirectly(action.format)
+            is SlashCommandAction.Export -> {
+                // PDF 与长图需要后台渲染几秒，先提示正在生成。
+                if (!action.format.supportsAttachments) {
+                    val label = resources.getString(action.format.labelRes())
+                    feedback(resources.getString(R.string.session_export_running, label), SnackbarType.INFO)
+                }
+                sessionExportViewModel.exportDirectly(action.format)
+            }
             is SlashCommandAction.Reject -> feedback(
                 when (action.reason) {
                     SlashCommandRejection.COMPACT_GENERATING -> resources.getString(R.string.chat_context_compress_unavailable_generating)
