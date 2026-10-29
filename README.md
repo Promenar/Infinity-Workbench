@@ -14,7 +14,7 @@
 
 > Android 端 BYOK 开源 AI 客户端，以 Kotlin 与 Jetpack Compose 原生构建，集成多服务商对话、RAG、知识图谱、Agent 工具、会话工作区和加密备份。
 
-当前源码候选为 `v0.4.4-beta`（versionCode `10`），主要变化见 [CHANGELOG](CHANGELOG.md) 的 0.4.4-beta 至 0.4.0-beta 小节。资料页（原“知识库”）使用集中式任务状态微件、平铺目录下钻和会话工作区隔离，页面采用统一操作菜单。上一候选 `v0.2.2-beta` 的源码检查、截图、设备和签名制品证据见[发行验证记录](docs/release/v0.2.2-beta-validation.md)；历史审计结论见[发行需求验收总账](docs/audit/20260922-requirements-acceptance.md)，不能替代当前候选验收。公开 tag 与 Release 需要单独授权。
+当前源码候选为 `v0.4.5-beta`（versionCode `11`），主要变化见 [CHANGELOG](CHANGELOG.md) 的 0.4.5-beta 至 0.4.0-beta 小节。资料页（原“知识库”）使用集中式任务状态微件、平铺目录下钻和会话工作区隔离，页面采用统一操作菜单。上一候选 `v0.2.2-beta` 的源码检查、截图、设备和签名制品证据见[发行验证记录](docs/release/v0.2.2-beta-validation.md)；历史审计结论见[发行需求验收总账](docs/audit/20260922-requirements-acceptance.md)，不能替代当前候选验收。公开 tag 与 Release 需要单独授权。
 
 模型管理支持独立公共目录更新（界面称“规格库”，在模型管理页右上角菜单手动更新；“同步”只指从服务商拉取模型列表）：GitHub Actions 聚合来源并签名发布，App 验签缓存并保留用户编辑。使用与维护方法见[模型目录说明](docs/model-catalog.md)。
 
@@ -154,7 +154,7 @@ Agent 工具只接受已配置别名，不接受地址或凭据。`ssh_exec` 默
 
 ## GGUF 本地推理
 
-GGUF/llama.cpp 不属于 `v0.4.4-beta` 稳定发行范围。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
+GGUF/llama.cpp 不属于 `v0.4.5-beta` 稳定发行范围。Release 构建会关闭本地推理并拒绝打包 GGUF、llama 或 ggml 制品；相关代码只能视为实验性研发资产，不能据此承诺可用能力。
 
 ## 运行要求
 
@@ -170,7 +170,7 @@ Infinity Workbench 使用 `com.promenar.infinity`，与旧应用并存。备份�
 
 ## 安装
 
-公开制品只从 [Promenar/Infinity Workbench Releases](https://github.com/Promenar/Infinity-Workbench/releases) 发布。截至 2026-10-01，公开 `v0.2-beta` 为 prerelease（2026-07-29 发布），Latest 仍为 `v0.1-beta`；`v0.2.2-beta`、`v0.3.0-beta`、`v0.4.0-beta`、`v0.4.1-beta`、`v0.4.2-beta`、`v0.4.3-beta` 与 `v0.4.4-beta` 尚未公开发布。当前 `v0.4.4-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
+公开制品只从 [Promenar/Infinity Workbench Releases](https://github.com/Promenar/Infinity-Workbench/releases) 发布。截至 2026-10-01，公开 `v0.2-beta` 为 prerelease（2026-07-29 发布），Latest 仍为 `v0.1-beta`；`v0.2.2-beta`、`v0.3.0-beta`、`v0.4.0-beta`、`v0.4.1-beta`、`v0.4.2-beta`、`v0.4.3-beta`、`v0.4.4-beta` 与 `v0.4.5-beta` 尚未公开发布。当前 `v0.4.5-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
 
 1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；侧载主资产为 `infinity-v0.2.2-beta.apk`，Play 风味资产为 `infinity-v0.2.2-beta-play.apk`。
 2. 校验 APK 的 SHA-256 与发布文件一致。
