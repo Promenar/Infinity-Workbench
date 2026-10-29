@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 测试
+
+- 修复 `TermuxBackgroundJobsTest` 在全量单测中偶发“启动回执不完整（退出码 73）”：macOS 首次执行测试临时生成的 `setsid`/`ps` 脚本要排队做系统安全评估，并发时可达数秒，吃掉启动回执等待；准备阶段先预热这些脚本，生产脚本与超时不变。
+
 ## [0.4.1-beta] - 2026-10-29
 
 ### 修复

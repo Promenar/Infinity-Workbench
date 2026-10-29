@@ -24,20 +24,22 @@ class TermuxBackgroundJobsTest {
         home = File(root, "home").apply { mkdirs() }
         bin = File(root, "bin").apply { mkdirs() }
         // macOS 没有 setsid 命令，使用真实系统调用建立独立会话。
-        File(bin, "setsid").apply {
+        val setsid = File(bin, "setsid").apply {
             writeText("#!/usr/bin/env python3\nimport os, sys\nos.setsid()\nos.execvp(sys.argv[1], sys.argv[1:])\n")
             setExecutable(true)
         }
+        warmUp(setsid, "true")
         val identityAvailable = runCatching {
             val probe = ProcessBuilder("ps", "-p", ProcessHandle.current().pid().toString(), "-o", "lstart=").start()
             probe.inputStream.bufferedReader().readText().isNotBlank() && probe.waitFor() == 0
         }.getOrDefault(false)
         if (!identityAvailable) {
             // 受限 macOS 沙箱禁止 ps；仅替换身份时钟，进程组和信号仍走真实系统调用。
-            File(bin, "ps").apply {
+            val ps = File(bin, "ps").apply {
                 writeText("#!/bin/bash\nkill -0 \"\$2\" 2>/dev/null || exit 1\nprintf 'test-start:%s\\n' \"\$2\"\n")
                 setExecutable(true)
             }
+            warmUp(ps, "-p", ProcessHandle.current().pid().toString(), "-o", "lstart=")
         }
         jobs = TermuxBackgroundJobs(::execute)
     }
@@ -280,6 +282,18 @@ class TermuxBackgroundJobsTest {
         val stderr = process.errorStream.bufferedReader().readText()
         check(process.waitFor(12, TimeUnit.SECONDS)) { "RUN_COMMAND 测试调用超时" }
         return TermuxCommandResult(stdout = stdout, stderr = stderr, exitCode = process.exitValue())
+    }
+
+    /**
+     * macOS 首次执行新建的可执行脚本前要排队做系统安全评估，单次约 0.3 秒，并发构建时可达数秒，
+     * 会吃掉启动回执等待并误报退出码 73；Termux 的 setsid、ps 是原生程序，没有这段开销。
+     * 因此在准备阶段先执行一次，让评估落在不受回执时限约束的位置。
+     */
+    private fun warmUp(tool: File, vararg args: String) {
+        val process = ProcessBuilder(tool.path, *args).redirectErrorStream(true).start()
+        process.outputStream.close()
+        process.inputStream.readBytes()
+        check(process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0) { "测试工具 ${tool.name} 预热失败" }
     }
 
     private fun processExists(pid: Int): Boolean =
