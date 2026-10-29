@@ -1724,6 +1724,8 @@ internal fun ChatModelSelector(
     modelName: String,
     modelId: String?,
     onClick: () -> Unit,
+    /** 胶囊填充色，与推理档位胶囊同一种（见 [ComposerIslandMaterial.chip]）。 */
+    containerColor: Color,
     modifier: Modifier = Modifier,
 ) {
     val anchor = LocalChatPopoverAnchors.current?.model
@@ -1739,7 +1741,8 @@ internal fun ChatModelSelector(
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(
-            modifier = Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).padding(horizontal = 6.dp)
+            modifier = Modifier.height(ComposerChipHeight).clip(CircleShape).background(containerColor)
+                .padding(start = 10.dp, end = 8.dp)
                 .testTag("chat_model_capsule"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2735,7 +2738,8 @@ fun ChatInputBar(
         tonalElevation = 0.dp,
         shadowElevation = 6.dp,
     ) {
-        // 输入框自带上下 12dp 留白并保证 48dp 点击高度；有附件时附件行与容器顶边另留 12dp。
+        // 输入框上留白 16dp、到工具行 8dp，并保证 48dp 点击高度；有附件时附件行与容器顶边留 12dp，
+        // 附件行自带 8dp 下边距，输入框上留白相应收为 12dp。
         val hasAttachments = hasImages || hasDocuments || isImportingDocument
         // 灯语样式的灯效铺在浮岛底色之上、输入内容之下，随浮岛尺寸变化。
         val motionStyle = LocalInfinityMotionStyles.current.composer
@@ -2771,9 +2775,9 @@ fun ChatInputBar(
         Column(
             Modifier
                 .onPlaced { glow.lightsTop = it.positionInParent().y }
-                .padding(start = 12.dp, end = 12.dp, top = if (hasAttachments) 12.dp else 0.dp, bottom = 8.dp),
+                .padding(start = ComposerToolbarInset, end = ComposerToolbarInset, top = if (hasAttachments) 12.dp else 0.dp, bottom = ComposerToolbarInset),
         ) {
-            attachmentContent()
+            Box(Modifier.padding(horizontal = ComposerAttachmentInset - ComposerToolbarInset)) { attachmentContent() }
             BasicTextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -2788,8 +2792,20 @@ fun ChatInputBar(
                 minLines = 1,
                 maxLines = 6,
                 decorationBox = { innerTextField ->
-                    Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
-                        if (text.isEmpty()) Text(shownPlaceholder, style = inputStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 左右留白放在装饰框内，整行都能点进输入框。
+                    val textSide = ComposerTextInset - ComposerToolbarInset
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .padding(start = textSide, end = textSide, top = if (hasAttachments) 12.dp else 16.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (text.isEmpty()) {
+                            Text(
+                                shownPlaceholder,
+                                style = inputStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = ComposerPlaceholderAlpha),
+                            )
+                        }
                         innerTextField()
                     }
                 },
@@ -2803,8 +2819,8 @@ fun ChatInputBar(
                         if (!attachmentMenuExpanded) haptics.perform(InfinityHapticEvent.SELECTION)
                         onAttachmentMenuExpandedChange(!attachmentMenuExpanded)
                     },
-                    // 按钮左缘贴齐容器边缘：图标墨迹距输入文字左缘约 1.6dp，且不被容器裁剪。
-                    modifier = Modifier.offset(x = (-12).dp)
+                    // 加号笔画左缘与输入文字左缘对齐（见 [ComposerTextInset]）。
+                    modifier = Modifier
                         .onGloballyPositioned { onAttachmentAnchorBoundsChange(it.boundsInRoot()) }
                         .semantics {
                             stateDescription = attachmentStateDescription
@@ -2816,19 +2832,21 @@ fun ChatInputBar(
                     if (isImportingDocument) CircularProgressIndicator(Modifier.size(20.dp).testTag(UiTags.CHAT_DOCUMENT_IMPORTING), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Add, contentDescription = null,
                         tint = if (hasImages || hasDocuments) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp).rotate(attachmentIconRotation))
+                        modifier = Modifier.size(ComposerAddIconSize).rotate(attachmentIconRotation))
                 }
-                // 附件按钮向左借了 12dp，盾牌同样左移，两者间距与其余控件一致。
                 executionMode?.let { mode ->
-                    ExecutionModeButton(mode, onExecutionModeChange, Modifier.offset(x = (-12).dp))
+                    ExecutionModeButton(mode, onExecutionModeChange)
                 }
-                BoxWithConstraints(Modifier.weight(1f).then(if (executionMode != null) Modifier.offset(x = (-12).dp) else Modifier)) {
+                BoxWithConstraints(Modifier.weight(1f)) {
                     // 空间不足时推理强度胶囊只留灯泡，模型名优先显示。
                     val compactReasoning = maxWidth < ReasoningChipCompactBelow
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ChatModelSelector(modelName, modelId, onModelClick, Modifier.weight(1f, fill = false).widthIn(max = 216.dp))
+                        ChatModelSelector(modelName, modelId, onModelClick, material.chip, Modifier.weight(1f, fill = false).widthIn(max = 216.dp))
                         reasoningControl?.let { control ->
-                            ChatReasoningChip(control, onReasoningChange, Modifier.padding(start = 2.dp), compact = compactReasoning)
+                            ChatReasoningChip(
+                                control, onReasoningChange, material.chip,
+                                Modifier.padding(start = ComposerChipSpacing), compact = compactReasoning,
+                            )
                         }
                     }
                 }
@@ -2878,6 +2896,28 @@ private class QueueSendActions(
 )
 
 private val ReasoningChipCompactBelow = 200.dp
+
+/** 加号图标尺寸；[ComposerTextInset] 按它的笔画左缘计算。 */
+private val ComposerAddIconSize = 22.dp
+
+/** Rounded.Add 的横笔在 24 格视口里从第 5 格起笔。 */
+private const val AddGlyphInkStartFraction = 5f / 24f
+
+/**
+ * 输入正文与占位文字距浮岛左右边缘：工具行留白 + 加号在按钮里的留白 + 加号笔画的起笔留白（约 21.6dp），
+ * 正文左缘与工具行最左“＋”笔画左缘对齐，右侧对称。
+ */
+internal val ComposerTextInset =
+    ComposerToolbarInset + (ChatCompactIconSize - ComposerAddIconSize) / 2 + ComposerAddIconSize * AddGlyphInkStartFraction
+
+/** 附件行距浮岛左右边缘，与顶边留白一致。 */
+private val ComposerAttachmentInset = 12.dp
+
+/** 占位文字在 onSurfaceVariant 上再降的不透明度。 */
+private const val ComposerPlaceholderAlpha = 0.62f
+
+/** 工具行模型胶囊与推理档位胶囊的间距。 */
+private val ComposerChipSpacing = 6.dp
 private val QueueableStatuses = setOf(GenerationStatus.UPLOADING, GenerationStatus.THINKING, GenerationStatus.RECEIVING)
 
 @Composable

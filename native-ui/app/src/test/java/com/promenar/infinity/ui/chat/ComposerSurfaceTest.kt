@@ -11,9 +11,9 @@ class ComposerSurfaceTest {
     @Test
     fun `环境光柔光从输入行右侧点阵屏处漫开`() {
         val anchor = composerWashAnchor(InfinityMotionStyles(), width = 1000f, height = 400f, lightsTop = 0f, dp = 2f)
-        // 距右缘 (14 + 80)dp，距底边 72dp。
-        assertThat(anchor.x).isEqualTo(1000f - 94 * 2f)
-        assertThat(anchor.y).isEqualTo(400f - 144f)
+        // 距右缘 (10 + 80)dp，距底边 68dp。
+        assertThat(anchor.x).isEqualTo(1000f - 90 * 2f)
+        assertThat(anchor.y).isEqualTo(400f - 136f)
     }
 
     @Test

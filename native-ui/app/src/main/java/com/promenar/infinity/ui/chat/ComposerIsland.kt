@@ -54,8 +54,11 @@ import kotlin.math.min
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-/** 输入框浮岛的圆角；描边、光晕与外壳共用。 */
-internal val ComposerIslandCorner = 24.dp
+/** 输入框浮岛的圆角；描边、光晕与外壳共用。等于发送键半径加 [ComposerToolbarInset]，外圈与发送键同心。 */
+internal val ComposerIslandCorner = 28.dp
+
+/** 工具行距浮岛左、右、底边的留白。 */
+internal val ComposerToolbarInset = 8.dp
 
 /** 光带绕浮岛一圈的时长；描边与光晕共用同一角度，始终同步。 */
 internal const val ComposerGlowPeriodSeconds = 2.8f
@@ -69,6 +72,8 @@ internal data class ComposerIslandMaterial(
     val container: Color,
     val border: BorderStroke,
     val topHighlight: Color?,
+    /** 工具行胶囊（模型名、推理档位）的填充色，比浮岛底色高一级。 */
+    val chip: Color,
     /** 毛玻璃叠在模糊背景上的半透明色；实色材质为 null。 */
     val frostedTint: Color? = null,
 )
@@ -83,6 +88,7 @@ internal fun composerIslandMaterial(): ComposerIslandMaterial {
                 container = Color.Transparent,
                 border = BorderStroke(1.dp, scheme.onSurface.copy(alpha = 0.14f)),
                 topHighlight = scheme.onSurface.copy(alpha = 0.16f),
+                chip = scheme.onSurface.copy(alpha = 0.08f),
                 frostedTint = scheme.surfaceContainer.copy(alpha = 0.6f),
             )
         } else {
@@ -90,6 +96,7 @@ internal fun composerIslandMaterial(): ComposerIslandMaterial {
                 container = Color.Transparent,
                 border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.5f)),
                 topHighlight = InfinityPureWhite.copy(alpha = 0.9f),
+                chip = scheme.onSurface.copy(alpha = 0.05f),
                 frostedTint = scheme.surfaceContainerLowest.copy(alpha = 0.6f),
             )
         }
@@ -99,12 +106,14 @@ internal fun composerIslandMaterial(): ComposerIslandMaterial {
             container = scheme.surfaceContainer,
             border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.55f)),
             topHighlight = scheme.onSurface.copy(alpha = 0.06f),
+            chip = scheme.surfaceContainerHigh,
         )
     } else {
         ComposerIslandMaterial(
             container = scheme.surfaceContainerLowest,
             border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.75f)),
             topHighlight = null,
+            chip = scheme.surfaceContainerLow,
         )
     }
 }
