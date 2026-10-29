@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.chat.queue
 
 import com.promenar.infinity.data.model.MessageDocumentAttachment
+import com.promenar.infinity.data.model.MessageQuote
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
@@ -15,6 +16,8 @@ data class QueuedMessage(
     val documents: List<MessageDocumentAttachment> = emptyList(),
     val createdAt: Long,
     val steering: Boolean = false,
+    /** 写了批注的引用；未写批注的引用卡在入队前已丢弃。 */
+    val quotes: List<MessageQuote> = emptyList(),
 )
 
 @Serializable
@@ -29,7 +32,7 @@ data class ComposerQueueState(
 interface ComposerQueueStore {
     suspend fun observe(sessionId: String): StateFlow<ComposerQueueState>
     suspend fun snapshot(sessionId: String): ComposerQueueState = observe(sessionId).value
-    suspend fun enqueue(sessionId: String, text: String, imageUris: List<String> = emptyList(), documents: List<MessageDocumentAttachment> = emptyList()): QueuedMessage
+    suspend fun enqueue(sessionId: String, text: String, imageUris: List<String> = emptyList(), documents: List<MessageDocumentAttachment> = emptyList(), quotes: List<MessageQuote> = emptyList()): QueuedMessage
     suspend fun remove(sessionId: String, id: String)
     suspend fun moveToFront(sessionId: String, id: String)
     suspend fun steer(sessionId: String, id: String): Boolean

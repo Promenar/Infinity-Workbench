@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux2_quote_action">Quote</string>
+    <string name="ux2_quote_annotation_placeholder">Add a note (quotes without one aren\'t sent)</string>
+    <string name="ux2_quote_annotation_cd">Note for this quote</string>
+    <string name="ux2_quote_remove_cd">Remove quote</string>
+    <string name="ux2_quote_collapsed_summary">%1$d quotes · %2$d with notes</string>
+    <string name="ux2_quote_expand">Expand</string>
+    <string name="ux2_quote_collapse">Collapse quotes</string>
+    <string name="ux2_quote_bubble_jump_cd">Quoted text. Tap to go to the original message</string>
+    <string name="ux2_quote_source_missing">The quoted message is no longer in this chat</string>
+</resources>

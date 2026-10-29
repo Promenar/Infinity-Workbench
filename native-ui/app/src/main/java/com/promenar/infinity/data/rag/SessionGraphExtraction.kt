@@ -5,6 +5,7 @@ import com.promenar.infinity.data.local.db.InfinityDatabase
 import com.promenar.infinity.data.local.db.dao.KgTurnCount
 import com.promenar.infinity.data.local.db.dao.KgTurnRelation
 import com.promenar.infinity.data.local.db.dao.SessionGraphTaskRow
+import com.promenar.infinity.data.model.contentForModel
 import com.promenar.infinity.data.model.MessageRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -81,7 +82,7 @@ class RoomSessionGraphScheduler(
             cursor = parent.parentMessageId
         }
         val owner = user?.takeIf { it.sessionId == sessionId } ?: return null
-        return Triple(owner.id, owner.content, assistant.content)
+        return Triple(owner.id, owner.contentForModel(), assistant.content)
     }
 
     private companion object {

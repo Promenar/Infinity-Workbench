@@ -984,9 +984,9 @@ class ChatViewModelTest {
             { beforeQueueImageOpen(); app.contentResolver.openInputStream(android.net.Uri.parse(it)) }, testDispatcher,
         )
         queuePort = object : com.promenar.infinity.data.chat.queue.ComposerQueueStore by queueStore {
-            override suspend fun enqueue(sessionId: String, text: String, imageUris: List<String>, documents: List<MessageDocumentAttachment>): com.promenar.infinity.data.chat.queue.QueuedMessage {
+            override suspend fun enqueue(sessionId: String, text: String, imageUris: List<String>, documents: List<MessageDocumentAttachment>, quotes: List<com.promenar.infinity.data.model.MessageQuote>): com.promenar.infinity.data.chat.queue.QueuedMessage {
                 queueEnqueueGate?.await()
-                return queueStore.enqueue(sessionId, text, imageUris, documents)
+                return queueStore.enqueue(sessionId, text, imageUris, documents, quotes)
             }
             override suspend fun claimNext(sessionId: String): com.promenar.infinity.data.chat.queue.QueuedMessage? {
                 claimFailure?.let { throw it }
@@ -1501,6 +1501,66 @@ class ChatViewModelTest {
         assertThat(userProtocol.content).contains(document.content)
         assertThat(viewModel.draftDocuments.value).isEmpty()
         assertThat(viewModel.draftConsumptionEpoch.value).isEqualTo(1L)
+    }
+
+    @Test
+    fun `写了批注的引用随用户消息持久化并序列化进协议正文，未写批注的丢弃`() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.Completed(com.promenar.infinity.domain.generation.CompletionReason.END_TURN))
+
+        viewModel.addQuote("ai-source", "  第一段引文  ")
+        viewModel.addQuote("ai-source", "第二段引文")
+        // 同一来源的同一段引文不重复加卡。
+        viewModel.addQuote("ai-source", "第一段引文")
+        assertThat(viewModel.draftQuotes.value).hasSize(2)
+        val annotated = viewModel.draftQuotes.value.first()
+        viewModel.updateQuoteAnnotation(annotated.id, " 说法不准确 ")
+
+        viewModel.sendMessage("")
+        advanceUntilIdle()
+
+        val user = savedMessages.first { it.first.role == MessageRole.USER }.first
+        assertThat(user.content).isEmpty()
+        assertThat(user.quotes).containsExactly(
+            com.promenar.infinity.data.model.MessageQuote("ai-source", "第一段引文", "说法不准确"),
+        )
+        val userProtocol = lastPromptRequest!!.messages.last { it.role == "user" }
+        assertThat(userProtocol.content).contains("> 第一段引文\n\n说法不准确")
+        assertThat(userProtocol.content).doesNotContain("第二段引文")
+        assertThat(viewModel.draftQuotes.value).isEmpty()
+    }
+
+    @Test
+    fun `只有未写批注的引用时不发送且引用卡保留`() = runTest {
+        seedSession()
+        advanceUntilIdle()
+
+        viewModel.addQuote("ai-source", "引文")
+        viewModel.sendMessage("")
+        runCurrent()
+
+        assertThat(savedMessages).isEmpty()
+        assertThat(protocolRequestCount).isEqualTo(0)
+        assertThat(viewModel.draftQuotes.value).hasSize(1)
+    }
+
+    @Test
+    fun `移除引用卡后不再发送该引用`() = runTest {
+        seedSession()
+        advanceUntilIdle()
+        fakeStreamChunks = listOf(StreamChunk.Completed(com.promenar.infinity.domain.generation.CompletionReason.END_TURN))
+
+        viewModel.addQuote("ai-source", "要删的引文")
+        val quote = viewModel.draftQuotes.value.single()
+        viewModel.updateQuoteAnnotation(quote.id, "批注")
+        viewModel.removeQuote(quote.id)
+        viewModel.sendMessage("正文")
+        advanceUntilIdle()
+
+        val user = savedMessages.first { it.first.role == MessageRole.USER }.first
+        assertThat(user.content).isEqualTo("正文")
+        assertThat(user.quotes).isNull()
     }
 
     @Test

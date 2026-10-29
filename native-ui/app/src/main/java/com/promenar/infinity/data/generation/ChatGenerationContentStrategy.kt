@@ -6,6 +6,7 @@ import com.promenar.infinity.data.model.ExecutionStep
 import com.promenar.infinity.data.model.FullContextDocumentFormatter
 import com.promenar.infinity.data.model.Message
 import com.promenar.infinity.data.model.MessageRole
+import com.promenar.infinity.data.model.MessageQuoteFormatter
 import com.promenar.infinity.data.model.Session
 import com.promenar.infinity.data.model.ToolCall
 import com.promenar.infinity.data.remote.parser.DsmlStreamParser
@@ -151,7 +152,7 @@ class DefaultChatGenerationContentStrategy(
                     MessageRole.USER -> ProtocolMessage(
                         role = "user",
                         content = FullContextDocumentFormatter.appendToUserContent(
-                            message.content,
+                            MessageQuoteFormatter.formatUserContent(message.content, message.quotes),
                             message.userDocuments.orEmpty(),
                         ),
                         imageUrls = message.userImages?.map { dataUrl ->

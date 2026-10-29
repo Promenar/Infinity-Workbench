@@ -28,6 +28,9 @@ import java.security.MessageDigest
 class InfinityDatabaseBaselineTest {
     @Test
     fun backupSchemaGateMatchesExportedRoomIdentityHash() {
+        assertThat(INFINITY_SCHEMA_V31_IDENTITY_HASH).isEqualTo(exportedSchema(31).identityHash)
+        assertThat(com.promenar.infinity.data.backup.ROOM_SCHEMA_V31_IDENTITY_HASH).isEqualTo(exportedSchema(31).identityHash)
+        assertThat(com.promenar.infinity.data.local.db.recovery.CURRENT_V31_IDENTITY).isEqualTo(exportedSchema(31).identityHash)
         assertThat(INFINITY_SCHEMA_V30_IDENTITY_HASH).isEqualTo(exportedSchema(30).identityHash)
         assertThat(com.promenar.infinity.data.backup.ROOM_SCHEMA_V30_IDENTITY_HASH).isEqualTo(exportedSchema(30).identityHash)
         assertThat(com.promenar.infinity.data.local.db.recovery.CURRENT_V30_IDENTITY).isEqualTo(exportedSchema(30).identityHash)
@@ -177,7 +180,7 @@ class InfinityDatabaseBaselineTest {
             "MIGRATION_1_2", "MIGRATION_2_3", "MIGRATION_3_4", "MIGRATION_4_5",
             "MIGRATION_5_18", "MIGRATION_17_18", "MIGRATION_18_19", "MIGRATION_19_20", "MIGRATION_20_21", "MIGRATION_21_22",
             "MIGRATION_22_23",
-            "MIGRATION_23_24", "MIGRATION_24_25", "MIGRATION_25_26", "MIGRATION_26_27", "MIGRATION_27_28", "MIGRATION_28_29", "MIGRATION_29_30",
+            "MIGRATION_23_24", "MIGRATION_24_25", "MIGRATION_25_26", "MIGRATION_26_27", "MIGRATION_27_28", "MIGRATION_28_29", "MIGRATION_29_30", "MIGRATION_30_31",
         )
         assertThat(source).doesNotContain(".fallbackToDestructiveMigration")
     }
@@ -187,7 +190,7 @@ class InfinityDatabaseBaselineTest {
             .allowMainThreadQueries()
             .build()
 
-    private fun exportedSchema(version: Int = 30): ExportedSchema {
+    private fun exportedSchema(version: Int = 31): ExportedSchema {
         val file = File("app/schemas/com.promenar.infinity.data.local.db.InfinityDatabase/$version.json")
         assertThat(file.isFile).isTrue()
         val database = Json.parseToJsonElement(file.readText()).jsonObject
@@ -230,8 +233,8 @@ class InfinityDatabaseBaselineTest {
         database: SupportSQLiteDatabase,
         schema: ExportedSchema,
     ) {
-        assertThat(schema.version).isEqualTo(30)
-        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(30L)
+        assertThat(schema.version).isEqualTo(31)
+        assertThat(database.longQuery("PRAGMA user_version")).isEqualTo(31L)
         assertThat(database.longQuery("PRAGMA foreign_keys")).isEqualTo(1L)
 
         val runtimeTables = database.stringColumnQuery(

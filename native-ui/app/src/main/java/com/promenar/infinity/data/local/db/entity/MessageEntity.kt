@@ -83,6 +83,7 @@ data class MessageEntity(
     val legacyAttachments: String? = null,
     @ColumnInfo(name = "user_images")
     val userImages: String? = null,
+    val quotes: String? = null,
     @ColumnInfo(name = "is_error", defaultValue = "0")
     val isError: Int = 0,
     @ColumnInfo(name = "error_message")

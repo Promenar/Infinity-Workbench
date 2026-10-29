@@ -13,7 +13,6 @@ import com.promenar.infinity.data.local.db.entity.FileVersionEntity
 import com.promenar.infinity.data.local.db.entity.KgJitCacheEntity
 import com.promenar.infinity.data.local.db.entity.McpServerEntity
 import com.promenar.infinity.data.local.db.entity.McpToolSnapshotEntity
-import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.TagEntity
 import com.promenar.infinity.data.local.db.entity.TaskNodeEntity
 import com.promenar.infinity.data.local.db.entity.ToolExecutionLedgerEntity
@@ -28,7 +27,7 @@ import com.promenar.infinity.data.local.db.entity.WorkspaceMutationEntity
     entities = [
         RecoveryV18AgentEntity::class,
         RecoveryV18SessionEntity::class,
-        MessageEntity::class,
+        RecoveryV18MessageEntity::class,
         AttachmentEntity::class,
         VectorEntity::class,
         VectorFtsEntity::class,

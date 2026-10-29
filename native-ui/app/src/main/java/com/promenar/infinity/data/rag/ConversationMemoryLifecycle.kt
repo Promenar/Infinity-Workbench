@@ -2,6 +2,7 @@ package com.promenar.infinity.data.rag
 
 import androidx.room.withTransaction
 import com.promenar.infinity.data.local.db.InfinityDatabase
+import com.promenar.infinity.data.model.contentForModel
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.TurnMemoryState
 import com.promenar.infinity.utils.InfinityLogger
@@ -99,8 +100,8 @@ class RoomConversationMemoryLifecycle(
                 val written = try {
                     val userMessage = previous.firstNotNullOfOrNull { it.startMessageId }
                         ?.let { database.messageDao().getById(it) }
-                    if (userMessage != null && userMessage.content.isNotBlank() && message.content.isNotBlank()) {
-                        turnWriter.write(sessionId, userMessage.content, message.content, userMessage.id, message.id)
+                    if (userMessage != null && userMessage.contentForModel().isNotBlank() && message.content.isNotBlank()) {
+                        turnWriter.write(sessionId, userMessage.contentForModel(), message.content, userMessage.id, message.id)
                     } else 0
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -136,12 +137,12 @@ class RoomConversationMemoryLifecycle(
             ?: error("助手消息不存在")
         // 助手消息的 parent 是本轮用户消息（见生成链路），缺失时该轮无法组成问答。
         val userMessage = message.parentMessageId?.let { database.messageDao().getById(it) }
-            ?.takeIf { it.sessionId == sessionId && it.content.isNotBlank() }
+            ?.takeIf { it.sessionId == sessionId && it.contentForModel().isNotBlank() }
             ?: error("本轮用户消息不存在")
         require(message.content.isNotBlank()) { "本轮回复正文为空" }
         val vectors = database.vectorDao()
         val previous = vectors.getMemoryByAssistantMessage(sessionId, assistantMessageId).map { it.id }
-        val written = turnWriter.write(sessionId, userMessage.content, message.content, userMessage.id, message.id)
+        val written = turnWriter.write(sessionId, userMessage.contentForModel(), message.content, userMessage.id, message.id)
         if (previous.isNotEmpty()) withContext(NonCancellable) { vectors.deleteByIds(previous) }
         database.withTransaction {
             invalidateSessionJit(database, sessionId)

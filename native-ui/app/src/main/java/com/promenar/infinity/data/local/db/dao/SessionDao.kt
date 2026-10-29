@@ -11,6 +11,7 @@ import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.SessionEntity
 import com.promenar.infinity.data.model.ContextCompactionSource
 import com.promenar.infinity.data.model.Message
+import com.promenar.infinity.data.model.decodeMessageQuotesOrNull
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.ToolCall
 import com.promenar.infinity.data.model.json
@@ -266,6 +267,7 @@ data class SessionContextSnapshot(
 
 private fun MessageEntity.matchesContextSource(expected: Message): Boolean =
     content == expected.content &&
+        quotes?.let(::decodeMessageQuotesOrNull) == expected.quotes &&
         MessageRole.fromSerializedName(role) == expected.role &&
         (isArchived == 1) == expected.isArchived &&
         toolCallId == expected.toolCallId &&

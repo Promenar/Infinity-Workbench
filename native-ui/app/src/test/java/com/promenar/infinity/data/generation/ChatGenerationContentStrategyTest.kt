@@ -20,6 +20,38 @@ import io.mockk.mockk
 import org.junit.Test
 
 class ChatGenerationContentStrategyTest {
+    @Test
+    fun `引用批注在正文和完整文档之前且文档不被重复序列化`() {
+        val document = MessageDocumentAttachment("doc", "source.md", "text/markdown", "完整文档正文", 24, "hash", 6)
+        val quote = com.promenar.infinity.data.model.MessageQuote("a0", "引文", "批注")
+        val session = Session("s", "agent", messages = listOf(
+            Message("u", MessageRole.USER, "正文", quotes = listOf(quote), userDocuments = listOf(document)),
+        ))
+        val content = strategy().buildProtocolMessages(session, "").single().content
+        assertThat(content).startsWith("> 引文\n\n批注\n\n正文")
+        assertThat(content).contains("完整文档正文")
+        assertThat(Regex("完整文档正文").findAll(content).count()).isEqualTo(1)
+    }
+
+    @Test
+    fun `当前轮与历史用户消息的引用位于正文和完整文档之前`() {
+        val quote = com.promenar.infinity.data.model.MessageQuote("a0", "引文", "批注")
+        val session = Session("s", "agent", messages = listOf(
+            Message("u1", MessageRole.USER, "历史正文", quotes = listOf(quote)),
+            Message("a1", MessageRole.ASSISTANT, "回答"),
+            Message("u2", MessageRole.USER, "", quotes = listOf(quote)),
+            Message("a2", MessageRole.ASSISTANT, ""),
+        ))
+
+        val prompt = strategy().buildProtocolMessages(session, "", "u2")
+
+        assertThat(prompt.map { it.role }).containsExactly("user", "assistant", "user").inOrder()
+        assertThat(prompt.first().content).isEqualTo("> 引文\n\n批注\n\n历史正文")
+        assertThat(prompt.last().content).isEqualTo("> 引文\n\n批注")
+        assertThat(sanitizeProtocolHistory(session.messages).map { it.id })
+            .containsExactly("u1", "a1", "u2").inOrder()
+    }
+
     private val write = ToolCall("call-w", "write_file", "{}")
     private val read = ToolCall("call-r", "read_file", "{}")
 

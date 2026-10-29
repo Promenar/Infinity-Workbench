@@ -315,6 +315,7 @@ fun ChatRoute(
     val generationPhase by chatViewModel.generationPhase.collectAsStateWithLifecycle()
     val tailnetWait by chatViewModel.tailnetWait.collectAsStateWithLifecycle()
     val draftDocuments by chatViewModel.draftDocuments.collectAsStateWithLifecycle()
+    val draftQuotes by chatViewModel.draftQuotes.collectAsStateWithLifecycle()
     val themePreferences by application.themePreferenceStore.state.collectAsStateWithLifecycle()
     val isImportingDocument by chatViewModel.isImportingDocument.collectAsStateWithLifecycle()
     val draftConsumptionEpoch by chatViewModel.draftConsumptionEpoch.collectAsStateWithLifecycle()
@@ -846,6 +847,7 @@ fun ChatRoute(
                 tailnetWait = tailnetWait,
                 selectedImageUris = selectedImageUris,
                 draftDocuments = draftDocuments,
+                draftQuotes = draftQuotes,
                 isImportingDocument = isImportingDocument,
                 modelDisplayNames = modelDisplayNames,
                 reasoningControl = reasoningControl,
@@ -974,6 +976,9 @@ fun ChatRoute(
                     )
                 },
                 onRemoveDocument = chatViewModel::removeDraftDocument,
+                onQuote = chatViewModel::addQuote,
+                onQuoteAnnotationChange = chatViewModel::updateQuoteAnnotation,
+                onRemoveQuote = chatViewModel::removeQuote,
                 onRemoveImage = { index ->
                     selectedImageUriStrings = selectedImageUriStrings.toMutableList().apply {
                         if (index in indices) removeAt(index)

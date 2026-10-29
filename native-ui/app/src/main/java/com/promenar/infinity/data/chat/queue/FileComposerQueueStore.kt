@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.chat.queue
 
 import com.promenar.infinity.data.model.MessageDocumentAttachment
+import com.promenar.infinity.data.model.MessageQuote
 import com.promenar.infinity.utils.InfinityLogger
 import java.io.File
 import java.io.FileOutputStream
@@ -104,7 +105,7 @@ class FileComposerQueueStore(
     }
     override suspend fun observe(sessionId: String): StateFlow<ComposerQueueState> = locked { load(sessionId) }
 
-    override suspend fun enqueue(sessionId: String, text: String, imageUris: List<String>, documents: List<MessageDocumentAttachment>): QueuedMessage = locked {
+    override suspend fun enqueue(sessionId: String, text: String, imageUris: List<String>, documents: List<MessageDocumentAttachment>, quotes: List<MessageQuote>): QueuedMessage = locked {
         check(sessionId !in deletedSessions) { "会话已删除" }
         load(sessionId)
         val id = UUID.randomUUID().toString()
@@ -118,7 +119,7 @@ class FileComposerQueueStore(
                 }
                 target.absolutePath
             }
-            QueuedMessage(id, text, paths, documents, System.currentTimeMillis()).also { item ->
+            QueuedMessage(id, text, paths, documents, System.currentTimeMillis(), quotes = quotes).also { item ->
                 update(sessionId) { it.copy(items = it.items + item) }
             }
         } catch (failure: Throwable) {

@@ -10,6 +10,9 @@ import com.promenar.infinity.data.model.ApprovalRequest
 import com.promenar.infinity.data.model.InferenceParams
 import com.promenar.infinity.data.model.Message
 import com.promenar.infinity.data.model.MessageDocumentAttachment
+import com.promenar.infinity.data.model.MessageQuote
+import com.promenar.infinity.data.chat.queue.ComposerQuoteDraft
+import com.promenar.infinity.data.chat.queue.ComposerQuotes
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.PostProcessStatus
 import com.promenar.infinity.data.model.PostProcessTask
@@ -238,6 +241,7 @@ internal data class PendingPermissionTurn(
     val documents: List<MessageDocumentAttachment>,
     val assistantMessageIdsToReplace: Set<String> = emptySet(),
     val reuseUserMessageId: String? = null,
+    val quotes: List<MessageQuote> = emptyList(),
 )
 
 internal fun ContextBuilderResult.hasPersistableRagContext(): Boolean =
@@ -428,6 +432,9 @@ class ChatViewModel(
     val inputText: StateFlow<String> = _inputText
     private val _draftDocuments = MutableStateFlow<List<MessageDocumentAttachment>>(emptyList())
     val draftDocuments: StateFlow<List<MessageDocumentAttachment>> = _draftDocuments
+    /** 输入区上方的引用卡；发送时只有写了批注的进入消息。 */
+    private val _draftQuotes = MutableStateFlow<List<ComposerQuoteDraft>>(emptyList())
+    val draftQuotes: StateFlow<List<ComposerQuoteDraft>> = _draftQuotes
     private val _draftConsumptionEpoch = MutableStateFlow(0L)
     val draftConsumptionEpoch: StateFlow<Long> = _draftConsumptionEpoch
     /** 发送时已从输入框移走、尚未被生成接受的草稿；用户消息被回滚时还原。 */
@@ -1040,6 +1047,22 @@ class ChatViewModel(
         _draftDocuments.update { documents -> documents.filterNot { it.id == documentId } }
     }
 
+    /** 选字工具条的“引用”：同一来源的同一段引文只加一张卡。 */
+    fun addQuote(sourceMessageId: String, selectedText: String) {
+        val draft = ComposerQuotes.draft(sourceMessageId, selectedText) ?: return
+        _draftQuotes.update { current ->
+            if (current.any { it.sourceMessageId == draft.sourceMessageId && it.text == draft.text }) current else current + draft
+        }
+    }
+
+    fun updateQuoteAnnotation(id: String, annotation: String) {
+        _draftQuotes.update { quotes -> quotes.map { if (it.id == id) it.copy(annotation = annotation) else it } }
+    }
+
+    fun removeQuote(id: String) {
+        _draftQuotes.update { quotes -> quotes.filterNot { it.id == id } }
+    }
+
     fun sendMessage(text: String, imageUris: List<Uri> = emptyList()) {
         val sessionId = _currentSessionId.value
         if (sessionId == null) return
@@ -1048,7 +1071,8 @@ class ChatViewModel(
             return
         }
         val documents = _draftDocuments.value
-        if (text.isBlank() && imageUris.isEmpty() && documents.isEmpty()) return
+        val quotes = ComposerQuotes.toMessageQuotes(_draftQuotes.value)
+        if (text.isBlank() && imageUris.isEmpty() && documents.isEmpty() && quotes.isEmpty()) return
 
         if (store.getSession(sessionId) == null) return
 
@@ -1057,19 +1081,21 @@ class ChatViewModel(
             val inputAtClick = _inputText.value
             val textAtClick = inputAtClick.ifBlank { text }
             val documentsAtClick = documents.toList()
+            val quotesAtClick = _draftQuotes.value.toList()
             val composerImagesAtClick = composerImages.toList()
             val imagesAtClick = (imageUris + composerImagesAtClick).distinct()
             viewModelScope.launch {
                 try {
                     restoreSubmittedDraftFromPresentation(sessionId)
                     if (_currentSessionId.value == sessionId && generationPresentationStore.submittedDraft(sessionId) == null) {
-                        if (_inputText.value == inputAtClick && _draftDocuments.value == documentsAtClick && composerImages == composerImagesAtClick) {
+                        if (_inputText.value == inputAtClick && _draftDocuments.value == documentsAtClick && _draftQuotes.value == quotesAtClick && composerImages == composerImagesAtClick) {
                             sendMessage(text, imageUris)
                         } else {
                             if (textAtClick.isNotBlank() && !_inputText.value.contains(textAtClick)) {
                                 _inputText.value = listOf(textAtClick, _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
                             }
                             _draftDocuments.value = (documentsAtClick + _draftDocuments.value).distinctBy { it.id }
+                            _draftQuotes.value = ComposerQuotes.merge(quotesAtClick, _draftQuotes.value)
                             composerImages = (imagesAtClick + composerImages).distinct()
                             _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
                         }
@@ -1081,7 +1107,7 @@ class ChatViewModel(
             return
         }
         if (isSessionGenerating(sessionId)) {
-            enqueueComposerDraft(sessionId, text, imageUris, documents)
+            enqueueComposerDraft(sessionId, text, imageUris, documents, quotes)
             return
         }
         cancelPendingPreparation(sessionId)
@@ -1120,7 +1146,7 @@ class ChatViewModel(
                         emptyList()
                     }
 
-                    applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents)
+                    applyBackgroundPolicyGate(sessionId, session, text, imageDataUrls, documents, quotes)
                 }
             } finally {
                 try {
@@ -1165,10 +1191,11 @@ class ChatViewModel(
         }
     }
 
-    private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>, steer: Boolean = false) {
+    private fun enqueueComposerDraft(sessionId: String, text: String, imageUris: List<Uri>, documents: List<MessageDocumentAttachment>, quotes: List<MessageQuote>, steer: Boolean = false) {
         generationPresentationStore.discardComposerAttachments(sessionId)
         _inputText.value = ""
         _draftDocuments.value = emptyList()
+        _draftQuotes.value = emptyList()
         _restoredDraftImages.value = null
         composerImages = emptyList()
         _draftConsumptionEpoch.value += 1
@@ -1176,7 +1203,7 @@ class ChatViewModel(
         viewModelScope.launch {
             var stored = false
             try {
-                val item = composerQueueStore.enqueue(sessionId, text, imageUris.map(Uri::toString), documents)
+                val item = composerQueueStore.enqueue(sessionId, text, imageUris.map(Uri::toString), documents, quotes)
                 stored = true
                 if (steer && composerQueueStore.steer(sessionId, item.id)) queuePauseOverrides.remove(sessionId)
                 composerQueueStore.releaseDraftImages(sessionId, imageUris.mapNotNull { it.path })
@@ -1193,7 +1220,7 @@ class ChatViewModel(
                         composerQueueStore.pause(sessionId, state.pauseReason ?: if (failure is CancellationException) QueuePauseReason.INTERRUPTED else QueuePauseReason.FAILED)
                         _error.value = stringResourceResolver(R.string.chat_queue_error_draft_after_enqueue)
                     } else {
-                        composerDraftRecovery.retain(sessionId, com.promenar.infinity.data.chat.queue.RecoverableComposerDraft(text, imageUris.map(Uri::toString), documents))
+                        composerDraftRecovery.retain(sessionId, com.promenar.infinity.data.chat.queue.RecoverableComposerDraft(text, imageUris.map(Uri::toString), documents, quotes))
                         if (_currentSessionId.value == sessionId && viewModelScope.isActive) restoreFailedComposerDraft(sessionId)
                         _error.value = stringResourceResolver(R.string.chat_queue_error_enqueue)
                     }
@@ -1217,6 +1244,7 @@ class ChatViewModel(
         if (recovered.isEmpty()) return
         _inputText.value = (recovered.map { it.text } + _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
         _draftDocuments.value = (recovered.flatMap { it.documents } + _draftDocuments.value).distinctBy { it.id }
+        _draftQuotes.value = ComposerQuotes.merge(ComposerQuotes.fromMessageQuotes(recovered.flatMap { it.quotes }), _draftQuotes.value)
         composerImages = (recovered.flatMap { it.imageUris }.map(Uri::parse) + composerImages).distinct()
         _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
         runCatching { sessionManager.updateSessionDraft(sessionId, _inputText.value.ifBlank { null }) }
@@ -1250,7 +1278,7 @@ class ChatViewModel(
     fun sendMessageSteering(text: String, imageUris: List<Uri> = emptyList()) {
         val sessionId = _currentSessionId.value ?: return
         if (!queuesDraft(sessionId, text, imageUris)) return sendMessage(text, imageUris)
-        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, steer = true)
+        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, ComposerQuotes.toMessageQuotes(_draftQuotes.value), steer = true)
     }
 
     /** 停止本轮，草稿排到队首并在停止落定后立即发出；不在生成时等同普通发送。 */
@@ -1258,7 +1286,7 @@ class ChatViewModel(
         val sessionId = _currentSessionId.value ?: return
         if (!queuesDraft(sessionId, text, imageUris)) return sendMessage(text, imageUris)
         stopAndSendSessions += sessionId
-        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, steer = true)
+        enqueueComposerDraft(sessionId, text, imageUris, _draftDocuments.value, ComposerQuotes.toMessageQuotes(_draftQuotes.value), steer = true)
         cancelCurrentSessionGeneration()
         viewModelScope.launch {
             sendPreparationMutex(sessionId).withLock { terminateSessionWork(sessionId) }
@@ -1268,7 +1296,7 @@ class ChatViewModel(
     /** 与 [sendMessage] 的排队判定一致：只有生成中且没有待审批时，草稿才进入队列。 */
     private fun queuesDraft(sessionId: String, text: String, imageUris: List<Uri>): Boolean =
         !_isImportingDocument.value &&
-            (text.isNotBlank() || imageUris.isNotEmpty() || _draftDocuments.value.isNotEmpty()) &&
+            (text.isNotBlank() || imageUris.isNotEmpty() || _draftDocuments.value.isNotEmpty() || ComposerQuotes.annotatedCount(_draftQuotes.value) > 0) &&
             store.getSession(sessionId)?.approvalRequest == null && isSessionGenerating(sessionId)
 
     fun removeQueuedMessage(id: String) {
@@ -1283,7 +1311,7 @@ class ChatViewModel(
 
     fun editQueuedMessage(id: String): Boolean {
         val sessionId = _currentSessionId.value ?: return false
-        if (editingQueueItem || _inputText.value.isNotBlank() || _draftDocuments.value.isNotEmpty() ||
+        if (editingQueueItem || _inputText.value.isNotBlank() || _draftDocuments.value.isNotEmpty() || _draftQuotes.value.isNotEmpty() ||
             composerImages.isNotEmpty() || !_restoredDraftImages.value.isNullOrEmpty() || _isImportingDocument.value
         ) return false
         if (composerQueue.value.items.none { it.id == id }) return false
@@ -1297,11 +1325,12 @@ class ChatViewModel(
                         prepared = composerQueueStore.prepareEdit(sessionId, id) ?: return@withLock
                         // 复制之后重验输入区，确认接受时先同步交接草稿，再提交队列移除。
                         if (!viewModelScope.isActive || _currentSessionId.value != sessionId || _inputText.value.isNotBlank() ||
-                            _draftDocuments.value.isNotEmpty() || composerImages.isNotEmpty() || !_restoredDraftImages.value.isNullOrEmpty()
+                            _draftDocuments.value.isNotEmpty() || _draftQuotes.value.isNotEmpty() || composerImages.isNotEmpty() || !_restoredDraftImages.value.isNullOrEmpty()
                         ) return@withLock
                         val item = prepared
                         _inputText.value = item.text
                         _draftDocuments.value = item.documents
+                        _draftQuotes.value = ComposerQuotes.fromMessageQuotes(item.quotes)
                         composerImages = item.imagePaths.map { Uri.fromFile(java.io.File(it)) }
                         _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
                         try {
@@ -1315,7 +1344,7 @@ class ChatViewModel(
                         } else {
                             sessionManager.updateSessionDraft(sessionId, if (_currentSessionId.value == sessionId) _inputText.value.ifBlank { null } else item.text.ifBlank { null })
                             if (_currentSessionId.value != sessionId || !viewModelScope.isActive) {
-                                composerDraftRecovery.retain(sessionId, com.promenar.infinity.data.chat.queue.RecoverableComposerDraft(item.text, item.imagePaths.map { Uri.fromFile(java.io.File(it)).toString() }, item.documents))
+                                composerDraftRecovery.retain(sessionId, com.promenar.infinity.data.chat.queue.RecoverableComposerDraft(item.text, item.imagePaths.map { Uri.fromFile(java.io.File(it)).toString() }, item.documents, item.quotes))
                             }
                         }
                     } finally {
@@ -1332,6 +1361,7 @@ class ChatViewModel(
         if (_currentSessionId.value != sessionId) return
         if (_inputText.value == item.text) _inputText.value = ""
         _draftDocuments.value = _draftDocuments.value.filterNot { doc -> item.documents.any { it.id == doc.id } }
+        _draftQuotes.value = _draftQuotes.value.filterNot { draft -> item.quotes.any { it.sourceMessageId == draft.sourceMessageId && it.text == draft.text } }
         composerImages = composerImages.filterNot { it.path in item.imagePaths }
         _restoredDraftImages.value = composerImages.map(Uri::toString).takeIf { it.isNotEmpty() }
     }
@@ -1392,7 +1422,7 @@ class ChatViewModel(
                             if (_currentSessionId.value != sessionId) {
                                 restoreSubmittedDraft(sessionId, queueReason = QueuePauseReason.INTERRUPTED)
                             } else {
-                                applyBackgroundPolicyGate(sessionId, session, item.text, images, item.documents)
+                                applyBackgroundPolicyGate(sessionId, session, item.text, images, item.documents, item.quotes)
                             }
                         }
                     } catch (failure: Exception) {
@@ -1450,6 +1480,7 @@ class ChatViewModel(
         text: String,
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
+        quotes: List<MessageQuote> = emptyList(),
         assistantMessageIdsToReplace: Set<String> = emptySet(),
         reuseUserMessageId: String? = null,
     ) {
@@ -1468,6 +1499,7 @@ class ChatViewModel(
                     backgroundAllowed = true,
                     assistantMessageIdsToReplace = assistantMessageIdsToReplace,
                     reuseUserMessageId = reuseUserMessageId,
+                    quotes = quotes,
                 )
             com.promenar.infinity.background.generation.BackgroundGenerationPolicy.FOREGROUND_ONLY ->
                 enqueuePreparedUserTurnAfterReplacement(
@@ -1479,6 +1511,7 @@ class ChatViewModel(
                     backgroundAllowed = false,
                     assistantMessageIdsToReplace = assistantMessageIdsToReplace,
                     reuseUserMessageId = reuseUserMessageId,
+                    quotes = quotes,
                 )
             com.promenar.infinity.background.generation.BackgroundGenerationPolicy.REQUIRES_PERMISSION -> {
                 if (_currentSessionId.value != sessionId) {
@@ -1494,6 +1527,7 @@ class ChatViewModel(
                     documents,
                     assistantMessageIdsToReplace,
                     reuseUserMessageId,
+                    quotes,
                 )
                 mutableNotificationPermissionRequest.value = NotificationPermissionRequest(token)
                 _isGenerating.value = false
@@ -1536,6 +1570,7 @@ class ChatViewModel(
                             backgroundAllowed = granted,
                             assistantMessageIdsToReplace = pending.assistantMessageIdsToReplace,
                             reuseUserMessageId = pending.reuseUserMessageId,
+                            quotes = pending.quotes,
                         )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -1566,6 +1601,7 @@ class ChatViewModel(
         backgroundAllowed: Boolean,
         assistantMessageIdsToReplace: Set<String>,
         reuseUserMessageId: String?,
+        quotes: List<MessageQuote> = emptyList(),
     ) {
         if (reuseUserMessageId != null) {
             enqueuePreparedAssistantRetry(
@@ -1577,7 +1613,7 @@ class ChatViewModel(
                 assistantMessageIdsToReplace,
             )
         } else {
-            enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, documents, backgroundAllowed)
+            enqueuePreparedUserTurn(sessionId, session, text, imageDataUrls, documents, backgroundAllowed, quotes)
         }
     }
 
@@ -1652,6 +1688,7 @@ class ChatViewModel(
         imageDataUrls: List<String>,
         documents: List<MessageDocumentAttachment>,
         backgroundAllowed: Boolean,
+        quotes: List<MessageQuote> = emptyList(),
     ) = store.turnAdmission.withLock(sessionId) {
         val userMsgId = IdGenerator.message("user")
         val assistantMsgId = IdGenerator.message("ai")
@@ -1674,6 +1711,7 @@ class ChatViewModel(
                 content = text,
                 userImages = imageDataUrls.ifEmpty { null },
                 userDocuments = documents.ifEmpty { null },
+                quotes = quotes.ifEmpty { null },
                 createdAt = System.currentTimeMillis()
             )
             messageManager.addMessage(sessionId, userMessage)
@@ -2116,6 +2154,7 @@ class ChatViewModel(
             saveCurrentDraft()
             _inputText.value = ""
             _draftDocuments.value = emptyList()
+            _draftQuotes.value = emptyList()
             _restoredDraftImages.value = null
             composerImages = emptyList()
             resetSessionTransientState()
@@ -2959,6 +2998,7 @@ class ChatViewModel(
             com.promenar.infinity.data.generation.SessionComposerAttachments(
                 documents = _draftDocuments.value,
                 imageUris = (composerImages.map(Uri::toString) + _restoredDraftImages.value.orEmpty()).distinct(),
+                quotes = _draftQuotes.value,
             ),
         )
     }
@@ -2966,6 +3006,7 @@ class ChatViewModel(
     private fun restoreComposerAttachments(sessionId: String) {
         val attachments = generationPresentationStore.composerAttachments(sessionId)
         _draftDocuments.value = attachments?.documents.orEmpty()
+        _draftQuotes.value = attachments?.quotes.orEmpty()
         composerImages = attachments?.imageUris.orEmpty().map(Uri::parse)
         _restoredDraftImages.value = attachments?.imageUris?.takeIf { it.isNotEmpty() }
     }
@@ -3100,6 +3141,7 @@ class ChatViewModel(
                         userMessage.content,
                         userMessage.userImages.orEmpty(),
                         userMessage.userDocuments.orEmpty(),
+                        quotes = userMessage.quotes.orEmpty(),
                         assistantMessageIdsToReplace = replacedIds,
                         reuseUserMessageId = userMessage.id,
                     )
@@ -3181,12 +3223,14 @@ class ChatViewModel(
             text = _inputText.value.ifBlank { text },
             documents = _draftDocuments.value,
             imageUris = imageUris.map(Uri::toString),
+            quotes = ComposerQuotes.toMessageQuotes(_draftQuotes.value),
         )
         submittedDraft = draft
         generationPresentationStore.retainSubmittedDraft(draft)
         generationPresentationStore.discardComposerAttachments(sessionId)
         _inputText.value = ""
         _draftDocuments.value = emptyList()
+        _draftQuotes.value = emptyList()
         _restoredDraftImages.value = null
         composerImages = emptyList()
         _draftConsumptionEpoch.value += 1
@@ -3233,6 +3277,7 @@ class ChatViewModel(
             val text = draft.text.ifBlank { fallbackText }
             if (text.isNotBlank()) _inputText.value = listOf(text, _inputText.value).filter { it.isNotBlank() }.joinToString("\n\n")
             _draftDocuments.value = (draft.documents + _draftDocuments.value).distinctBy { it.id }
+            _draftQuotes.value = ComposerQuotes.merge(ComposerQuotes.fromMessageQuotes(draft.quotes), _draftQuotes.value)
             val images = (draft.imageUris + composerImages.map(Uri::toString) + _restoredDraftImages.value.orEmpty()).distinct()
             if (images.isNotEmpty()) {
                 composerImages = images.map(Uri::parse)
@@ -3284,6 +3329,7 @@ class ChatViewModel(
         }
         _inputText.value = ""
         _draftDocuments.value = emptyList()
+        _draftQuotes.value = emptyList()
         _draftConsumptionEpoch.value += 1
         sessionManager.updateSessionDraft(sessionId, null)
     }

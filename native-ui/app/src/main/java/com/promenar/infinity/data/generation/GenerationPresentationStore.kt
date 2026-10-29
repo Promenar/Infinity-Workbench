@@ -29,6 +29,8 @@ internal data class SubmittedGenerationDraft(
     val text: String,
     val documents: List<MessageDocumentAttachment>,
     val imageUris: List<String>,
+    /** 写了批注的引用；回滚时还原成引用卡。 */
+    val quotes: List<com.promenar.infinity.data.model.MessageQuote> = emptyList(),
     val submissionId: String = UUID.randomUUID().toString(),
     val userMessageId: String? = null,
     val taskId: String? = null,
@@ -39,6 +41,8 @@ internal data class SubmittedGenerationDraft(
 internal data class SessionComposerAttachments(
     val documents: List<MessageDocumentAttachment>,
     val imageUris: List<String>,
+    /** 尚未发送的引用卡，含未写批注的。 */
+    val quotes: List<com.promenar.infinity.data.chat.queue.ComposerQuoteDraft> = emptyList(),
 )
 
 data class GenerationPresentationState(
@@ -100,7 +104,7 @@ class GenerationPresentationStore {
     internal suspend fun <T> withDraftRecovery(sessionId: String, block: suspend () -> T): T =
         draftRecoveryLocks.getOrPut(sessionId) { Mutex() }.withLock { block() }
     internal fun retainComposerAttachments(sessionId: String, value: SessionComposerAttachments) {
-        if (value.documents.isEmpty() && value.imageUris.isEmpty()) composerAttachments.remove(sessionId)
+        if (value.documents.isEmpty() && value.imageUris.isEmpty() && value.quotes.isEmpty()) composerAttachments.remove(sessionId)
         else composerAttachments[sessionId] = value
     }
     internal fun composerAttachments(sessionId: String): SessionComposerAttachments? = composerAttachments[sessionId]

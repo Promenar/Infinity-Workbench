@@ -7,8 +7,10 @@ import com.promenar.infinity.data.local.db.dao.SessionDao
 import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.SessionEntity
 import com.promenar.infinity.data.model.ToolCall
+import com.promenar.infinity.data.model.decodeMessageQuotesOrNull
 import java.util.UUID
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.promenar.infinity.data.canvas.CanvasStore
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +61,9 @@ object BranchSessionPlanner {
                 id = idMap.getValue(message.id),
                 sessionId = newSessionId,
                 parentMessageId = message.parentMessageId?.let(idMap::get),
+                quotes = message.quotes?.let(::decodeMessageQuotesOrNull)?.map { quote ->
+                    quote.copy(sourceMessageId = idMap[quote.sourceMessageId] ?: quote.sourceMessageId)
+                }?.let { JSON.encodeToString(it) },
                 tokens = null,
                 ragProgress = null,
                 ragReferencesLoading = 0,

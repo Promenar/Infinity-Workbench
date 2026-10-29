@@ -5,6 +5,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** 用户消息的引用批注以可空 JSON 文本保存。 */
+val MIGRATION_30_31 = object : Migration(30, 31) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN quotes TEXT")
+    }
+}
+
 /** 既有智能体保持新会话开启工具的默认行为。 */
 val MIGRATION_29_30 = object : Migration(29, 30) {
     override fun migrate(db: SupportSQLiteDatabase) {

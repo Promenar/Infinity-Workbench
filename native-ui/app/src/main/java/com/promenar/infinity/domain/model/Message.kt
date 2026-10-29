@@ -11,7 +11,8 @@ data class Message(
     val toolCalls: List<ToolCall>? = null,
     val ragReferences: List<RagReference>? = null,
     val tokenUsage: TokenUsage? = null,
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    val quotes: List<com.promenar.infinity.data.model.MessageQuote>? = null,
 )
 
 data class MessageDocumentAttachment(

@@ -1,5 +1,9 @@
 package com.promenar.infinity.ui.chat
 
+import com.promenar.infinity.data.chat.queue.ComposerQuotes
+import com.promenar.infinity.ui.chat.quote.ComposerQuoteArea
+import com.promenar.infinity.ui.chat.quote.LocalMessageQuoteActions
+import com.promenar.infinity.ui.chat.quote.MessageQuoteActions
 import com.promenar.infinity.ui.chat.runmode.labelRes
 import com.promenar.infinity.ui.theme.InfinityMonospace
 import androidx.compose.animation.AnimatedContent
@@ -257,6 +261,8 @@ data class ChatScreenState(
     val tailnetWait: com.promenar.infinity.data.generation.TailnetWaitState? = null,
     val selectedImageUris: List<android.net.Uri> = emptyList(),
     val draftDocuments: List<MessageDocumentAttachment> = emptyList(),
+    /** 输入区上方的引用卡。 */
+    val draftQuotes: List<com.promenar.infinity.data.chat.queue.ComposerQuoteDraft> = emptyList(),
     val isImportingDocument: Boolean = false,
     val modelDisplayNames: Map<String, String> = emptyMap(),
     /** 输入区推理强度胶囊；当前模型不支持调节时为 null。 */
@@ -352,6 +358,10 @@ data class ChatScreenActions(
     val onPickDocuments: () -> Unit = {},
     val onRemoveImage: (Int) -> Unit = {},
     val onRemoveDocument: (String) -> Unit = {},
+    /** 选字工具条的“引用”：来源消息 ID 与选中文字。 */
+    val onQuote: (String, String) -> Unit = { _, _ -> },
+    val onQuoteAnnotationChange: (String, String) -> Unit = { _, _ -> },
+    val onRemoveQuote: (String) -> Unit = {},
     val onSnackbarAction: () -> Unit = {},
     val onContinueTask: () -> Unit = {},
     val onCompleteTask: () -> Unit = {},
@@ -393,6 +403,7 @@ fun ChatScreenContent(
     val compressionState = state.compressionState
     val selectedImageUris = state.selectedImageUris
     val draftDocuments = state.draftDocuments
+    val draftQuotes = state.draftQuotes
     val listState = rememberLazyListState()
     val subagentApprovalGroups = remember(state.subagentApprovals) {
         state.subagentApprovals.groupBy { it.subagentIndex }.values.toList()
@@ -850,6 +861,20 @@ fun ChatScreenContent(
                     listState.animateScrollToItem(target.coerceAtLeast(0))
                 }
             }
+            // 引文定位：会话分组排在列表最前，组下标即列表项下标；来源已删除时提示。
+            val quoteSourceMissing = stringResource(R.string.ux2_quote_source_missing)
+            val quoteContext = LocalContext.current
+            val latestPipelineGroups by rememberUpdatedState(pipelineGroups)
+            val quoteActions = remember(actions.onQuote) {
+                MessageQuoteActions(
+                    onQuote = actions.onQuote,
+                    onLocateSource = { sourceId ->
+                        val index = latestPipelineGroups.indexOfFirst { group -> group.messages.any { it.id == sourceId } }
+                        if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                        else android.widget.Toast.makeText(quoteContext, quoteSourceMissing, android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                )
+            }
             Box(Modifier.fillMaxSize().padding(padding)) {
             Box(
                 modifier = Modifier
@@ -916,66 +941,68 @@ fun ChatScreenContent(
                     val hasRagContent = selectRagActiveMessage(group.assistantMessages)?.let {
                         (if (isGeneratingGroup) ragPhases else emptyList()).isNotEmpty() || it.hasRagArtifacts()
                     } == true
-                    PipelineBubble(
-                        hasRagContent = hasRagContent,
-                        // 新消息只淡入、不做位移动画：位移会与生成中按像素跟随滚动的逻辑互相拉扯。
-                        modifier = Modifier
-                            .animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)
-                            .padding(top = spacing.beforeDp.dp),
-                        ragContent = {
-                            val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
+                    CompositionLocalProvider(LocalMessageQuoteActions provides quoteActions) {
+                        PipelineBubble(
+                            hasRagContent = hasRagContent,
+                            // 新消息只淡入、不做位移动画：位移会与生成中按像素跟随滚动的逻辑互相拉扯。
+                            modifier = Modifier
+                                .animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)
+                                .padding(top = spacing.beforeDp.dp),
+                            ragContent = {
+                                val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
-                            if (ragActiveMsg != null) {
-                                val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
-                                val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
-                                val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
-                                val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
-                                if (targetPhases.isNotEmpty() || hasRagArtifacts) {
-                                    RagProgressCard(
-                                        phases = targetPhases,
-                                        references = ragActiveMsg.ragReferences,
-                                        kgPaths = ragActiveMsg.kgPaths,
-                                        citations = ragActiveMsg.citations,
-                                        isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true,
-                                        trace = ragActiveMsg.ragMetadata?.trace,
-                                    )
+                                if (ragActiveMsg != null) {
+                                    val targetPhases = if (isGeneratingGroup) ragPhases else emptyList()
+                                    val hasRagArtifacts = ragActiveMsg.hasRagArtifacts()
+                                    val ragLoading = isGeneratingGroup && targetPhases.any { it.status == PhaseStatus.ACTIVE }
+                                    val ragComplete = targetPhases.isNotEmpty() && targetPhases.all { it.status == PhaseStatus.DONE }
+                                    if (targetPhases.isNotEmpty() || hasRagArtifacts) {
+                                        RagProgressCard(
+                                            phases = targetPhases,
+                                            references = ragActiveMsg.ragReferences,
+                                            kgPaths = ragActiveMsg.kgPaths,
+                                            citations = ragActiveMsg.citations,
+                                            isComplete = if (isGeneratingGroup) (ragComplete || !ragLoading) else true,
+                                            trace = ragActiveMsg.ragMetadata?.trace,
+                                        )
+                                    }
                                 }
-                            }
-                        },
-                        group = group,
-                        isGenerating = isGeneratingGroup,
-                        collapseFinishedTurn = collapseFinishedTurns,
-                        hasPendingApproval = hasPendingApproval,
-                        interruptedByError = groupInterruptedByError(pipelineGroups, idx),
-                        status = uiState.status,
-                        streamingContent = uiState.streamingContent,
-                        fontSize = uiState.session?.options?.fontSize ?: 15,
-                        modelDisplayNames = state.modelDisplayNames,
-                        providerDisplayNames = state.providerDisplayNames,
-                        onMessageContentChange = actions.onContentChange,
-                        onContentChange = { newContent ->
-                            group.assistantMessages.lastOrNull()?.let { lastMsg ->
-                                actions.onContentChange(lastMsg.id, newContent)
-                            }
-                        },
-                        onCopy = { text ->
-                            actions.onCopy(text)
-                        },
-                        onDelete = actions.onDeleteMessage,
-                        onRegenerate = actions.onRegenerateMessage,
-                        onBranch = actions.onBranchMessage,
-                        onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.let { (it.ragOptions ?: RagOptions()).enableMemory } == true },
-                        turnGraphStates = state.turnGraphStates,
-                        failureActions = if (idx == pipelineGroups.lastIndex && !uiState.isGenerating) {
-                            GenerationFailureActions(
-                                onRetry = actions.onRetryLastMessage,
-                                onSwitchModel = actions.onOpenSettings,
-                                onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
-                            )
-                        } else {
-                            null
-                        },
-                    )
+                            },
+                            group = group,
+                            isGenerating = isGeneratingGroup,
+                            collapseFinishedTurn = collapseFinishedTurns,
+                            hasPendingApproval = hasPendingApproval,
+                            interruptedByError = groupInterruptedByError(pipelineGroups, idx),
+                            status = uiState.status,
+                            streamingContent = uiState.streamingContent,
+                            fontSize = uiState.session?.options?.fontSize ?: 15,
+                            modelDisplayNames = state.modelDisplayNames,
+                            providerDisplayNames = state.providerDisplayNames,
+                            onMessageContentChange = actions.onContentChange,
+                            onContentChange = { newContent ->
+                                group.assistantMessages.lastOrNull()?.let { lastMsg ->
+                                    actions.onContentChange(lastMsg.id, newContent)
+                                }
+                            },
+                            onCopy = { text ->
+                                actions.onCopy(text)
+                            },
+                            onDelete = actions.onDeleteMessage,
+                            onRegenerate = actions.onRegenerateMessage,
+                            onBranch = actions.onBranchMessage,
+                            onOpenTurnMemory = actions.onOpenTurnMemory.takeIf { uiState.session?.let { (it.ragOptions ?: RagOptions()).enableMemory } == true },
+                            turnGraphStates = state.turnGraphStates,
+                            failureActions = if (idx == pipelineGroups.lastIndex && !uiState.isGenerating) {
+                                GenerationFailureActions(
+                                    onRetry = actions.onRetryLastMessage,
+                                    onSwitchModel = actions.onOpenSettings,
+                                    onOpenTailscaleSettings = actions.onOpenTailscaleSettings,
+                                )
+                            } else {
+                                null
+                            },
+                        )
+                    }
                 }
 
                 if (showCompressionFeedback) {
@@ -1152,16 +1179,13 @@ fun ChatScreenContent(
                     onTaskClick = { hiddenPlanSignature = null },
                 )
                     // 三种发送方式共用：纯附件时补默认提示词。
+                    // 只有写了批注的引用时正文留空，引用本身就是这条消息。
                     val submitDraft: ((String, List<android.net.Uri>) -> Unit) -> Unit = { send ->
-                        if (
-                            inputText.isNotBlank() ||
-                            selectedImageUris.isNotEmpty() ||
-                            draftDocuments.isNotEmpty()
-                        ) {
-                            val fallback = if (draftDocuments.isNotEmpty()) {
-                                documentOnlyPrompt
-                            } else {
-                                describeImagePrompt
+                        if (ComposerQuotes.hasSendableDraft(inputText, selectedImageUris.isNotEmpty(), draftDocuments.isNotEmpty(), draftQuotes)) {
+                            val fallback = when {
+                                draftDocuments.isNotEmpty() -> documentOnlyPrompt
+                                selectedImageUris.isNotEmpty() -> describeImagePrompt
+                                else -> ""
                             }
                             send(inputText.ifBlank { fallback }, selectedImageUris)
                         }
@@ -1203,6 +1227,7 @@ fun ChatScreenContent(
                             onModelHint = { showModelHint = true },
                             hasImages = selectedImageUris.isNotEmpty(),
                             hasDocuments = draftDocuments.isNotEmpty(),
+                            hasAnnotatedQuotes = ComposerQuotes.annotatedCount(draftQuotes) > 0,
                             isImportingDocument = state.isImportingDocument,
                             attachmentMenuExpanded = attachmentMenuExpanded,
                             onAttachmentMenuExpandedChange = { attachmentMenuExpanded = it },
@@ -1238,7 +1263,7 @@ fun ChatScreenContent(
                                 ) {
                                     ComposerQueueTray(
                                         queue = lastQueue,
-                                        canEdit = inputText.isBlank() && selectedImageUris.isEmpty() && draftDocuments.isEmpty(),
+                                        canEdit = inputText.isBlank() && selectedImageUris.isEmpty() && draftDocuments.isEmpty() && draftQuotes.isEmpty(),
                                         onSteer = actions.onSteerQueued,
                                         onEdit = actions.onEditQueued,
                                         onMoveToFront = actions.onMoveQueuedToFront,
@@ -1261,6 +1286,12 @@ fun ChatScreenContent(
                                         onPick = actions.onSlashCommandPicked,
                                     )
                                 }
+                                // 引用卡属于正在写的这条消息，紧贴输入区。
+                                ComposerQuoteArea(
+                                    quotes = draftQuotes,
+                                    onAnnotationChange = actions.onQuoteAnnotationChange,
+                                    onRemove = actions.onRemoveQuote,
+                                )
                             },
                             modelName = modelDisplayName,
                             modelId = uiState.session?.modelId,
@@ -2615,6 +2646,8 @@ fun ChatInputBar(
     onModelHint: () -> Unit = {},
     hasImages: Boolean = false,
     hasDocuments: Boolean = false,
+    /** 至少一张引用卡写了批注；未写批注的引用不让发送键可用。 */
+    hasAnnotatedQuotes: Boolean = false,
     isImportingDocument: Boolean = false,
     attachmentMenuExpanded: Boolean = false,
     onAttachmentMenuExpandedChange: (Boolean) -> Unit = {},
@@ -2679,7 +2712,7 @@ fun ChatInputBar(
         completions = completionFlashes,
     )
     // 生成中写好了下一条：主按钮变为排队发送，外圈转动表示本轮仍在进行；长按展开插队、停止并发送与只停止。
-    val hasDraft = text.isNotBlank() || hasImages || hasDocuments
+    val hasDraft = text.isNotBlank() || hasImages || hasDocuments || hasAnnotatedQuotes
     val queueing = isGenerating && hasDraft && status in QueueableStatuses
     Column(horizontalAlignment = Alignment.End) {
     Surface(

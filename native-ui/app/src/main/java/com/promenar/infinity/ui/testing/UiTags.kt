@@ -617,4 +617,13 @@ object UiTags {
     const val HUB_ADD_DIALOG_TYPE_CHAT = "hub_add_dialog_type_chat"
     const val HUB_ADD_DIALOG_TYPE_AGENT = "hub_add_dialog_type_agent"
     const val AGENT_EDIT_TOOLS_DEFAULT = "agent_edit_tools_default"
+
+    // ============ UX2 引用批注（W2-Q）==========
+    const val CHAT_QUOTE_AREA = "chat_quote_area"
+    const val CHAT_QUOTE_COLLAPSED = "chat_quote_collapsed"
+    const val CHAT_QUOTE_COLLAPSE = "chat_quote_collapse"
+    const val CHAT_USER_QUOTES = "chat_user_quotes"
+    fun chatQuoteCard(id: String) = "chat_quote_card:$id"
+    fun chatQuoteAnnotation(id: String) = "chat_quote_annotation:$id"
+    fun chatQuoteRemove(id: String) = "chat_quote_remove:$id"
 }

@@ -87,6 +87,41 @@ import kotlinx.serialization.json.jsonPrimitive
 @Config(sdk = [33])
 class RoomBackupDataSourceTest {
     @Test
+    fun `带引用且正文为空的消息备份恢复后保持结构化引用`() = runBlocking {
+        emptyWorkspaceBackup()
+        db.sessionDao().insert(SessionEntity("quote-session", "agent-empty", createdAt = 1, updatedAt = 1))
+        val quote = com.promenar.infinity.data.model.MessageQuote("original", "引文\n第二行", "批注")
+        db.messageDao().insert(Message("quote-user", MessageRole.USER, "", quotes = listOf(quote)).toEntity("quote-session"))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val row = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+            .getValue("tables").jsonObject.getValue("messages").jsonArray.single().jsonObject
+        assertThat(row["quotes"]).isNotEqualTo(JsonNull)
+        assertThat(row["quotes"]).isNotNull()
+        db.messageDao().deleteById("quote-user")
+        newDataSource().restore(validated(snapshot))
+        val restored = db.messageDao().getById("quote-user")!!.toDomain()
+        assertThat(restored.content).isEmpty()
+        assertThat(restored.quotes).containsExactly(quote).inOrder()
+    }
+
+    @Test
+    fun `旧备份缺引用列时恢复为空且保留正文`() = runBlocking {
+        emptyWorkspaceBackup()
+        db.sessionDao().insert(SessionEntity("quote-session", "agent-empty", createdAt = 1, updatedAt = 1))
+        db.messageDao().insert(MessageEntity("quote-user", "quote-session", "user", "旧正文", createdAt = 1))
+        val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
+        val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = root.getValue("tables").jsonObject
+        val legacy = JsonObject(root + mapOf("schemaVersion" to JsonPrimitive(11),
+            "tables" to JsonObject(tables + ("messages" to JsonArray(tables.getValue("messages").jsonArray.map {
+                JsonObject(it.jsonObject - "quotes")
+            }))))).toString().toByteArray()
+        newDataSource().restore(validated(snapshot, database = legacy))
+        assertThat(db.messageDao().getById("quote-user")!!.toDomain().quotes).isNull()
+        assertThat(db.messageDao().getById("quote-user")!!.content).isEqualTo("旧正文")
+    }
+
+    @Test
     fun `旧应用偏好别名经完整数据库恢复转换为逻辑命名空间`() = runBlocking {
         val snapshot = emptyWorkspaceBackup()
         val old = BackupPreferenceSnapshot(listOf(
@@ -434,12 +469,12 @@ class RoomBackupDataSourceTest {
     }
 
     @Test
-    fun `v8至v11备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
+    fun `v8至v12备份缺运行模式列时拒绝恢复且保留当前数据`() = runBlocking {
         seedCompleteGraph()
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
         val root = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
         val tables = root.getValue("tables").jsonObject
-        for (version in 8..11) {
+        for (version in 8..12) {
             val legacyTables = if (version == 8) tables - "long_term_memories" else tables
             val missingMode = JsonObject(root + mapOf(
                 "schemaVersion" to JsonPrimitive(version),
@@ -458,7 +493,7 @@ class RoomBackupDataSourceTest {
         seedCompleteGraph()
         insertMemory("memory-1", sourceSessionId = "deleted-session")
         val snapshot = newDataSource().snapshot(CANONICAL_CONTENT)
-        assertThat(snapshot.databaseSchemaVersion).isEqualTo(11)
+        assertThat(snapshot.databaseSchemaVersion).isEqualTo(12)
         db.clearAllTables()
         newDataSource().restore(validated(snapshot))
         db.openHelper.writableDatabase.query("SELECT * FROM long_term_memories WHERE id=?", arrayOf(memoryId("memory-1"))).use {
@@ -1058,8 +1093,8 @@ class RoomBackupDataSourceTest {
             val text = snapshot.database.toString(Charsets.UTF_8)
             val payload = Json.parseToJsonElement(text).jsonObject
 
-            assertThat(snapshot.databaseSchemaVersion).isEqualTo(11)
-            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("11")
+            assertThat(snapshot.databaseSchemaVersion).isEqualTo(12)
+            assertThat(payload.getValue("schemaVersion").jsonPrimitive.content).isEqualTo("12")
 
             listOf(
                 "workspaces", "agents", "sessions", "messages", "attachments", "artifacts", "context_summaries",
