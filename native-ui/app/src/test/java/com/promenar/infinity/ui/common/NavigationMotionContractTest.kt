@@ -162,6 +162,9 @@ class NavigationMotionContractTest {
         val pane = source("common/InfinityAdaptivePane.kt")
         assertThat(pane).contains("LocalNavigationEventDispatcherOwner provides if (active) it else inert")
         assertThat(pane).contains("LocalOnBackPressedDispatcherOwner provides if (active) it else inert")
+        // 不走 NavHost 的整页二级页面同样跟手：返回处理须能拿到手势进度。
+        assertThat(pane).contains("events.collect { event -> gesture.drag(event.progress) }")
+        assertThat(pane).doesNotContain("BackHandler(onBack = onBack)")
     }
 
     @Test
