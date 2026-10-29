@@ -2,6 +2,8 @@ package com.promenar.infinity.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import com.google.common.truth.Truth.assertThat
+import androidx.compose.ui.graphics.luminance
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import org.junit.Test
@@ -30,5 +32,28 @@ class SeededColorSchemeStyleTest {
         val soft = seededColorScheme(seed, dark = true, style = InfinitySchemeStyle.TONAL_SPOT)
         val expressive = seededColorScheme(seed, dark = true, style = InfinitySchemeStyle.EXPRESSIVE)
         assertThat(expressive.tertiary).isNotEqualTo(soft.tertiary)
+    }
+
+    private fun contrast(a: Color, b: Color): Float {
+        val la = a.luminance() + 0.05f
+        val lb = b.luminance() + 0.05f
+        return max(la, lb) / min(la, lb)
+    }
+
+    /**
+     * 冰蓝种子在柔和风格下：深色主色接近 #9FD3FF（每个通道相差不超过 24），浅色主色与其上文字、与白底的对比度都不低于 4.5。
+     * 种子色是待主控验证的候选值，首次运行后把实测的深浅主色补记到这里。
+     */
+    @Test
+    fun `冰蓝预设深色主色接近目标冰蓝，浅色模式对比度合格`() {
+        val target = Color(0xFF9FD3FF)
+        val dark = seededColorScheme(InfinityIceBlueSeed, dark = true).primary
+        val light = seededColorScheme(InfinityIceBlueSeed, dark = false)
+
+        assertThat(abs(dark.red - target.red) * 255).isAtMost(24f)
+        assertThat(abs(dark.green - target.green) * 255).isAtMost(24f)
+        assertThat(abs(dark.blue - target.blue) * 255).isAtMost(24f)
+        assertThat(contrast(light.primary, light.onPrimary)).isAtLeast(4.5f)
+        assertThat(contrast(light.primary, Color.White)).isAtLeast(4.5f)
     }
 }

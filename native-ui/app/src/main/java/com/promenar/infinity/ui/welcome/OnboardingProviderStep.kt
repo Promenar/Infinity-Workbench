@@ -15,6 +15,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,7 +79,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.promenar.infinity.R
+import com.promenar.infinity.ui.common.CompactOutlinedTextField
 import com.promenar.infinity.ui.common.SecretField
 import com.promenar.infinity.ui.common.InfinitySegment
 import com.promenar.infinity.ui.common.InfinitySegmentedControl
@@ -156,16 +159,16 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
         footer = {
             ConnectStatusText(state.connect)
             RiseIn(8) {
-                Button(
+                OnboardingPrimaryButton(
                     onClick = {
                         if (local) actions.onConnectLocal()
                         else actions.onConnect(OnboardingProviderDraft(protocol, baseUrl, secret, name.ifBlank { null }))
                     },
                     enabled = canConnect,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag(OnboardingTags.PROVIDER_CONNECT),
+                    modifier = Modifier.testTag(OnboardingTags.PROVIDER_CONNECT),
                 ) {
                     if (connecting) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                         Box(Modifier.size(InfinitySpacing.Small))
                     }
                     Text(
@@ -177,14 +180,18 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
                                 else -> R.string.onboarding_provider_connect
                             },
                         ),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = OnboardingType.button(),
                     )
                 }
             }
             val problem = (state.connect as? OnboardingConnectStatus.Problem)?.outcome
             if (problem == OnboardingConnectOutcome.LocalModelMissing) {
-                OutlinedButton(onClick = actions.onOpenLocalModels, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(stringResource(R.string.local_models_title))
+                OutlinedButton(
+                    onClick = actions.onOpenLocalModels,
+                    shape = CircleShape,
+                    modifier = Modifier.fillMaxWidth().height(OnboardingDimens.ButtonHeight),
+                ) {
+                    Text(stringResource(R.string.local_models_title), style = OnboardingType.button())
                 }
             }
         },
@@ -198,8 +205,8 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
         RiseIn(3) {
             Text(
                 stringResource(R.string.onboarding_provider_service),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = OnboardingType.eyebrow(),
+                color = onboardingFaintText,
             )
         }
         RiseIn(4) {
@@ -216,7 +223,7 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
             RiseIn(5) {
                 Text(
                     stringResource(R.string.onboarding_provider_local_desc),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = OnboardingType.body(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -225,19 +232,15 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
                 RiseIn(5) { CustomProtocolPicker(customProtocolIndex, enabled = !connecting) { customProtocolIndex = it } }
             }
             RiseIn(5) {
-                OutlinedTextField(
+                CompactOutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
-                    label = { Text(stringResource(R.string.provider_form_label_url)) },
-                    placeholder = { Text(stringResource(R.string.provider_form_placeholder_url)) },
-                    singleLine = true,
+                    label = stringResource(R.string.provider_form_label_url),
+                    placeholder = stringResource(R.string.provider_form_placeholder_url),
                     enabled = !connecting,
                     isError = baseUrl.isNotBlank() && !endpointValid,
-                    supportingText = if (baseUrl.isNotBlank() && !endpointValid) {
-                        { Text(stringResource(R.string.provider_form_https_required)) }
-                    } else null,
+                    supportingText = if (baseUrl.isNotBlank() && !endpointValid) stringResource(R.string.provider_form_https_required) else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    textStyle = MaterialTheme.typography.bodyLarge.forInput(),
                     modifier = Modifier.fillMaxWidth().testTag(OnboardingTags.PROVIDER_URL),
                 )
             }
@@ -253,17 +256,16 @@ internal fun OnboardingProviderStep(state: OnboardingUiState, actions: Onboardin
                     modifier = Modifier.fillMaxWidth().testTag(OnboardingTags.PROVIDER_SECRET),
                     placeholder = stringResource(if (vertex) R.string.provider_form_paste_json else R.string.provider_form_placeholder_api_key),
                     label = stringResource(if (vertex) R.string.provider_form_label_sa else R.string.provider_form_label_api_key),
+                    compact = true,
                 )
             }
             RiseIn(7) {
-                OutlinedTextField(
+                CompactOutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.provider_form_label_name)) },
-                    placeholder = { Text(selected.displayName()) },
-                    singleLine = true,
+                    label = stringResource(R.string.provider_form_label_name),
+                    placeholder = selected.displayName(),
                     enabled = !connecting,
-                    textStyle = MaterialTheme.typography.bodyLarge.forInput(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -292,9 +294,9 @@ private fun ServiceGrid(
     // 前几格是常用服务，最后一格是“更多服务”或从中选中的服务。
     val cellCount = GridPresetNames.size + 1
     // 固定列数的网格：每行等宽，字号放大时也不会让某一格独占一行。
-    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small)) {
+    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         (0 until cellCount).chunked(columns).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { index ->
                     val cell = Modifier.weight(1f).fillMaxHeight()
                     val item = GridPresetNames.getOrNull(index)?.let(::preset)
@@ -314,7 +316,7 @@ private fun ServiceGrid(
                                     Icons.AutoMirrored.Rounded.ArrowForwardIos,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp),
+                                    modifier = Modifier.size(12.dp),
                                 )
                             },
                             title = stringResource(R.string.onboarding_provider_more),
@@ -346,7 +348,7 @@ private fun ServiceGrid(
 @Composable
 private fun PresetIcon(preset: ProviderPreset, selected: Boolean) {
     val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    val iconModifier = Modifier.size(18.dp)
+    val iconModifier = Modifier.size(16.dp)
     preset.iconRes?.let { Icon(painterResource(it), contentDescription = null, tint = tint, modifier = iconModifier) }
         ?: Icon(Icons.Rounded.Psychology, contentDescription = null, tint = tint, modifier = iconModifier)
 }
@@ -363,39 +365,36 @@ private fun ServiceTile(
     role: Role = Role.RadioButton,
 ) {
     val border by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        if (selected) MaterialTheme.colorScheme.primary else onboardingLineColor,
         tween(InfinityMotion.DurationShort),
         label = "service_border",
     )
     val container by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceContainerLow,
+        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else onboardingCardColor,
         tween(InfinityMotion.DurationShort),
         label = "service_container",
     )
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         color = container,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, border),
+        border = BorderStroke(1.dp, border),
         modifier = modifier
-            .heightIn(min = 64.dp)
+            .heightIn(min = OnboardingDimens.TileMinHeight)
             .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick),
     ) {
         Row(
-            Modifier.padding(horizontal = InfinitySpacing.Medium, vertical = 10.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                Modifier.size(32.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center,
-            ) { icon() }
+            OnboardingIconTile { icon() }
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, style = OnboardingType.body().copy(lineHeight = 19.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = OnboardingType.caption().copy(fontSize = 11.sp, lineHeight = 15.sp),
+                    color = onboardingFaintText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -409,8 +408,8 @@ private fun CustomProtocolPicker(selectedIndex: Int, enabled: Boolean, onSelect:
     Column(verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall)) {
         Text(
             stringResource(R.string.provider_form_protocol_type),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = OnboardingType.eyebrow(),
+            color = onboardingFaintText,
         )
         InfinitySegmentedControl(
             segments = CUSTOM_PROTOCOL_OPTIONS.mapIndexed { index, protocol -> InfinitySegment(index, protocol.displayName) },
@@ -433,7 +432,7 @@ private fun ConnectionWire(status: OnboardingConnectStatus) {
         when {
             ok -> MaterialTheme.infinityDomainColors.success
             failed -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.outlineVariant
+            else -> MaterialTheme.colorScheme.surfaceContainerHighest
         },
         tween(InfinityMotion.DurationMedium),
         label = "wire_color",
@@ -449,10 +448,10 @@ private fun ConnectionWire(status: OnboardingConnectStatus) {
         0.5f
     }
     Row(
-        Modifier.fillMaxWidth().height(56.dp).clearAndSetSemantics {},
+        Modifier.fillMaxWidth().height(44.dp).clearAndSetSemantics {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        WireEnd { Icon(Icons.Rounded.PhoneAndroid, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)) }
+        WireEnd { Icon(Icons.Rounded.PhoneAndroid, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
         Canvas(Modifier.weight(1f).height(8.dp).padding(horizontal = InfinitySpacing.Small)) {
             val y = size.height / 2f
             drawLine(
@@ -471,7 +470,7 @@ private fun ConnectionWire(status: OnboardingConnectStatus) {
             }
         }
         Box {
-            WireEnd { Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp)) }
+            WireEnd { Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
             androidx.compose.animation.AnimatedVisibility(
                 visible = ok || failed,
                 enter = scaleIn(tween(InfinityMotion.DurationMedium, easing = InfinityMotion.EmphasizedDecelerate)),
@@ -499,7 +498,10 @@ private fun ConnectionWire(status: OnboardingConnectStatus) {
 @Composable
 private fun WireEnd(content: @Composable () -> Unit) {
     Box(
-        Modifier.size(44.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+        Modifier
+            .size(36.dp)
+            .background(onboardingCardColor, CircleShape)
+            .border(1.dp, onboardingLineColor, CircleShape),
         contentAlignment = Alignment.Center,
     ) { content() }
 }
@@ -516,7 +518,7 @@ private fun ConnectStatusText(status: OnboardingConnectStatus) {
         if (shown != null) {
             Text(
                 shown,
-                style = MaterialTheme.typography.bodySmall,
+                style = OnboardingType.caption(),
                 color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()

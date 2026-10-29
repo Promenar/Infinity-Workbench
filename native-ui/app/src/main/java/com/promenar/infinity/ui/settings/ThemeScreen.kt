@@ -357,14 +357,16 @@ private fun ColorPaletteRow(
     var showPicker by remember { mutableStateOf(false) }
     val presetValues = remember { InfinityPresetColors.map { it.value.toLong() } }
     val customSelected = selectedColor != null && selectedColor !in presetValues
-    // 默认色块始终显示内置配色的主色，不随当前已选的强调色变化。
+    // 内置配色色块始终显示内置淡紫的主色，不随当前已选的强调色变化。
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val defaultColor = if (dark) InfinityDarkColorScheme.primary else InfinityLightColorScheme.primary
-    // 默认、10 个预设与自定义共 12 个色块，排成三行各 4 个并均分宽度。
+    // 内置配色、预设与自定义共 13 个色块，每行 5 个；末行用空位补齐，色块上下对齐。
+    val columns = 5
+    val swatches = InfinityPresetColors.size + 2
     androidx.compose.foundation.layout.FlowRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceAround,
-        maxItemsInEachRow = 4,
+        maxItemsInEachRow = columns,
     ) {
         ColorChoice(
             color = defaultColor,
@@ -382,6 +384,7 @@ private fun ColorPaletteRow(
             color = selectedColor?.takeIf { customSelected }?.let { Color(it.toULong()) },
             onClick = { showPicker = true },
         )
+        repeat((columns - swatches % columns) % columns) { Box(Modifier.size(48.dp)) }
     }
     val initial = (selectedColor?.let { Color(it.toULong()) } ?: defaultColor).toArgb()
     ThemeColorPickerSheet(

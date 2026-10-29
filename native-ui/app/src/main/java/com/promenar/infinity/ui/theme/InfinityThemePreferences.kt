@@ -32,13 +32,21 @@ enum class TouchLockUnlock {
     }
 }
 
+/** 默认主色：冰蓝预设。 */
+val InfinityDefaultPrimaryColor: Long = InfinityIceBlueSeed.value.toLong()
+
+/**
+ * 外观偏好。默认值只作用于从未手动设置过的用户：偏好里没有对应键时才回退到这里，已有的值原样保留。
+ */
 data class InfinityThemePreferences(
     val mode: InfinityThemeMode = InfinityThemeMode.DARK,
     val colorSource: InfinityColorSource = InfinityColorSource.INFINITY,
-    val primaryColor: Long? = null,
+    /** 主色种子（Compose [androidx.compose.ui.graphics.Color.value]）；null 表示内置淡紫配色。从未选择过时为冰蓝。 */
+    val primaryColor: Long? = InfinityDefaultPrimaryColor,
     /** 由种子色生成配色的算法；只对预设色与自定义色生效，跟随系统取色时不用。 */
     val schemeStyle: InfinitySchemeStyle = InfinitySchemeStyle.TONAL_SPOT,
-    val pureBlack: Boolean = false,
+    /** 深色模式下用纯黑背景；从未设置过时开启。 */
+    val pureBlack: Boolean = true,
     val textScaleEnabled: Boolean = false,
     val textScale: Float = 1f,
     /** 一轮回复完成后把思考与工具过程收为一行摘要，只单独显示最终正文。 */

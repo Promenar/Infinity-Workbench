@@ -71,28 +71,10 @@ fun InfinityTheme(
     }
     val useDynamicColor = preferences?.colorSource == InfinityColorSource.DYNAMIC ||
         (preferences == null && dynamicColor)
-    val seedColor = preferences?.primaryColor?.let { Color(it.toULong()) }
-    val colorScheme = when {
-        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && useDarkTheme -> {
-            val context = LocalContext.current
-            dynamicDarkColorScheme(context)
-        }
-        useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            androidx.compose.material3.dynamicLightColorScheme(context)
-        }
-        seedColor != null -> seededColorScheme(seedColor, useDarkTheme, preferences?.schemeStyle ?: InfinitySchemeStyle.TONAL_SPOT)
-        // 默认主色选了非柔和的配色风格时，以首个预设色为种子按该风格生成。
-        preferences != null && preferences.schemeStyle != InfinitySchemeStyle.TONAL_SPOT ->
-            seededColorScheme(InfinityPresetColors.first(), useDarkTheme, preferences.schemeStyle)
-        useDarkTheme -> InfinityDarkColorScheme
-        else -> InfinityLightColorScheme
-    }.withPureBlackSurface(useDarkTheme && preferences?.pureBlack == true)
+    val colorScheme = infinityColorScheme(preferences, useDarkTheme, useDynamicColor)
     val domainColors = remember(colorScheme, useDynamicColor, useDarkTheme) {
         when {
-            useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                dynamicDomainColors(colorScheme, useDarkTheme)
-            }
+            usesDynamicColor(useDynamicColor) -> dynamicDomainColors(colorScheme, useDarkTheme)
             useDarkTheme -> InfinityDarkDomainColors
             else -> InfinityLightDomainColors
         }
@@ -131,6 +113,7 @@ fun InfinityTheme(
     }
 
     CompositionLocalProvider(
+        LocalInfinityThemePreferences provides preferences,
         LocalInfinityDomainColors provides domainColors,
         LocalInfinityMotionStyles provides (preferences?.motion ?: InfinityMotionStyles()),
         LocalDensity provides scaledDensity,
@@ -145,6 +128,60 @@ fun InfinityTheme(
             shapes = InfinityShapes,
         ) {
             // 默认点按反馈裁在圆角内，覆盖 MaterialTheme 提供的矩形涟漪。
+            CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides InfinityIndication, content = content)
+        }
+    }
+}
+
+/** 应用当前的外观偏好；静态预览未传入时为 null。 */
+private val LocalInfinityThemePreferences = staticCompositionLocalOf<InfinityThemePreferences?> { null }
+
+private fun usesDynamicColor(useDynamicColor: Boolean): Boolean = useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+/** 按偏好生成配色：系统取色、种子色（预设或自定义）或内置淡紫；深色且开启纯黑时背景与表面换成纯黑。 */
+@Composable
+private fun infinityColorScheme(preferences: InfinityThemePreferences?, dark: Boolean, useDynamicColor: Boolean): ColorScheme {
+    val seedColor = preferences?.primaryColor?.let { Color(it.toULong()) }
+    return when {
+        usesDynamicColor(useDynamicColor) && dark -> dynamicDarkColorScheme(LocalContext.current)
+        usesDynamicColor(useDynamicColor) -> androidx.compose.material3.dynamicLightColorScheme(LocalContext.current)
+        seedColor != null -> seededColorScheme(seedColor, dark, preferences?.schemeStyle ?: InfinitySchemeStyle.TONAL_SPOT)
+        // 内置配色选了非柔和的配色风格时，以内置淡紫的种子按该风格生成。
+        preferences != null && preferences.schemeStyle != InfinitySchemeStyle.TONAL_SPOT ->
+            seededColorScheme(InfinityIndigoSeed, dark, preferences.schemeStyle)
+        dark -> InfinityDarkColorScheme
+        else -> InfinityLightColorScheme
+    }.withPureBlackSurface(dark && preferences?.pureBlack == true)
+}
+
+/**
+ * 固定深色加纯黑背景的外观，首次引导用：不管用户选的是浅色还是深色都一样，主色跟随当前主题色（系统取色、预设或自定义色）。
+ * 只在这一块内容里换配色，系统栏图标在显示期间切成浅色，离开后恢复。
+ */
+@Composable
+fun InfinityPureDarkTheme(content: @Composable () -> Unit) {
+    val preferences = LocalInfinityThemePreferences.current
+    val dynamic = preferences?.colorSource == InfinityColorSource.DYNAMIC
+    val colorScheme = infinityColorScheme(preferences, dark = true, useDynamicColor = dynamic).withPureBlackSurface(true)
+    val domainColors = remember(colorScheme, dynamic) {
+        if (usesDynamicColor(dynamic)) dynamicDomainColors(colorScheme, true) else InfinityDarkDomainColors
+    }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.DisposableEffect(view) {
+            val controller = WindowCompat.getInsetsController((view.context as Activity).window, view)
+            val lightStatus = controller.isAppearanceLightStatusBars
+            val lightNavigation = controller.isAppearanceLightNavigationBars
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
+            onDispose {
+                controller.isAppearanceLightStatusBars = lightStatus
+                controller.isAppearanceLightNavigationBars = lightNavigation
+            }
+        }
+    }
+    CompositionLocalProvider(LocalInfinityDomainColors provides domainColors) {
+        MaterialTheme(colorScheme = colorScheme, typography = InfinityTypography, shapes = InfinityShapes) {
             CompositionLocalProvider(androidx.compose.foundation.LocalIndication provides InfinityIndication, content = content)
         }
     }

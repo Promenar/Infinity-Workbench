@@ -113,6 +113,8 @@ fun SecretField(
      * 直接输入即替换；显示与清除的安全语义与描边形态一致。
      */
     frameless: Boolean = false,
+    /** 紧凑描边形态（高 46dp，见 [CompactOutlinedTextField]），首次引导用。 */
+    compact: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val fieldFocusRequester = remember { FocusRequester() }
@@ -275,6 +277,20 @@ fun SecretField(
                         trailingActions()
                     }
                 },
+            )
+        } else if (compact) {
+            CompactOutlinedTextField(
+                value = displayValue,
+                onValueChange = onEdit,
+                modifier = fieldModifier,
+                readOnly = hasStoredSecret && value.isEmpty(),
+                placeholder = placeholder,
+                label = label,
+                supportingText = supportingText,
+                isError = isError,
+                visualTransformation = transformation,
+                keyboardOptions = SecretKeyboardOptions,
+                trailingIcon = trailingActions,
             )
         } else {
             OutlinedTextField(

@@ -100,6 +100,11 @@ internal fun EmptyChatStyle.label(): MotionStyleLabel = when (this) {
     EmptyChatStyle.LED_MORPH -> MotionStyleLabel(R.string.motion_empty_led_morph, R.string.motion_empty_led_morph_desc)
 }
 
+private val DefaultMotion = InfinityMotionStyles()
+
+/** 设置页列表把默认样式排在第一个，其余保持枚举里的相对顺序；偏好按名称存储，不受排列影响。 */
+internal fun <T> List<T>.defaultFirst(default: T): List<T> = listOf(default) + filter { it != default }
+
 /**
  * 外观页“生成动效”分组：三行分别打开带实时预览的样式选择面板；浮岛光效下方是浮岛材质（毛玻璃 / 环境光）与它的静态预览，
  * 选“点阵波形屏”时另有位置与数字两个子选项。
@@ -116,7 +121,7 @@ internal fun MotionStyleRows(
 ) {
     MotionStylePicker(
         title = stringResource(R.string.motion_composer_title),
-        options = ComposerGlowStyle.entries,
+        options = ComposerGlowStyle.entries.defaultFirst(DefaultMotion.composer),
         selected = motion.composer,
         label = { it.label() },
         tag = "theme_motion_composer",
@@ -129,7 +134,7 @@ internal fun MotionStyleRows(
     }
     MotionStylePicker(
         title = stringResource(R.string.motion_indicator_title),
-        options = GenerationIndicatorStyle.entries,
+        options = GenerationIndicatorStyle.entries.defaultFirst(DefaultMotion.indicator),
         selected = motion.indicator,
         label = { it.label() },
         tag = "theme_motion_indicator",
@@ -138,7 +143,7 @@ internal fun MotionStyleRows(
     ) { IndicatorPreview(it) }
     MotionStylePicker(
         title = stringResource(R.string.motion_empty_chat_title),
-        options = EmptyChatStyle.entries,
+        options = EmptyChatStyle.entries.defaultFirst(DefaultMotion.emptyChat),
         selected = motion.emptyChat,
         label = { it.label() },
         tag = "theme_motion_empty_chat",

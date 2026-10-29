@@ -58,10 +58,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.promenar.infinity.R
 import com.promenar.infinity.data.model.ModelInfo
 import com.promenar.infinity.domain.linux.LinuxRuntimeState
-import com.promenar.infinity.ui.chat.ParticleWordmark
+import com.promenar.infinity.ui.common.CompactOutlinedTextField
 import com.promenar.infinity.ui.common.InfinityChip
 import com.promenar.infinity.ui.common.network.rememberAnimationsEnabled
 import com.promenar.infinity.ui.theme.InfinityMonospace
@@ -82,36 +83,35 @@ internal fun OnboardingModelStep(state: OnboardingUiState, actions: OnboardingAc
         footer = {
             state.errorMessage?.let { OnboardingError(it) }
             if (state.models.isNotEmpty()) {
-                Button(
+                OnboardingPrimaryButton(
                     onClick = { selected?.let { actions.onUseModel(it.id) } },
                     enabled = selected != null && !checking && !state.busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag(OnboardingTags.MODEL_USE),
+                    modifier = Modifier.testTag(OnboardingTags.MODEL_USE),
                 ) {
                     if (checking) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                         Box(Modifier.size(InfinitySpacing.Small))
                     }
-                    Text(stringResource(R.string.onboarding_model_use), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.onboarding_model_use), style = OnboardingType.button())
                 }
             }
-            TextButton(
+            OnboardingTextButton(
+                stringResource(R.string.onboarding_model_refresh),
                 onClick = actions.onRefreshModels,
                 enabled = !state.modelsLoading && !checking,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(OnboardingTags.MODEL_REFRESH),
-            ) { Text(stringResource(R.string.onboarding_model_refresh)) }
+                modifier = Modifier.testTag(OnboardingTags.MODEL_REFRESH),
+            )
             if (state.models.isEmpty() && !state.modelsLoading) {
-                TextButton(
+                OnboardingTextButton(
+                    stringResource(R.string.onboarding_model_back_provider),
                     onClick = actions.onBackToProvider,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(OnboardingTags.MODEL_BACK_PROVIDER),
-                ) { Text(stringResource(R.string.onboarding_model_back_provider)) }
+                    modifier = Modifier.testTag(OnboardingTags.MODEL_BACK_PROVIDER),
+                )
             }
         },
     ) {
         item(key = "heading") {
-            Column(
-                Modifier.padding(bottom = InfinitySpacing.Small),
-                verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Large),
-            ) {
+            Column(Modifier.padding(bottom = 16.dp)) {
                 OnboardingHeading(stringResource(R.string.onboarding_model_title), stringResource(R.string.onboarding_model_desc))
             }
         }
@@ -121,7 +121,7 @@ internal fun OnboardingModelStep(state: OnboardingUiState, actions: OnboardingAc
                     Column(verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small)) {
                         Text(
                             stringResource(R.string.onboarding_model_loading),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = OnboardingType.body(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -132,7 +132,7 @@ internal fun OnboardingModelStep(state: OnboardingUiState, actions: OnboardingAc
                 RiseIn(2) {
                     Text(
                         stringResource(R.string.onboarding_model_empty),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = OnboardingType.body(),
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.testTag(OnboardingTags.MODEL_EMPTY),
                     )
@@ -154,8 +154,8 @@ internal fun OnboardingModelStep(state: OnboardingUiState, actions: OnboardingAc
                     item(key = "hidden") {
                         Text(
                             stringResource(R.string.onboarding_model_hidden, state.hiddenModelCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = OnboardingType.caption(),
+                            color = onboardingFaintText,
                         )
                     }
                 }
@@ -177,33 +177,33 @@ private fun modelTag(model: ModelInfo, state: OnboardingUiState): ModelTag = whe
 @Composable
 private fun ModelCard(model: ModelInfo, selected: Boolean, tag: ModelTag, enabled: Boolean, onClick: () -> Unit) {
     val border by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        if (selected) MaterialTheme.colorScheme.primary else onboardingLineColor,
         tween(InfinityMotion.DurationShort),
         label = "model_border",
     )
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else onboardingCardColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(if (selected) 1.5.dp else 1.dp, border),
+        border = BorderStroke(1.dp, border),
         modifier = Modifier
             .fillMaxWidth()
             .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .testTag(OnboardingTags.MODEL_OPTION),
     ) {
         Row(
-            Modifier.heightIn(min = 56.dp).padding(horizontal = InfinitySpacing.Medium, vertical = 10.dp),
+            Modifier.heightIn(min = OnboardingDimens.RowMinHeight).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             RadioButton(selected = selected, onClick = null)
             Column(Modifier.weight(1f)) {
-                Text(model.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(model.name, style = OnboardingType.rowTitle(), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (model.remoteModelId != model.name) {
                     Text(
                         model.remoteModelId,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = InfinityMonospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = OnboardingType.rowSubtitle().copy(fontFamily = InfinityMonospace, fontSize = 11.sp),
+                        color = onboardingFaintText,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -223,12 +223,12 @@ private fun ModelTagChip(tag: ModelTag) {
         ModelTag.CHECKING -> Triple(R.string.onboarding_model_tag_checking, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
         ModelTag.FAILED -> Triple(R.string.onboarding_model_tag_failed, MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
     }
-    Surface(shape = RoundedCornerShape(8.dp), color = container) {
+    Surface(shape = RoundedCornerShape(6.dp), color = container) {
         Text(
             stringResource(text),
-            style = MaterialTheme.typography.labelSmall,
+            style = OnboardingType.caption().copy(fontSize = 11.sp, lineHeight = 14.sp),
             color = content,
-            modifier = Modifier.padding(horizontal = InfinitySpacing.Small, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
         )
     }
 }
@@ -247,18 +247,18 @@ internal fun OnboardingAgentStep(state: OnboardingUiState, actions: OnboardingAc
     OnboardingStepPage(
         footer = {
             state.errorMessage?.let { OnboardingError(it) }
-            Button(
+            OnboardingPrimaryButton(
                 onClick = { actions.onCreateAgent(shown) },
                 enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag(OnboardingTags.AGENT_CREATE),
+                modifier = Modifier.testTag(OnboardingTags.AGENT_CREATE),
             ) {
                 if (state.busy) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Box(Modifier.size(InfinitySpacing.Small))
                 }
                 Text(
                     stringResource(if (state.busy) R.string.onboarding_agent_creating else R.string.onboarding_agent_action),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = OnboardingType.button(),
                 )
             }
         },
@@ -268,14 +268,12 @@ internal fun OnboardingAgentStep(state: OnboardingUiState, actions: OnboardingAc
         }
         OnboardingHeading(stringResource(R.string.onboarding_agent_title), stringResource(R.string.onboarding_agent_desc), centered = true, index = 1)
         RiseIn(3) {
-            OutlinedTextField(
+            CompactOutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(AgentNameMaxLength) },
-                label = { Text(stringResource(R.string.onboarding_agent_name)) },
-                placeholder = { Text(fallback) },
-                singleLine = true,
+                label = stringResource(R.string.onboarding_agent_name),
+                placeholder = fallback,
                 enabled = !state.busy,
-                textStyle = MaterialTheme.typography.bodyLarge.forInput(),
                 modifier = Modifier.fillMaxWidth().testTag(OnboardingTags.AGENT_NAME),
             )
         }
@@ -287,8 +285,8 @@ internal fun OnboardingAgentStep(state: OnboardingUiState, actions: OnboardingAc
             }
         }
         RiseIn(5) {
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.Medium), verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small)) {
+            OnboardingCard {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SummaryRow(stringResource(R.string.onboarding_agent_summary_model), state.modelName.orEmpty())
                     SummaryRow(stringResource(R.string.onboarding_agent_summary_env), agentEnvironmentText(state.linux))
                 }
@@ -309,10 +307,10 @@ private fun agentEnvironmentText(linux: OnboardingLinuxStatus?): String = when (
 @Composable
 private fun SummaryRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = OnboardingType.body(), color = onboardingFaintText)
         Text(
             value,
-            style = MaterialTheme.typography.bodyMedium,
+            style = OnboardingType.body(),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f),
@@ -336,7 +334,7 @@ private fun AgentOrb(name: String) {
     }
     Box(
         Modifier
-            .size(88.dp)
+            .size(64.dp)
             .scale(breath)
             .background(
                 Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)),
@@ -347,7 +345,7 @@ private fun AgentOrb(name: String) {
     ) {
         Text(
             name.firstOrNull()?.uppercase().orEmpty(),
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onPrimary,
         )
     }
@@ -359,24 +357,17 @@ internal fun OnboardingReadyStep(state: OnboardingUiState, actions: OnboardingAc
         footer = {
             state.errorMessage?.let { OnboardingError(it) }
             RiseIn(7) {
-                Button(
+                OnboardingPrimaryButton(
                     onClick = actions.onStartChat,
                     enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag(OnboardingTags.START_CHAT),
-                ) { Text(stringResource(R.string.onboarding_first_chat_action), style = MaterialTheme.typography.titleSmall) }
+                    modifier = Modifier.testTag(OnboardingTags.START_CHAT),
+                ) { Text(stringResource(R.string.onboarding_first_chat_action), style = OnboardingType.button()) }
             }
         },
     ) {
-        ParticleWordmark(
-            dispersed = false,
-            modifier = Modifier.fillMaxWidth().height(150.dp),
-            centerFraction = 0.5f,
-            maxTextSizeDp = 52f,
-            logoLimit = 600,
-            ambientCount = 90,
-        )
+        OnboardingWordmark(Modifier.fillMaxWidth().height(170.dp))
         OnboardingHeading(stringResource(R.string.onboarding_ready_title), stringResource(R.string.onboarding_ready_desc), centered = true)
-        Column(verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small)) {
+        Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             RiseIn(2) { CheckRow(stringResource(R.string.onboarding_ready_provider, state.providerName.orEmpty()), CheckState.DONE) }
             RiseIn(3) { CheckRow(stringResource(R.string.onboarding_ready_model, state.modelName.orEmpty()), CheckState.DONE) }
             RiseIn(4) { CheckRow(stringResource(R.string.onboarding_ready_agent, state.agentName.orEmpty()), CheckState.DONE) }
@@ -426,24 +417,15 @@ private fun CheckRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
     ) {
-        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
             when (state) {
-                CheckState.DONE -> Box(
-                    Modifier.size(22.dp).background(MaterialTheme.infinityDomainColors.success, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.surface, modifier = Modifier.size(14.dp)) }
-                CheckState.RUNNING -> OnboardingProgressRing(fraction, Modifier.size(20.dp))
-                CheckState.WARNING -> Box(
-                    Modifier.size(22.dp).background(MaterialTheme.colorScheme.error, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.PriorityHigh, null, tint = MaterialTheme.colorScheme.onError, modifier = Modifier.size(14.dp)) }
-                CheckState.OFF -> Box(
-                    Modifier.size(22.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Remove, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp)) }
+                CheckState.DONE -> Icon(Icons.Rounded.Check, null, tint = MaterialTheme.infinityDomainColors.success, modifier = Modifier.size(18.dp))
+                CheckState.RUNNING -> OnboardingProgressRing(fraction, Modifier.size(16.dp))
+                CheckState.WARNING -> Icon(Icons.Rounded.PriorityHigh, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                CheckState.OFF -> Icon(Icons.Rounded.Remove, null, tint = onboardingFaintText, modifier = Modifier.size(18.dp))
             }
         }
-        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(text, style = OnboardingType.rowTitle().copy(fontSize = 14.sp), modifier = Modifier.weight(1f))
         trailing?.invoke()
     }
 }
@@ -453,7 +435,7 @@ internal fun OnboardingError(message: String) {
     AnimatedVisibility(visible = true, enter = InfinityMotion.expandIn) {
         Text(
             message,
-            style = MaterialTheme.typography.bodySmall,
+            style = OnboardingType.caption(),
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Assertive },
         )
