@@ -46,6 +46,7 @@ import androidx.navigationevent.NavigationEventDispatcherOwner
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.promenar.infinity.navigation.PageLayer
 import com.promenar.infinity.ui.theme.InfinityMotion
+import com.promenar.infinity.ui.theme.InfinityPureBlack
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -369,7 +370,7 @@ private fun Modifier.paneBackEffect(back: InfinityPaneBackState, dark: Boolean, 
             val alpha = if (dark) InfinityMotion.PageEdgeShadowAlphaDark else InfinityMotion.PageEdgeShadowAlphaLight
             drawRect(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = alpha)),
+                    colors = listOf(Color.Transparent, InfinityPureBlack.copy(alpha = alpha)),
                     startX = -width,
                     endX = 0f,
                 ),
@@ -381,7 +382,7 @@ private fun Modifier.paneBackEffect(back: InfinityPaneBackState, dark: Boolean, 
         if (current == PageLayer.UNDER) {
             val maxDim = if (dark) InfinityMotion.PageUnderDimDark else InfinityMotion.PageUnderDimLight
             val amount = InfinityMotion.pagePredictiveUnderDim(back.progress)
-            if (amount > 0f) drawRect(Color.Black.copy(alpha = maxDim * amount))
+            if (amount > 0f) drawRect(InfinityPureBlack.copy(alpha = maxDim * amount))
         }
     }
 
