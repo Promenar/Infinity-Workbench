@@ -3,6 +3,7 @@ package com.promenar.infinity.domain.model
 import com.promenar.infinity.data.agent.AgentMemoryPolicy
 import com.promenar.infinity.data.agent.AgentRagConfig
 import com.promenar.infinity.data.agent.AgentRetrievalConfig
+import com.promenar.infinity.data.agent.AgentSubagentModelPolicy
 import com.promenar.infinity.data.model.params.SamplingValues
 
 data class Agent(
@@ -43,6 +44,9 @@ data class Agent(
     /** [retrievalConfig] 在运行时承载记忆权限、检索方式与知识库文件访问设置，检索参数统一取全局。 */
     val memoryPolicy: AgentMemoryPolicy
         get() = retrievalConfig?.memoryPolicy ?: AgentMemoryPolicy()
+
+    val subagentModelPolicy: AgentSubagentModelPolicy
+        get() = retrievalConfig?.subagentModels ?: AgentSubagentModelPolicy()
 }
 
 object ExecutionModeCodec {

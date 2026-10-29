@@ -666,11 +666,13 @@ fun ChatRoute(
         },
     )
 
+    val latestProviderModels by rememberUpdatedState(providerModels)
     val subagentRuns = remember(application, sessionId, onOpenSubagent) {
         SubagentRunsAccess(
             observe = { stepId -> application.subagentRunStore.observe(sessionId, stepId) },
             snapshot = { stepId -> application.subagentRunStore.snapshot(sessionId, stepId) },
             onOpen = { stepId, index -> onOpenSubagent?.invoke(sessionId, stepId, index) },
+            modelName = { modelId -> resolveModelDisplayName(modelId, latestProviderModels) },
         )
     }
     // 只在消息或其步骤数变化时重新解析工具结果，流式正文更新不触发。

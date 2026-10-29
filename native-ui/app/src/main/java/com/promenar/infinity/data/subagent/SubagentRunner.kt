@@ -71,6 +71,9 @@ class SubagentRunner(
     private val liveOutput: ToolLiveOutputStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val contextLimitText: String = CONTEXT_LIMIT,
+    private val modelSupportsToolCalling: (String) -> Boolean = { true },
+    private val modelUnavailableText: (String) -> String = SubagentRuntimeTexts().modelUnavailable,
+    private val modelToolCallingUnsupportedText: String = SubagentRuntimeTexts().modelToolCallingUnsupported,
 ) {
     /** [session] 每轮与每次工具调用前重新读取，父会话中途收紧执行模式或停用工具时立即生效；返回 null 表示会话已删除。 */
     suspend fun run(
@@ -141,7 +144,12 @@ class SubagentRunner(
                     update(run.copy(status = if (state.wrapUpAfterStep != null) SubagentStatus.WRAPPING_UP else SubagentStatus.RUNNING, events = run.events + additions))
                 }
                 val tools = availableTools(host.tools(current), initial.toolProfile, initial.allowedTools)
-                val preparedModel = models.prepare(run.modelId)
+                if (!modelSupportsToolCalling(run.modelId)) throw SubagentModelUnavailable(
+                    "${modelUnavailableText(run.modelId)} $modelToolCallingUnsupportedText",
+                )
+                val preparedModel = try { models.prepare(run.modelId) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { throw SubagentModelUnavailable(modelUnavailableText(run.modelId)) }
                 val system = ProtocolMessage("system", systemPrompt(preset, tools, current.executionMode, current.runMode, preparedModel.modelId))
                 if (messages.firstOrNull()?.role == "system") messages[0] = system else messages.add(0, system)
                 val stepsThisExecution = state.completedSteps - state.executionStartStep

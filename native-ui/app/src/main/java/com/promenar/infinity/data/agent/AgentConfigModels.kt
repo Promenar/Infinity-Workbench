@@ -51,6 +51,18 @@ data class AgentRetrievalConfig(
     val memoryPolicy: AgentMemoryPolicy = AgentMemoryPolicy(),
     val retrievalMode: AgentRetrievalMode = AgentRetrievalMode.AUTO,
     val knowledgeFileAccess: KnowledgeFileAccess = KnowledgeFileAccess.ON_REQUEST,
+    val subagentModels: AgentSubagentModelPolicy = AgentSubagentModelPolicy(),
+)
+
+/** 智能体的子代理模型设置；默认跟随会话模型，且不允许按任务换模型。 */
+@Serializable
+data class AgentSubagentModelPolicy(
+    /** 子代理默认模型；null 表示跟随会话模型。 */
+    val defaultModelId: String? = null,
+    /** 允许智能体在 agent_task 的 task.model 中挑选模型。 */
+    val allowPerTaskModel: Boolean = false,
+    /** 允许智能体挑选的模型 ID，由用户勾选。 */
+    val selectableModelIds: List<String> = emptyList(),
 )
 
 /**

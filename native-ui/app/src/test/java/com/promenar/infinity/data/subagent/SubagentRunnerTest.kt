@@ -97,7 +97,7 @@ class SubagentRunnerTest {
         }
     }
 
-    @Test fun `子代理准备路由失败保留可展示原因且不发送请求`() = runTest {
+    @Test fun `子代理准备路由失败显示实际模型和禁止回退且不发送请求`() = runTest {
         var sent = false
         val models = object : SubagentModelClient {
             override suspend fun prepare(modelId: String): PreparedSubagentModel = throw SubagentModelUnavailable("会话模型当前不可用")
@@ -109,7 +109,7 @@ class SubagentRunnerTest {
         }
         val result = runner(models, FakeHost(emptyList())).run(parent(), session("auto"), "step", run(), null) { _, _ -> }
         assertThat(result.status).isEqualTo(SubagentStatus.FAILED)
-        assertThat(result.error).isEqualTo("会话模型当前不可用")
+        assertThat(result.error).isEqualTo("子代理模型“provider::model”当前不可用；没有改用其它模型。")
         assertThat(sent).isFalse()
     }
 

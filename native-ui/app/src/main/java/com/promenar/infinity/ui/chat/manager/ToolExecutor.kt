@@ -266,6 +266,7 @@ class ToolExecutor internal constructor(
         val currentSkill = skillRegistry?.getSkillByRuntimeToolId(expectedIdentity.runtimeToolId)
         val currentDefinition = currentSkill?.toProtocolTool()
             ?.let { com.promenar.infinity.data.generation.SessionRunModeToolDefinitions.forSession(it, currentSession?.runMode) }
+            ?.let { com.promenar.infinity.data.subagent.SubagentModelToolDefinitions.forExecution(it, currentResolvedTool) }
             ?.let(ToolInvocationIdentityFactory::definitionDigest)
         if (currentSession == null || currentResolvedTool == null ||
             currentResolvedDigest !is ToolDefinitionDigestResolution.Valid ||

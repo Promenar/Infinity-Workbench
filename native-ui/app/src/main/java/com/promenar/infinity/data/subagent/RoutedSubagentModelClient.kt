@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 子代理与父会话走同一模型的精确路由，不使用默认提供商兜底。 */
+/** 按子代理保存的实际模型精确路由，不使用默认提供商兜底。 */
 internal class RoutedSubagentModelClient(
     private val routeGate: ChatProviderRouteGate,
     private val localProviderFactory: (String) -> LlmProvider,

@@ -9,6 +9,7 @@ import com.promenar.infinity.InfinityApplication
 import com.promenar.infinity.data.agent.AgentMemoryPolicy
 import com.promenar.infinity.data.agent.AgentRetrievalConfig
 import com.promenar.infinity.data.agent.AgentRetrievalMode
+import com.promenar.infinity.data.agent.AgentSubagentModelPolicy
 import com.promenar.infinity.data.agent.KnowledgeFileAccess
 import com.promenar.infinity.data.agent.PresetAgents
 import com.promenar.infinity.data.local.db.entity.McpServerEntity
@@ -73,6 +74,7 @@ class AgentEditViewModel(
     /** 智能体检索配置：界面只编辑检索方式与知识库文件访问，其余旧字段原样保留、运行时不读取。 */
     private val _retrievalConfig = MutableStateFlow(AgentRetrievalConfig())
     private val _memoryPolicy = MutableStateFlow(AgentMemoryPolicy())
+    private val _subagentModels = MutableStateFlow(AgentSubagentModelPolicy())
     private val _saveError = MutableStateFlow<AgentEditErrorCode?>(null)
     private val _defaultWorkspaceId = MutableStateFlow<String?>(null)
     private val _executionMode = MutableStateFlow(ExecutionMode.WORKSPACE)
@@ -104,6 +106,8 @@ class AgentEditViewModel(
     val isPinned: StateFlow<Boolean> = _isPinned.asStateFlow()
     val retrievalConfig: StateFlow<AgentRetrievalConfig> = _retrievalConfig.asStateFlow()
     val memoryPolicy: StateFlow<AgentMemoryPolicy> = _memoryPolicy.asStateFlow()
+    /** 子代理默认模型与“允许智能体按任务换模型”；存放在检索配置 JSON 中，与记忆权限同一写法。 */
+    val subagentModels: StateFlow<AgentSubagentModelPolicy> = _subagentModels.asStateFlow()
     val saveError: StateFlow<AgentEditErrorCode?> = _saveError.asStateFlow()
     val defaultWorkspaceId: StateFlow<String?> = _defaultWorkspaceId.asStateFlow()
     /** 新会话默认的执行模式与 MCP 服务器；只影响之后新建的会话。 */
@@ -131,17 +135,17 @@ class AgentEditViewModel(
         },
         combine(_systemPrompt, _selectedModel, _selectedColor) { sp, sm, sc -> Triple(sp, sm, sc) },
         combine(_selectedIcon, _avatarPath, _isPinned) { si, ap, pin -> Triple(si, ap, pin) },
-        combine(_sampling, _reasoningEffort) { values, effort -> Pair(values, effort) },
+        combine(_sampling, _reasoningEffort, _subagentModels) { values, effort, subagents -> Triple(values, effort, subagents) },
         combine(_retrievalConfig, _defaultWorkspaceId, _memoryPolicy, combine(_executionMode, _toolsEnabledByDefault, ::Pair), _mcpServerIds) { ret, ws, policy, (mode, tools), mcp ->
             DefaultsEditState(ret, ws, policy, mode, tools, mcp)
         }
-    ) { text, (prompt, model, color), (icon, path, pin), (values, effort), defaults ->
+    ) { text, (prompt, model, color), (icon, path, pin), (values, effort, subagents), defaults ->
         val initial = text.initial
         initial == null || text.baselineName != text.name || text.baselineDescription != text.description ||
         initial.defaultWorkspaceId != defaults.defaultWorkspaceId ||
         initial.systemPrompt != prompt || initial.modelId != model ||
         initial.color != color || initial.icon != icon || initial.avatarPath != path || initial.isPinned != pin ||
-        initial.memoryPolicy != defaults.memoryPolicy ||
+        initial.memoryPolicy != defaults.memoryPolicy || initial.subagentModelPolicy != subagents ||
         initial.executionMode != defaults.executionMode || initial.mcpServerIds != defaults.mcpServerIds ||
         initial.toolsEnabledByDefault != defaults.toolsEnabledByDefault ||
         (initial.retrievalConfig?.retrievalMode ?: AgentRetrievalMode.AUTO) != defaults.retrievalConfig.retrievalMode ||
@@ -183,6 +187,7 @@ class AgentEditViewModel(
                 _reasoningEffort.value = agent.reasoningEffort
                 _defaultWorkspaceId.value = agent.defaultWorkspaceId
                 _memoryPolicy.value = agent.memoryPolicy
+                _subagentModels.value = agent.subagentModelPolicy
                 _retrievalConfig.value = agent.retrievalConfig ?: AgentRetrievalConfig()
                 _executionMode.value = agent.executionMode
                 _toolsEnabledByDefault.value = agent.toolsEnabledByDefault
@@ -388,6 +393,12 @@ class AgentEditViewModel(
         commitNow()
     }
 
+    /** 子代理模型设置明确提交并立即持久化；只影响之后启动的子代理，恢复运行的子代理沿用原模型。 */
+    fun updateSubagentModels(transform: (AgentSubagentModelPolicy) -> AgentSubagentModelPolicy) {
+        _subagentModels.update { transform(it).let { next -> next.copy(selectableModelIds = next.selectableModelIds.distinct()) } }
+        commitNow()
+    }
+
     /** 设置或清除（null）默认工作区：明确提交，立即持久化，离开页面也不取消。只影响之后新建的会话。 */
     fun setDefaultWorkspace(workspaceId: String?) {
         _defaultWorkspaceId.value = workspaceId
@@ -458,7 +469,7 @@ class AgentEditViewModel(
             reasoningEffort = _reasoningEffort.value,
             // 智能体不再覆盖检索参数：旧的自定义参数原样保留以便旧数据往返，运行时不读取。
             ragConfig = initial?.ragConfig,
-            retrievalConfig = _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value)
+            retrievalConfig = _retrievalConfig.value.copy(memoryPolicy = _memoryPolicy.value, subagentModels = _subagentModels.value)
                 .takeUnless { initial?.retrievalConfig == null && it == AgentRetrievalConfig() },
             useInheritedConfig = initial?.useInheritedConfig ?: true,
             executionMode = _executionMode.value,

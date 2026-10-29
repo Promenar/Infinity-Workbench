@@ -71,6 +71,7 @@ fun AgentEditScreen(
     val defaultWorkspaceId by viewModel.defaultWorkspaceId.collectAsState()
     val defaultWorkspace by viewModel.defaultWorkspace.collectAsState()
     val memoryPolicy by viewModel.memoryPolicy.collectAsState()
+    val subagentModels by viewModel.subagentModels.collectAsState()
     val agentSampling by viewModel.sampling.collectAsState()
     val agentReasoningEffort by viewModel.reasoningEffort.collectAsState()
     val baseSchemeId by viewModel.baseSchemeId.collectAsState()
@@ -109,6 +110,7 @@ fun AgentEditScreen(
             allModels.firstOrNull { it.id == resolved.selectionId }?.enabled == true
         }
     }
+    val subagentModelItems = remember(modelItems) { modelItems.subagentCapable() }
     val currentModelDisplayName = remember(resolvedModels, selectedModel) {
         if (selectedModel.isBlank()) ""
         else resolvedModels.firstOrNull { it.selectionId == selectedModel }?.displayName ?: selectedModel
@@ -497,6 +499,15 @@ fun AgentEditScreen(
                     onChooseWorkspace = { showWorkspacePicker = true },
                     onOpenSkills = onNavigateToSkills,
                     onMcpToggle = viewModel::setMcpServerEnabled,
+                )
+            }
+
+            item {
+                AgentSubagentModelSection(
+                    policy = subagentModels,
+                    available = subagentModelItems,
+                    displayName = { id -> resolvedModels.firstOrNull { it.selectionId == id }?.displayName ?: id },
+                    onPolicyChange = viewModel::updateSubagentModels,
                 )
             }
 

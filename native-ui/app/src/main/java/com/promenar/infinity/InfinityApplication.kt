@@ -890,6 +890,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         persistenceFailed = getString(R.string.bg_subagent_persistence_failed),
         stopPersistenceFailed = getString(R.string.bg_subagent_stop_persistence_failed),
         contextLimit = getString(R.string.bg_subagent_context_limit),
+        modelUnavailable = { getString(R.string.subagent_model_unavailable, it) },
+        modelToolCallingUnsupported = getString(R.string.ux2_unavailable_tool_calling),
     )
     val subagentLauncher by lazy {
         com.promenar.infinity.data.subagent.SubagentLauncher(
@@ -901,6 +903,11 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 approvals = subagentApprovalBroker,
                 liveOutput = toolLiveOutputStore,
                 contextLimitText = subagentRuntimeTexts.contextLimit,
+                modelSupportsToolCalling = { modelId -> com.promenar.infinity.data.subagent.SubagentModelSelection.supportsToolCalling(
+                    modelId, ProviderManager.getInstance().providerModels.value,
+                ) },
+                modelUnavailableText = subagentRuntimeTexts.modelUnavailable,
+                modelToolCallingUnsupportedText = subagentRuntimeTexts.modelToolCallingUnsupported,
             ),
             store = subagentRunStore,
             session = ::loadGenerationSession,
@@ -918,6 +925,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             contextWindow = { modelId -> ProviderManager.getInstance().providerModels.value.find { it.id == modelId }?.contextLength },
             writeResult = subagentResultFiles::write,
             texts = subagentRuntimeTexts,
+            modelPolicyFor = { agentRepository.getById(it.agentId)?.subagentModelPolicy ?: com.promenar.infinity.data.agent.AgentSubagentModelPolicy() },
         ).also { launcher ->
             generationScope.launch {
                 launcher.activeRuns.map { it.isNotEmpty() }.distinctUntilChanged().collect { active ->
@@ -1659,7 +1667,12 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.infinity.ui.chat.manager.skills.ReadToolOutputSkill(toolOutputStore))
             register(DropPlanSkill(taskRepository))
             register(com.promenar.infinity.ui.chat.manager.skills.TailnetStatusSkill(tailnetManager))
-            register(com.promenar.infinity.ui.chat.manager.skills.AgentTaskSkill { subagentLauncher })
+            register(com.promenar.infinity.ui.chat.manager.skills.AgentTaskSkill(
+                policyFor = { agentRepository.getById(it.agentId)?.subagentModelPolicy ?: com.promenar.infinity.data.agent.AgentSubagentModelPolicy() },
+                modelSupportsToolCalling = { modelId -> com.promenar.infinity.data.subagent.SubagentModelSelection.supportsToolCalling(
+                    modelId, ProviderManager.getInstance().providerModels.value,
+                ) },
+            ) { subagentLauncher })
             register(com.promenar.infinity.ui.chat.manager.skills.AgentWaitSkill { subagentLauncher })
             val subagentAddress = com.promenar.infinity.ui.chat.manager.skills.SubagentAddressHandler({ subagentLauncher }) { context, run, text ->
                 sessionMailbox.recordSubagentSend(context.sessionId, run.id, run.description, text)
@@ -1742,6 +1755,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                     },
                     knowledgeAccessAllowed = { current -> com.promenar.infinity.data.rag.effectiveKnowledgeFileAccess(
                         knowledgeConfigForTools(current.agentId), current.options.toolsEnabled) == com.promenar.infinity.data.agent.KnowledgeFileAccess.ON_REQUEST },
+                    subagentModelPolicy = { current -> knowledgeConfigForTools(current.agentId)?.subagentModels ?: com.promenar.infinity.data.agent.AgentSubagentModelPolicy() },
+                    modelName = { modelId -> ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == modelId }?.name },
                 ) { current ->
                     com.promenar.infinity.data.generation.MediaViewTarget.capabilities(
                         ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == current.modelId },
