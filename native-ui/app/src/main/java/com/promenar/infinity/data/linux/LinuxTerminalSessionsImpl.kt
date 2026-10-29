@@ -40,6 +40,7 @@ internal class LinuxTerminalSessionsImpl(
     private val now: () -> Long = System::currentTimeMillis,
     private val sessionHome: suspend (String) -> File? = host.sessionHome,
     private val reconcileSession: suspend (String) -> Unit = host.reconcileSession,
+    private val wakeInbox: suspend (String) -> File? = host.wakeInbox,
 ) : LinuxTerminalSessions {
     private class Entry(val infoAtStart: LinuxTerminalInfo, initialCommand: String?) {
         val id get() = infoAtStart.id
@@ -98,7 +99,8 @@ internal class LinuxTerminalSessionsImpl(
                     com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = location.sessionId, path = workspace.canonicalPath)
                     com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = location.sessionId, path = home.canonicalPath)
                     reconcileSession(location.sessionId)
-                    LinuxLaunchSpec(emptyList(), workspace, workingDirectory = "/workspace", sessionHome = home)
+                    LinuxLaunchSpec(emptyList(), workspace, workingDirectory = "/workspace", sessionHome = home,
+                        wakeInbox = wakeInbox(location.sessionId))
                 }
                 is LinuxTerminalLocation.Directory -> {
                     require(location.path.startsWith('/') && '\u0000' !in location.path) { "Terminal directory must be absolute" }

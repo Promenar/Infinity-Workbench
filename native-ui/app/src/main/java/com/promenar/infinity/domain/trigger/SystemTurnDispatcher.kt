@@ -10,6 +10,8 @@ enum class SystemTurnKind(val wireName: String) {
     SUBAGENT_DONE("subagent_done"),
     /** 会话间持久消息，复用步骤边界送达。 */
     SESSION_MESSAGE("session_message"),
+    /** Linux 模式会话内脚本经 `infinity-wake` 投递的唤醒；[SystemTurnRequest.sourceId] 为 `wake:<key>`。 */
+    SCRIPT_WAKE("script_wake"),
     ;
 
     companion object {

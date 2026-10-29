@@ -29,7 +29,9 @@ object SystemPromptSections {
         "Linux 命令以本应用的 Android 用户运行，工作区档逐条审批，完全访问档免批。" +
         "shell_exec 在伪终端运行（TERM=xterm-256color，120列×40行，stderr合并到stdout）。默认15秒让出为后台任务，yield_after_seconds=0 等待到 timeout_seconds；background:true 立即返回任务号。" +
         "命令输出实时显示给用户，模型仅在工具返回或查询任务时看到输出。交互命令让出后，应立即把已有输出中需用户操作的登录链接、验证码转告用户，再用 job_wait 等待或 job_input 回答提示。" +
-        "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。"
+        "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。" +
+        "infinity-wake [--key K] [--title T] [消息]（消息缺省读 stdin）可从后台脚本唤醒本会话智能体，常与 shell_exec background:true 启动的后台任务配合盯日志、等下载或轮询；只在应用运行期间有效，proot 进程随应用进程存活。" +
+        "同一会话 60 秒内最多唤醒一次，期间多条合并、同 key 只保留最新，正文超过 4096 字符会截断。"
 
     fun shellRuntimeGuidance(state: LinuxRuntimeState, runMode: SessionRunMode = SessionRunMode.BUILTIN): String =
         if (runMode == SessionRunMode.LINUX) LINUX_SHELL_GUIDANCE +

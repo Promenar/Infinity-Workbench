@@ -192,6 +192,8 @@ data class LinuxLaunchSpec(
     val environment: Map<String, String> = emptyMap(),
     /** 会话私有空间，仅绑定到 `/home/session`，独立于当前主工作区。 */
     val sessionHome: File? = null,
+    /** 会话脚本唤醒收件箱，宿主侧 box 目录；无会话的维护启动不绑定。 */
+    val wakeInbox: File? = null,
 ) {
     companion object {
         /** `sh -c <command>`；有 bash 时仍用 POSIX sh，保持与系统 sh 一致的语义。 */

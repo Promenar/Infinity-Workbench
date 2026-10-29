@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -71,6 +72,8 @@ internal fun SystemTriggerRow(trigger: SystemTriggerMessage.Parsed, modifier: Mo
         SystemTurnKind.JOB_EXIT -> stringResource(R.string.system_trigger_job_exit, trigger.title)
         SystemTurnKind.SUBAGENT_DONE -> stringResource(R.string.system_trigger_subagent_done, trigger.title)
         SystemTurnKind.SESSION_MESSAGE -> stringResource(R.string.branch_system_message, trigger.title)
+        SystemTurnKind.SCRIPT_WAKE -> if (trigger.title.isBlank()) stringResource(R.string.system_trigger_script_wake)
+            else stringResource(R.string.system_trigger_script_wake_titled, trigger.title)
     }
     val meta = if (trigger.catchUp) stringResource(R.string.system_trigger_catch_up, time) else time
     val hasBody = trigger.body.isNotBlank()
@@ -102,7 +105,11 @@ internal fun SystemTriggerRow(trigger: SystemTriggerMessage.Parsed, modifier: Mo
                 horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
             ) {
                 Icon(
-                    imageVector = if (trigger.kind == SystemTurnKind.SCHEDULE) Icons.Rounded.Schedule else Icons.Rounded.TaskAlt,
+                    imageVector = when (trigger.kind) {
+                        SystemTurnKind.SCHEDULE -> Icons.Rounded.Schedule
+                        SystemTurnKind.SCRIPT_WAKE -> Icons.Rounded.Terminal
+                        else -> Icons.Rounded.TaskAlt
+                    },
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp),

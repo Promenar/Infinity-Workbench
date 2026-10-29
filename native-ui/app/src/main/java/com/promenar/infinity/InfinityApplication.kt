@@ -698,7 +698,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                         composerQueueStore.deleteSession(sessionId)
                     },
                     deleteCanvases = { canvasStore.deleteSession(sessionId) },
-                    deleteJobs = { backgroundJobs.deleteSession(sessionId) },
+                    deleteJobs = { backgroundJobs.deleteSession(sessionId); linuxWakeInbox.deleteSession(sessionId) },
                     deleteSchedules = { scheduledTaskController.deleteForSession(sessionId) },
                     deleteTriggerInteraction = { generationInteractions.clearHeadless(sessionId) },
                 )
@@ -832,7 +832,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 withContext(Dispatchers.IO) {
                     val base = branchUnderlyingWorkspace(session)
                     val launch = linux.runtime.prepareLaunch(com.promenar.infinity.domain.linux.LinuxLaunchSpec.shell(command, base)
-                        .copy(workingDirectory = cwd, mounts = externalFolderManager.visible(session.id).filter { it.commandAccessible }
+                        .copy(workingDirectory = cwd, wakeInbox = linuxWakeInbox.prepare(session.id), mounts = externalFolderManager.visible(session.id).filter { it.commandAccessible }
                             .map { com.promenar.infinity.domain.linux.LinuxBind(File(it.sourceId), "/mnt/${it.alias}") }))
                     val output = backgroundCommandRunner.run(com.promenar.infinity.data.exec.BuiltinCommandRequest(
                         launch.command, launch.hostWorkingDirectory, launch.environment, timeoutSeconds = 120))
@@ -1237,6 +1237,19 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         )
     }
 
+    /** 会话脚本唤醒在应用作用域监听、补扫和限流派发。 */
+    private val linuxWakeInbox by lazy {
+        com.promenar.infinity.data.linux.LinuxWakeInbox(
+            filesDir, generationScope,
+            com.promenar.infinity.data.linux.LinuxWakeDispatch(generationScope, { systemTurnDispatcher }),
+            com.promenar.infinity.data.linux.LinuxWakeFileObserver(),
+            sessionExists = { database.sessionDao().getById(it) != null },
+        )
+    }
+    private val linuxWakeLifecycle by lazy {
+        com.promenar.infinity.data.linux.LinuxWakeLifecycle(linux.runtime, backgroundJobs, linuxWakeInbox, generationScope)
+    }
+
     /** 内置 Linux 环境（proot + Alpine）；界面与执行层通过它取得 domain/linux 接口的实现。 */
     val linux by lazy {
         com.promenar.infinity.data.linux.LinuxModule(
@@ -1246,6 +1259,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 keepAlive = commandKeepAlive,
                 sessionHome = { sessionId -> File(workspaceRepository.ensureSessionRoot(sessionId).physicalRootPath) },
                 reconcileSession = ::reconcileSessionHome,
+                wakeInbox = { linuxWakeInbox.prepare(it) },
                 sessionWorkspaceRoot = { sessionId ->
                     when (val workspace = sessionWorkspaceResolver.resolve(sessionId)) {
                         is com.promenar.infinity.data.workspace.SessionWorkspace.Directory -> workspace.root
@@ -1350,6 +1364,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             sessionMode = { id -> id?.let { sessionRunModes.modeFor(it) } },
             sessionHome = { id -> File(workspaceRepository.ensureSessionRoot(id).physicalRootPath) },
             reconcileSessionHome = ::reconcileSessionHome,
+            wakeInbox = { linuxWakeInbox.prepare(it) },
             messages = runModeMessages,
             linuxLaunchBinding = { sessionId ->
                 val row = database.sessionDao().getById(sessionId)
@@ -2025,6 +2040,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 }
                 startupIssueManager.recover(StartupStep.MODEL_CATALOG, StartupIssueScope.subsystem(StartupSubsystem.MODEL_CATALOG)) { startModelCatalogUpdates() }
                 _startupState.value = BackupStartupState.Ready
+                linuxWakeLifecycle.start()
                 generationScope.launch {
                     try {
                         val sessionIds = withContext(Dispatchers.IO) { database.sessionDao().getAll().map { it.id } }
