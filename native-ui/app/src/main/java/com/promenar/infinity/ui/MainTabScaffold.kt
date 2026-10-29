@@ -41,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -65,6 +68,12 @@ internal fun constrainedBodyWidth(available: androidx.compose.ui.unit.Dp): andro
     minOf(available, 960.dp)
 
 internal fun bottomNavigationTabWeight(selected: Boolean): Float = if (selected) 1.45f else 1f
+
+/** 标签切换的滑动方向：目标标签按 [AppTab] 顺序在后（右侧或下方）为 1，在前为 -1，同一标签为 0。 */
+internal fun tabSlideDirection(from: AppTab, to: AppTab): Int = to.ordinal.compareTo(from.ordinal).coerceIn(-1, 1)
+
+/** 竖排的导航轨按标签顺序纵向滑动，外屏底栏横向滑动。 */
+internal fun tabSlideVertical(navigationRail: Boolean): Boolean = navigationRail
 
 /**
  * 主标签页的状态：当前标签、宽屏设置右列的层级与内屏首页会话列。由导航图持有，窗口变宽时导航图据此把整页设置子页、整页会话收回右列。
@@ -239,18 +248,22 @@ fun MainTabScaffold(
     } else null
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        AdaptiveNavigationSurface(
-            expanded = shouldUseNavigationRail(maxWidth),
+        val navigationRail = shouldUseNavigationRail(maxWidth)
+        AdaptiveNavigationFrame(
+            expanded = navigationRail,
             selectedTab = selectedTab,
             onTabSelected = state::selectTab,
             railShift = railShift,
         ) {
             AnimatedContent(
                 targetState = selectedTab,
-                // 同级标签之间先淡出再淡入，避免两页内容叠在一起。
-                transitionSpec = { InfinityMotion.fadeThrough() },
+                // 按标签顺序整页滑动：底栏横滑、导航轨纵滑，两页都不透明；裁剪在内容区内，不盖住导航栏。
+                transitionSpec = {
+                    InfinityMotion.tabSlide(tabSlideDirection(initialState, targetState), vertical = tabSlideVertical(navigationRail))
+                },
+                modifier = Modifier.fillMaxSize().clipToBounds(),
                 label = "main-tab-content",
-            ) { tab -> when (tab) {
+            ) { tab -> NavigationBody(fullBleed = tab == AppTab.CHAT && hubThreePane) { when (tab) {
                 AppTab.CHAT -> com.promenar.infinity.ui.hub.AgentHubScreen(
                     onNavigateToChat = onNavigateToChat,
                     onNavigateToAgentEdit = onNavigateToAgentEdit,
@@ -278,7 +291,7 @@ fun MainTabScaffold(
                 } else {
                     com.promenar.infinity.ui.hub.UserSettingsHomeScreen(onNavigateToSecondary = onNavigateToSecondary)
                 }
-            } }
+            } } }
         }
     }
 }
@@ -295,8 +308,29 @@ internal fun AdaptiveNavigationSurface(
     railShift: (() -> Float)? = null,
     content: @Composable () -> Unit,
 ) {
+    AdaptiveNavigationFrame(expanded, selectedTab, onTabSelected, railShift) {
+        NavigationBody(fullBleed = railShift != null, content = content)
+    }
+}
+
+/** 导航轨实际占用的宽度（像素），由 [AdaptiveNavigationFrame] 测量导航轨时写入；底栏布局下为 null。 */
+private val LocalNavigationRailInset = staticCompositionLocalOf<IntState?> { null }
+
+/**
+ * 导航栏与内容区的外框。导航轨布局下内容区始终铺满窗口、导航轨叠在其上，
+ * 各页经 [NavigationBody] 自行决定是否让出导航轨的宽度；这样标签切换时离开的页与进入的页各按自己的形态布局，
+ * 三栏首页与普通页之间切换不会让离开的页中途改宽度。
+ */
+@Composable
+internal fun AdaptiveNavigationFrame(
+    expanded: Boolean,
+    selectedTab: AppTab,
+    onTabSelected: (AppTab) -> Unit,
+    railShift: (() -> Float)? = null,
+    content: @Composable () -> Unit,
+) {
     if (expanded) {
-        val fullBleed = railShift != null
+        val railInset = remember { mutableIntStateOf(0) }
         androidx.compose.ui.layout.Layout(
             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
             content = {
@@ -332,15 +366,17 @@ internal fun AdaptiveNavigationSurface(
                     )
                 }
             }
-            AdaptiveBody(capWidth = !fullBleed, content = content)
+            Box(Modifier.fillMaxSize().testTag("main_navigation_content")) {
+                CompositionLocalProvider(LocalNavigationRailInset provides railInset, content = content)
+            }
             },
         ) { measurables, constraints ->
             val rail = measurables[0].measure(constraints.copy(minWidth = 0))
-            val bodyStart = if (fullBleed) 0 else rail.width
-            val bodyWidth = (constraints.maxWidth - bodyStart).coerceAtLeast(0)
-            val body = measurables[1].measure(androidx.compose.ui.unit.Constraints.fixed(bodyWidth, constraints.maxHeight))
+            // 先于内容区测量写入：内容区的页面在同一次测量中读到导航轨宽度。
+            railInset.intValue = rail.width
+            val body = measurables[1].measure(androidx.compose.ui.unit.Constraints.fixed(constraints.maxWidth, constraints.maxHeight))
             layout(constraints.maxWidth, constraints.maxHeight) {
-                body.place(bodyStart, 0)
+                body.place(0, 0)
                 rail.place(0, 0, zIndex = 1f)
             }
         }
@@ -355,29 +391,45 @@ internal fun AdaptiveNavigationSurface(
                 )
             },
         ) { paddingValues ->
-            AdaptiveBody(
-                modifier = Modifier.fillMaxSize().padding(paddingValues),
-                content = content,
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .testTag("main_navigation_content"),
+            ) { content() }
         }
     }
 }
 
+/**
+ * 一页的内容区：导航轨布局下先让出导航轨的宽度，再把宽度限制在 960dp 内居中；
+ * [fullBleed] 为 true 时（内屏首页三列）铺满窗口，由页面自己为导航轨留出位置。
+ */
 @Composable
-private fun AdaptiveBody(
-    modifier: Modifier = Modifier,
-    capWidth: Boolean = true,
+internal fun NavigationBody(
+    fullBleed: Boolean,
     content: @Composable () -> Unit,
 ) {
+    val railInset = LocalNavigationRailInset.current
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .testTag("main_navigation_content"),
+            .then(
+                if (railInset == null || fullBleed) {
+                    Modifier
+                } else {
+                    Modifier.layout { measurable, constraints ->
+                        val inset = railInset.intValue.coerceIn(0, constraints.maxWidth)
+                        val placeable = measurable.measure(constraints.offset(horizontal = -inset))
+                        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(inset, 0) }
+                    }
+                },
+            ),
         contentAlignment = Alignment.TopCenter,
     ) {
         Box(
             modifier = Modifier
-                .then(if (capWidth) Modifier.widthIn(max = 960.dp) else Modifier)
+                .then(if (fullBleed) Modifier else Modifier.widthIn(max = 960.dp))
                 .fillMaxHeight()
                 .fillMaxWidth()
         ) { content() }
