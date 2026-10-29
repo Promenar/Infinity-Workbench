@@ -7,11 +7,11 @@ class AppVersionInfoTest {
     private val info = AppVersionInfo(versionName = "0.3.0-beta", versionCode = 5, channel = "sideload", commit = "abc1234")
 
     @Test
-    fun `底部一行按模板拼出版本名、versionCode 与渠道`() {
-        assertThat(appVersionFooterText(info, "Infinity Workbench %1\$s（%2\$d）· %3\$s", "侧载版"))
-            .isEqualTo("Infinity Workbench 0.3.0-beta（5）· 侧载版")
-        assertThat(appVersionFooterText(info.copy(channel = "play"), "Infinity Workbench %1\$s (%2\$d) · %3\$s", "Play"))
-            .isEqualTo("Infinity Workbench 0.3.0-beta (5) · Play")
+    fun `关于行副标题按模板拼出版本名、versionCode 与渠道`() {
+        assertThat(appVersionLine(info, "%1\$s（%2\$d）· %3\$s", "侧载版"))
+            .isEqualTo("0.3.0-beta（5）· 侧载版")
+        assertThat(appVersionLine(info.copy(channel = "play"), "%1\$s (%2\$d) · %3\$s", "Play"))
+            .isEqualTo("0.3.0-beta (5) · Play")
     }
 
     @Test

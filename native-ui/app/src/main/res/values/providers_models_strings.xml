@@ -54,8 +54,8 @@
 
     <!-- 模型列表 -->
     <string name="provider_models_enabled_count">%1$d / %2$d enabled</string>
-    <string name="provider_models_last_sync">Synced %s</string>
-    <string name="provider_models_never_synced">Never synced</string>
+    <string name="provider_models_last_sync">Synced from provider %s</string>
+    <string name="provider_models_never_synced">Not yet synced from provider</string>
     <string name="provider_models_syncing">Syncing…</string>
     <string name="provider_models_sync_action">Sync</string>
     <string name="provider_models_retry">Retry</string>

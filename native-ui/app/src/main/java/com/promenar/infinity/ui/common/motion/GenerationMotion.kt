@@ -6,7 +6,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -224,7 +223,7 @@ internal class MotionPhaseController {
 
 /**
  * 一个会话界面共用的生成动效状态：显示阶段与各阶段权重、出字速率与重试倒计时，以及点阵屏读数（首字等待秒数、
- * 工具轮次、本轮平均速率）。字段只在绘制阶段读取，推进时不触发重组。三种来源：
+ * 工具轮次）。字段只在绘制阶段读取，推进时不触发重组。三种来源：
  * - 实时：由 [rememberGenerationMotion] 按生成任务推进；
  * - 演示：设置页预览按固定脚本轮播五个阶段，流式之前有一段思考；
  * - 环境：没有提供方时（首页会话列表、静态预览）固定为流式，速率取噪声。
@@ -246,10 +245,8 @@ class GenerationMotion internal constructor(private val source: Source) {
     private var trackedPhase: GenerationMotionPhase? = null
     private var waitStartedAt = 0f
     private var toolRounds = 0
-    private var streamSeconds = 0f
     private var heldRate = 0f
     private var heldRateClock = 0f
-    private var summaryLeft = 0f
 
     /** 真实阶段（已叠加重试倒计时）；没有进行中的生成时为 null。值相同时写入不触发重组，组合中可以读取。 */
     var actual: GenerationMotionPhase? by mutableStateOf(if (source == Source.AMBIENT) GenerationMotionPhase.STREAM else null)
@@ -309,18 +306,6 @@ class GenerationMotion internal constructor(private val source: Source) {
     /** 本轮第几次进入工具执行，从 1 起；还没执行过工具时为 0。 */
     val toolRound: Int get() = toolRounds
 
-    /** 本轮结束后点阵屏停留显示的平均速率（字/秒）；只在 [summaryAlpha] 大于 0 时有意义。 */
-    var summaryRate: Float = 0f
-        private set
-
-    /** 本轮结束后点阵屏停留显示平均速率期间为 true；只在开始与结束时写入，组合中可以读取。 */
-    var lingering: Boolean by mutableStateOf(false)
-        private set
-
-    /** 平均速率读数的透明度 0..1：结束后很快亮起，停留 [ScopeSummarySeconds] 后淡出。逐帧写入，只在绘制阶段读取。 */
-    var summaryAlpha: Float by mutableFloatStateOf(0f)
-        private set
-
     /** 重试倒计时剩余比例 1→0。 */
     val retryLeft: Float
         get() = when {
@@ -340,7 +325,6 @@ class GenerationMotion internal constructor(private val source: Source) {
 
     internal fun update(phase: GenerationMotionPhase?, retry: GenerationRetry?, outputLength: Int, animate: Boolean) {
         if (phase != null && rawPhase == null) beginRun()
-        if (phase == null && rawPhase != null) finishRun(animate)
         if (retry != this.retry) {
             this.retry = retry
             retryStartedAt = clock
@@ -363,21 +347,8 @@ class GenerationMotion internal constructor(private val source: Source) {
 
     private fun beginRun() {
         toolRounds = 0
-        streamSeconds = 0f
         heldRate = 0f
         heldRateClock = 0f
-        summaryLeft = 0f
-        summaryAlpha = 0f
-        lingering = false
-    }
-
-    /** 本轮结束：流式累计够久时算出平均速率，点阵屏停留显示；系统关闭动画时不停留。 */
-    private fun finishRun(animate: Boolean) {
-        val average = averageRate(meter.total, streamSeconds)
-        if (!animate || average == null) return
-        summaryRate = average
-        summaryLeft = ScopeSummarySeconds
-        lingering = true
     }
 
     private fun resolveActual(): GenerationMotionPhase? {
@@ -405,21 +376,10 @@ class GenerationMotion internal constructor(private val source: Source) {
             publishActual(resolveActual())
         }
         meter.step(dt)
-        if (actual == GenerationMotionPhase.STREAM) streamSeconds += dt
         heldRateClock += dt
         if (heldRateClock >= ScopeReadoutHoldSeconds) {
             heldRateClock = 0f
             heldRate = meter.rate
-        }
-        if (summaryLeft > 0f) {
-            summaryLeft -= dt
-            if (summaryLeft <= 0f) {
-                summaryLeft = 0f
-                summaryAlpha = 0f
-                lingering = false
-            } else {
-                summaryAlpha = clamp01((ScopeSummarySeconds - summaryLeft) / SummaryFadeInSeconds) * clamp01(summaryLeft / SummaryFadeOutSeconds)
-            }
         }
         controller.step(dt, actual)
         if (displayed != controller.shown) displayed = controller.shown
@@ -463,17 +423,6 @@ class GenerationMotion internal constructor(private val source: Source) {
     internal companion object {
         /** 点阵屏每秒字数读数的刷新间隔。 */
         const val ScopeReadoutHoldSeconds = 0.25f
-        /** 本轮结束后点阵屏停留显示平均速率的时长。 */
-        const val ScopeSummarySeconds = 2.5f
-        /** 流式累计不足这个时长时不显示平均速率，避免极短回复给出离谱的数字。 */
-        const val MinSummaryStreamSeconds = 0.3f
-        private const val SummaryFadeInSeconds = 0.2f
-        private const val SummaryFadeOutSeconds = 0.4f
-
-        /** 本轮平均速率：到达字数除以流式累计时长；没有字或流式太短时为 null。 */
-        fun averageRate(chars: Int, streamSeconds: Float): Float? =
-            if (chars <= 0 || streamSeconds < MinSummaryStreamSeconds) null else chars / streamSeconds
-
         private const val DemoStreamStart = 1.6f
         private const val DemoRetrySeconds = 2.6f
         private val DemoScript = listOf(
@@ -503,8 +452,8 @@ val LocalGenerationMotion = staticCompositionLocalOf { GenerationMotion.Ambient 
 
 /**
  * 会话界面的实时生成动效：[phase] 为 [generationMotionPhase] 的结果，[retry] 为正在等待的自动重试，
- * [outputLength] 为本轮已到达的正文加思考内容的字数（用于估算出字速率）。只在有进行中的生成、
- * 或本轮结束后点阵屏停留显示平均速率期间逐帧推进。
+ * [outputLength] 为本轮已到达的正文加思考内容的字数（用于估算出字速率）。只在有进行中的生成时逐帧推进；
+ * 结束后各阶段权重停在最后一帧，浮岛光效与点阵屏随生成态动画一起淡出。
  */
 @Composable
 fun rememberGenerationMotion(phase: GenerationMotionPhase?, retry: GenerationRetry?, outputLength: Int): GenerationMotion {
@@ -517,10 +466,10 @@ fun rememberGenerationMotion(phase: GenerationMotionPhase?, retry: GenerationRet
     }
     LaunchedEffect(motion, animate) {
         if (!animate) return@LaunchedEffect
-        snapshotFlow { active || motion.lingering }.collect { running ->
+        snapshotFlow { active }.collect { running ->
             if (!running) return@collect
             var last = -1L
-            while (active || motion.lingering) {
+            while (active) {
                 withInfiniteAnimationFrameNanos { now ->
                     if (last > 0) motion.step(((now - last) / 1_000_000_000f).coerceAtMost(0.1f))
                     last = now

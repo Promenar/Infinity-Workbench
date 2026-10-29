@@ -47,12 +47,36 @@ class ProviderModelsScreenContractTest {
     }
 
     @Test
+    fun `规格库更新入口在溢出菜单且列表底部不再有目录脚注`() {
+        val source = readProviderModelsSource()
+        val topActions = extractBetween(
+            source,
+            "internal fun ProviderModelsTopActions(",
+            "@Composable\ninternal fun ProviderModelsSyncBar(",
+        )
+        assertThat(topActions).contains("ModelSpecLibraryMenuItem(")
+        assertThat(topActions).contains("UiTags.PROVIDER_MODELS_ACTION_SPEC_LIBRARY")
+        assertThat(topActions).contains("specLibraryVersionText(")
+        assertThat(source).doesNotContain("ModelCatalogStatusLine")
+        assertThat(source).doesNotContain("item(\"catalog\")")
+        assertThat(source).doesNotContain("R.string.model_catalog_")
+        val notice = extractBetween(
+            source,
+            "internal fun ModelSpecLibraryFailureNotice(",
+            "/** 同步反馈：四色状态条",
+        )
+        assertThat(notice).contains("specLibraryFailureText(failure)")
+        assertThat(notice).contains("specLibraryKeptText(kept)")
+        assertThat(notice).contains("UiTags.PROVIDER_MODELS_SPEC_RETRY")
+    }
+
+    @Test
     fun `列表行用紧凑能力图标组而非标签墙`() {
         val source = readProviderModelsSource()
         val row = extractBetween(
             source,
             "internal fun ProviderModelsModelRow(",
-            "private fun ModelCatalogStatusLine(",
+            "internal fun ModelSpecLibraryFailureNotice(",
         )
 
         // 能力摘要是一行图标组（读屏合并为一句描述），不是可换行的标签墙。
@@ -136,7 +160,7 @@ class ProviderModelsScreenContractTest {
         assertThat(content).contains("itemsIndexed(")
         assertThat(content).contains("key = { _, model -> model.id }")
         assertThat(content).contains("ProviderModelsModelRow(")
-        val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "private fun ModelCatalogStatusLine(")
+        val row = extractBetween(source, "internal fun ProviderModelsModelRow(", "internal fun ModelSpecLibraryFailureNotice(")
         assertThat(row).contains("bettboxListGroupItem(groupIndex, groupSize)")
     }
 
@@ -185,6 +209,9 @@ class ProviderModelsScreenContractTest {
             "PROVIDER_MODELS_ACTION_OVERFLOW",
             "PROVIDER_MODELS_ACTION_DISABLE_ALL",
             "PROVIDER_MODELS_ACTION_DELETE_ALL",
+            "PROVIDER_MODELS_ACTION_SPEC_LIBRARY",
+            "PROVIDER_MODELS_SPEC_FAILURE",
+            "PROVIDER_MODELS_SPEC_RETRY",
             "PROVIDER_MODELS_NOTICE",
             "PROVIDER_MODELS_LIST",
             "PROVIDER_MODELS_ADD_SHEET",

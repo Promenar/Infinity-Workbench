@@ -608,7 +608,9 @@ object UiTags {
     const val PROVIDER_MODELS_SKELETON = "provider_models_skeleton"
     const val PROVIDER_MODELS_EMPTY_SYNC = "provider_models_empty_sync"
     const val PROVIDER_MODELS_EMPTY_ADD = "provider_models_empty_add"
-    const val PROVIDER_MODELS_CATALOG_FOOTER = "provider_models_catalog_footer"
+    const val PROVIDER_MODELS_ACTION_SPEC_LIBRARY = "provider_models_action_spec_library"
+    const val PROVIDER_MODELS_SPEC_FAILURE = "provider_models_spec_failure"
+    const val PROVIDER_MODELS_SPEC_RETRY = "provider_models_spec_retry"
     fun providerModelsSpecCell(modelId: String, field: String) = "provider_models_spec_cell:$modelId:$field"
     fun providerModelsOutputField(modelId: String) = "provider_models_output_field:$modelId"
 

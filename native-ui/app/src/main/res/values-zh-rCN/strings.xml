@@ -1599,12 +1599,8 @@
     <string name="sessions_operation_failed">无法更新会话，请重试</string>
     <string name="chat_legacy_attachments_title">已恢复的历史附件</string>
     <string name="chat_legacy_attachment_unreadable">此历史附件当前无法读取</string>
-    <string name="model_catalog_failed">更新失败，已保留现有目录</string>
-    <string name="model_catalog_updating">更新中…</string>
-    <string name="model_catalog_update">更新目录</string>
     <string name="provider_models_capability_tools">工具调用</string>
     <string name="provider_models_input_tokens">最大输入：%1$s Token</string>
-    <string name="model_catalog_apply_failed">目录已缓存，应用模型信息失败；请点击重试</string>
     <string name="chat_approval_preview_overwrite">覆盖写入</string>
     <string name="chat_approval_preview_create_file">新建文件</string>
     <string name="chat_approval_preview_edit">编辑</string>
@@ -1648,9 +1644,6 @@
     <string name="backup_remote_size">%1$d 字节</string>
     <string name="kg_stats_nodes">%1$d 节点</string>
     <string name="kg_stats_edges">%1$d 边</string>
-    <string name="model_catalog_label">模型目录</string>
-    <string name="model_catalog_records">%1$d 条</string>
-    <string name="model_catalog_bundled_snapshot">内置快照</string>
     <string name="local_models_slot_empty">暂无模型</string>
     <string name="chat_rag_summary_ready">已检索</string>
     <string name="chat_tool_duration">%1$d 毫秒</string>

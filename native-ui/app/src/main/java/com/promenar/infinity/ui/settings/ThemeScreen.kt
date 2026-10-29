@@ -102,6 +102,7 @@ fun ThemeScreen(onNavigateBack: () -> Unit) {
         onEmptyChatSelect = viewModel::setEmptyChatStyle,
         onScopePlacementSelect = viewModel::setScopePlacement,
         onScopeDigitsChange = viewModel::setScopeDigits,
+        onComposerSurfaceSelect = viewModel::setComposerSurfaceStyle,
     )
 }
 
@@ -126,6 +127,7 @@ fun ThemeScreenContent(
     onEmptyChatSelect: (EmptyChatStyle) -> Unit = {},
     onScopePlacementSelect: (com.promenar.infinity.ui.theme.ScopeScreenPlacement) -> Unit = {},
     onScopeDigitsChange: (Boolean) -> Unit = {},
+    onComposerSurfaceSelect: (com.promenar.infinity.ui.theme.ComposerSurfaceStyle) -> Unit = {},
 ) {
     val preferences = state.preferences
     val dynamicColorChecked = state.dynamicColorAvailable &&
@@ -191,6 +193,7 @@ fun ThemeScreenContent(
                         onEmptyChatSelect = onEmptyChatSelect,
                         onScopePlacementSelect = onScopePlacementSelect,
                         onScopeDigitsChange = onScopeDigitsChange,
+                        onSurfaceSelect = onComposerSurfaceSelect,
                     )
                 }
             }

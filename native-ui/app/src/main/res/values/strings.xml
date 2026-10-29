@@ -1605,12 +1605,8 @@
     <string name="sessions_operation_failed">Could not update the conversation. Try again.</string>
     <string name="chat_legacy_attachments_title">Recovered attachments</string>
     <string name="chat_legacy_attachment_unreadable">This recovered attachment cannot be read</string>
-    <string name="model_catalog_failed">Update failed. Existing catalog retained.</string>
-    <string name="model_catalog_updating">Updating…</string>
-    <string name="model_catalog_update">Update catalog</string>
     <string name="provider_models_capability_tools">Tool calling</string>
     <string name="provider_models_input_tokens">Max input: %1$s tokens</string>
-    <string name="model_catalog_apply_failed">Catalog cached. Applying model metadata failed; tap to retry.</string>
     <string name="chat_approval_preview_overwrite">Overwrite</string>
     <string name="chat_approval_preview_create_file">Create file</string>
     <string name="chat_approval_preview_edit">Edit</string>
@@ -1655,9 +1651,6 @@
     <string name="backup_remote_size">%1$d bytes</string>
     <string name="kg_stats_nodes">%1$d nodes</string>
     <string name="kg_stats_edges">%1$d edges</string>
-    <string name="model_catalog_label">Model catalog</string>
-    <string name="model_catalog_records">%1$d records</string>
-    <string name="model_catalog_bundled_snapshot">Bundled snapshot</string>
     <string name="local_models_slot_empty">No models</string>
     <string name="chat_rag_summary_ready">Searched</string>
     <string name="chat_tool_duration">%1$d ms</string>

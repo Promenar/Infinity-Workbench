@@ -162,7 +162,6 @@ internal class ComposerLightsPainter {
     val holes = Array(7) { Path() }
     val holePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     val ledX = FloatArray(6)
     val ledY = FloatArray(6)
     val ledLevel = FloatArray(6)
@@ -181,7 +180,7 @@ internal class ComposerLightsPainter {
 /**
  * 浮岛内的灯效层：放在浮岛底色之上、输入内容之下，只在网孔背光、底沿数据流、点阵波形屏（输入行右侧）与扫光点阵四种样式下绘制，
  * 按当前生成阶段（[LocalGenerationMotion]）分别绘制并交叉淡入淡出。[state] 的生成进度为 0 时什么都不画；
- * 点阵屏在本轮结束后另外停留一会儿显示平均速率。顶沿模式的点阵屏由 [ComposerScopeBand] 单独占一条，这里不画。
+ * 点阵屏的透明度跟随生成态动画，本轮结束后与浮岛光效、运行坞一起收起。顶沿模式的点阵屏由 [ComposerScopeBand] 单独占一条，这里不画。
  * 灯珠墙类样式只铺到输入区（[ComposerGlowState.lightsTop] 以下），不铺到运行坞文字下方。
  */
 @Composable
@@ -195,24 +194,21 @@ internal fun ComposerIslandLights(state: ComposerGlowState, style: ComposerGlowS
     val painter = remember { ComposerLightsPainter() }
     Canvas(modifier.clearAndSetSemantics {}) {
         val gen = state.generating.value
-        val summary = if (style == ComposerGlowStyle.SCOPE_SCREEN && digits) motion.summaryAlpha else 0f
-        if (gen <= 0f && summary <= 0f) return@Canvas
+        if (gen <= 0f) return@Canvas
         val time = state.timeSeconds
         drawIntoCanvas { canvas ->
-            if (gen > 0f) for (phase in GenerationMotionPhase.entries) {
+            for (phase in GenerationMotionPhase.entries) {
                 val weight = motion.weight(phase)
                 if (weight <= 0.004f) continue
                 val alpha = gen * weight
                 when (style) {
                     ComposerGlowStyle.MESH -> drawMesh(canvas, phase, alpha, time, state, palette, painter)
                     ComposerGlowStyle.BOTTOM_STRIP -> drawBottomStrip(canvas, phase, alpha, time, state, motion, palette, painter)
-                    // 平均速率亮起时，阶段画面同步退去，两组数字不长时间叠在一起。
-                    ComposerGlowStyle.SCOPE_SCREEN -> drawInputRowScope(canvas, phase, alpha * (1 - summary), time, motion, palette, painter, digits)
+                    ComposerGlowStyle.SCOPE_SCREEN -> drawInputRowScope(canvas, phase, alpha, time, motion, palette, painter, digits)
                     ComposerGlowStyle.SWEEP_GRID -> drawSweepGrid(canvas, phase, alpha, time, state, palette, painter)
                     else -> Unit
                 }
             }
-            if (summary > 0f) drawInputRowScope(canvas, null, summary, time, motion, palette, painter, digits)
         }
     }
 }
@@ -473,7 +469,7 @@ internal const val ScopeReadoutCapacity = 8
 
 /**
  * 浮岛顶沿模式的点阵屏：铺满浮岛内宽的 5 行点阵，始终贴在输入区上沿；运行坞出现时它就在运行坞与输入区的接缝处。
- * 读数与波形同输入行右侧模式，本轮结束后同样停留显示平均速率。
+ * 读数与波形同输入行右侧模式；不在生成时由外层收起。
  */
 @Composable
 internal fun ComposerScopeBand(state: ComposerGlowState, modifier: Modifier = Modifier) {
@@ -483,8 +479,7 @@ internal fun ComposerScopeBand(state: ComposerGlowState, modifier: Modifier = Mo
     val painter = remember { ComposerLightsPainter() }
     Canvas(modifier.fillMaxWidth().height(ComposerScopeBandHeight).clearAndSetSemantics {}) {
         val gen = state.generating.value
-        val summary = if (digits) motion.summaryAlpha else 0f
-        if (gen <= 0f && summary <= 0f) return@Canvas
+        if (gen <= 0f) return@Canvas
         val k = density
         val pitch = ScopeScreenSpec.PitchDp * k
         val inset = ScopeScreenSpec.InsetDp * k
@@ -495,12 +490,11 @@ internal fun ComposerScopeBand(state: ComposerGlowState, modifier: Modifier = Mo
         val time = state.timeSeconds
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
-            if (gen > 0f) for (phase in GenerationMotionPhase.entries) {
+            for (phase in GenerationMotionPhase.entries) {
                 val weight = motion.weight(phase)
                 if (weight <= 0.004f) continue
-                drawScopeFrame(native, k, sx, sy, cols, rows, phase, gen * weight * (1 - summary), time, motion, palette, painter, digits)
+                drawScopeFrame(native, k, sx, sy, cols, rows, phase, gen * weight, time, motion, palette, painter, digits)
             }
-            if (summary > 0f) drawScopeFrame(native, k, sx, sy, cols, rows, null, summary, time, motion, palette, painter, digits)
         }
     }
 }
@@ -576,7 +570,7 @@ internal fun writeRateReadout(rate: Float, out: CharArray, start: Int = 0): Int 
 
 /**
  * 点阵屏在 [phase] 下的数字读数写入 [out]，返回字符数：首字前为已等待秒数，流式（含思考）为每秒字数，
- * 工具执行为“#轮次”，等待审批为“!”，重试为倒计时秒数。本轮结束后的平均速率用 [writeRateReadout]。
+ * 工具执行为“#轮次”，等待审批为“!”，重试为倒计时秒数。
  */
 internal fun scopeReadout(
     phase: GenerationMotionPhase,
@@ -601,9 +595,8 @@ internal fun scopeReadout(
 
 /**
  * 输入行右侧的点阵屏：嵌在输入行（工具栏正上方那一行）右端的 7 行点阵，与停止键右对齐，宽至多 [ScopeScreenSpec.InputRowMaxWidthDp]。
- * [phase] 为 null 时画本轮平均速率。
  */
-private fun DrawScope.drawInputRowScope(canvas: ComposeCanvas, phase: GenerationMotionPhase?, alpha: Float, t: Float, motion: GenerationMotion, palette: MotionPalette, p: ComposerLightsPainter, digits: Boolean) {
+private fun DrawScope.drawInputRowScope(canvas: ComposeCanvas, phase: GenerationMotionPhase, alpha: Float, t: Float, motion: GenerationMotion, palette: MotionPalette, p: ComposerLightsPainter, digits: Boolean) {
     if (alpha <= 0.004f) return
     val k = density
     val rows = ScopeScreenSpec.InputRowRows
@@ -621,11 +614,10 @@ private fun DrawScope.drawInputRowScope(canvas: ComposeCanvas, phase: Generation
 }
 
 /**
- * 点阵波形屏的一帧：左上角 ([sx], [sy])、[cols] × [rows] 的点阵，像交换机前面板的流量显示。
+ * 点阵波形屏的一帧：左上角 ([sx], [sy])、[cols] × [rows] 的点阵，像交换机前面板的流量显示；不画底板与描边，灯珠直接落在浮岛表面上。
  * 显示数字且屏够宽时左侧是数字区（[scopeReadout]），右侧是波形区；关闭数字时波形铺满整块屏，各阶段只保留图形。
  * 波形区：首字前底行一条带噪声的基线；流式（含思考）时柱状图就是实际出字速率，不断左移，最新两列在闪、越旧越暗；
  * 工具执行时第三色扫描线来回扫过；等待审批时第三色“!”慢闪（有数字区时“!”在数字区）；重试时底行是退避倒计时进度条。
- * [phase] 为 null 时是本轮结束后的停留画面：数字区显示平均速率，波形区只留暗基线。
  */
 private fun drawScopeFrame(
     native: android.graphics.Canvas,
@@ -634,7 +626,7 @@ private fun drawScopeFrame(
     sy: Float,
     cols: Int,
     rows: Int,
-    phase: GenerationMotionPhase?,
+    phase: GenerationMotionPhase,
     alpha: Float,
     t: Float,
     motion: GenerationMotion,
@@ -647,15 +639,6 @@ private fun drawScopeFrame(
     val inset = ScopeScreenSpec.InsetDp * k
     val sz = ScopeScreenSpec.DotDp * k
     val gz = ScopeScreenSpec.GlowDp * k
-    val sw = cols * pitch + 2 * inset
-    val sh = rows * pitch + 2 * inset
-    p.panelPaint.style = Paint.Style.FILL
-    p.panelPaint.color = palette.faceplate.copy(alpha = palette.faceplate.alpha * alpha).toArgb()
-    native.drawRoundRect(sx, sy, sx + sw, sy + sh, 3 * k, 3 * k, p.panelPaint)
-    p.panelPaint.style = Paint.Style.STROKE
-    p.panelPaint.strokeWidth = 0.8f * k
-    p.panelPaint.color = palette.outline.copy(alpha = 0.6f * alpha).toArgb()
-    native.drawRoundRect(sx, sy, sx + sw, sy + sh, 3 * k, 3 * k, p.panelPaint)
     if (p.screenLit.size != cols * rows) {
         p.screenLit = FloatArray(cols * rows)
         p.screenAmber = BooleanArray(cols * rows)
@@ -693,10 +676,9 @@ private fun drawScopeFrame(
     val w0 = if (readout) ScopeScreenSpec.ReadoutCols + ScopeScreenSpec.ReadoutGapCols else 0
     val waveCols = cols - w0
     if (readout) {
-        val length = if (phase == null) writeRateReadout(motion.summaryRate, p.readout)
-        else scopeReadout(phase, motion.waitSeconds, motion.readoutRate, motion.toolRound, motion.retrySeconds, p.readout)
+        val length = scopeReadout(phase, motion.waitSeconds, motion.readoutRate, motion.toolRound, motion.retrySeconds, p.readout)
         val intensity = when (phase) {
-            null, GenerationMotionPhase.STREAM -> 1f
+            GenerationMotionPhase.STREAM -> 1f
             GenerationMotionPhase.WAIT -> 0.75f
             GenerationMotionPhase.TOOL -> 0.9f
             GenerationMotionPhase.APPROVAL -> if (slowBlink(t) > 0.5f) 1f else 0.35f
@@ -706,7 +688,6 @@ private fun drawScopeFrame(
         glyphs(length, ScopeScreenSpec.ReadoutCols - 1, intensity, isAmber)
     }
     when (phase) {
-        null -> for (c in w0 until cols) set(c, 0, 0.3f, false)
         GenerationMotionPhase.WAIT -> for (c in w0 until cols) {
             set(c, 0, 0.35f, false)
             if (motionHash(c.toFloat(), floor(t * 6)) < 0.1f) set(c, 1, 0.3f, false)

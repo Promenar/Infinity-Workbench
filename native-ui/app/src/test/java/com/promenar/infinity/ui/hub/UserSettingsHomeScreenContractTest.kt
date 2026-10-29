@@ -130,7 +130,7 @@ class UserSettingsHomeScreenContractTest {
         assertThat(screenSource).doesNotContain("LocalConfiguration.current.locales")
         assertThat(screenSource).contains("state.language == \"en\"")
         assertThat(screenSource).doesNotContain("\"Infinity Workbench AI • Project Narcis\"")
-        assertThat(screenSource).contains("settings_ia_home_footer")
+        assertThat(screenSource).contains("settings_about_version")
     }
 
     @Test

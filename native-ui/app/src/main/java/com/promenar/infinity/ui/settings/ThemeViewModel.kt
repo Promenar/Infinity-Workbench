@@ -84,6 +84,10 @@ class ThemeViewModel(
         store.setScopeDigits(enabled)
     }
 
+    fun setComposerSurfaceStyle(style: com.promenar.infinity.ui.theme.ComposerSurfaceStyle) {
+        store.setComposerSurfaceStyle(style)
+    }
+
     fun setPureBlack(enabled: Boolean) {
         store.setPureBlack(enabled)
     }

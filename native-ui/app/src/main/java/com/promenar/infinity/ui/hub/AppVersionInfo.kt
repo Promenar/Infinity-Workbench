@@ -2,7 +2,7 @@ package com.promenar.infinity.ui.hub
 
 import com.promenar.infinity.BuildConfig
 
-/** 设置页底部展示与复制的构建信息；全部取自 [BuildConfig]，不在界面写死。 */
+/** 设置页“关于”行与关于面板展示、复制的构建信息；全部取自 [BuildConfig]，不在界面写死。 */
 internal data class AppVersionInfo(
     val versionName: String,
     val versionCode: Int,
@@ -30,10 +30,10 @@ internal data class AppVersionInfo(
 }
 
 /**
- * 底部一行：“Infinity Workbench 版本名（versionCode）· 渠道”。模板与渠道名来自资源，
+ * 版本一行：“版本名（versionCode）· 渠道”，用作“关于”行副标题与关于面板标题下的说明。模板与渠道名来自资源，
  * 模板按 `%1$s` 版本名、`%2$d` versionCode、`%3$s` 渠道名取参。
  */
-internal fun appVersionFooterText(info: AppVersionInfo, template: String, channelLabel: String): String =
+internal fun appVersionLine(info: AppVersionInfo, template: String, channelLabel: String): String =
     String.format(template, info.versionName, info.versionCode, channelLabel)
 
 /** 复制到剪贴板的版本信息：版本名、versionCode、渠道、提交短 SHA；模板按此顺序取 `%1$s %2$d %3$s %4$s`。 */

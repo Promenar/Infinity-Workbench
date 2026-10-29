@@ -45,6 +45,8 @@ import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Toll
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -119,6 +121,8 @@ fun UserSettingsHomeScreen(
     var editingName by remember { mutableStateOf(userName) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     val languageAnchor = rememberInfinityPopoverAnchor()
+    var showAbout by remember { mutableStateOf(false) }
+    val aboutAnchor = rememberInfinityPopoverAnchor()
     val avatarCropLauncher = rememberAvatarCropLauncher(
         onCropped = { viewModel.updateUserAvatar(it.toString()) },
         onFailure = viewModel::reportAvatarImportFailure,
@@ -162,14 +166,7 @@ fun UserSettingsHomeScreen(
             },
             onShowLanguageDialog = { if (!languageAnchor.consumeRecentDismiss()) showLanguageDialog = true },
             onNavigateToSecondary = onNavigateToSecondary,
-            onAboutClick = {
-                context.startActivity(
-                    android.content.Intent(
-                        android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(repositoryUrl),
-                    ),
-                )
-            },
+            onAboutClick = { if (!aboutAnchor.consumeRecentDismiss()) showAbout = true },
             onOpenGithub = {
                 context.startActivity(
                     android.content.Intent(
@@ -182,7 +179,15 @@ fun UserSettingsHomeScreen(
             onExportDiagnostics = exportDiagnostics,
         )
 
-    UserSettingsHomeScreenContent(state = state, actions = actions, languageAnchor = languageAnchor)
+    UserSettingsHomeScreenContent(state = state, actions = actions, languageAnchor = languageAnchor, aboutAnchor = aboutAnchor)
+
+    if (showAbout) {
+        AboutInfinitySheet(
+            onOpenGithub = actions.onOpenGithub,
+            onDismiss = { showAbout = false },
+            popover = InfinityPopoverSpec(aboutAnchor, align = InfinityPopoverAlign.Auto),
+        )
+    }
 
     if (showNameEditor) {
         NameEditDialog(
@@ -241,6 +246,8 @@ internal fun UserSettingsHomeScreenContent(
     actions: UserSettingsHomeScreenActions,
     /** 语言行的位置：宽窗口下语言选择贴着该行弹出。 */
     languageAnchor: InfinityPopoverAnchor? = null,
+    /** “关于”行的位置：宽窗口下关于面板贴着该行弹出。 */
+    aboutAnchor: InfinityPopoverAnchor? = null,
 ) {
     InfinitySettingsPageLayout(
         title = stringResource(R.string.settings_title),
@@ -468,15 +475,16 @@ internal fun UserSettingsHomeScreenContent(
                     UserSettingsNavigationItem(
                         icon = Icons.Rounded.Info,
                         title = stringResource(R.string.settings_about_infinity),
+                        subtitle = appVersionLine(AppVersionInfo.current()),
                         onClick = actions.onAboutClick,
+                        modifier = if (aboutAnchor != null) Modifier.infinityPopoverAnchor(aboutAnchor) else Modifier,
                     )
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.size(InfinitySpacing.Large))
                 GitHubProjectFooter(onOpen = actions.onOpenGithub)
-                Spacer(modifier = Modifier.size(InfinitySpacing.XXLarge))
+                Spacer(modifier = Modifier.size(InfinitySpacing.Small))
             }
         }
     }
@@ -577,51 +585,25 @@ private fun UserProfileListItem(
     }
 }
 
+/** 渠道显示名：侧载版或 Play 版。 */
+@Composable
+private fun channelLabel(info: AppVersionInfo): String = stringResource(
+    if (info.isSideload) R.string.ux2_settings_channel_sideload else R.string.ux2_settings_channel_play,
+)
+
+/** “关于”行副标题与关于面板里的版本一行：“版本名（versionCode）· 渠道”。 */
+@Composable
+internal fun appVersionLine(info: AppVersionInfo): String =
+    appVersionLine(info, stringResource(R.string.settings_about_version), channelLabel(info))
+
 /**
- * 设置首页底部：左侧一行“Infinity Workbench 版本名（versionCode）· 渠道”，点击复制版本信息；
- * 行尾 GitHub 标志按钮打开项目主页。两个点击目标各自满足 48dp 触控区。
+ * 设置首页底部：居中一个 GitHub 标志按钮打开项目主页。标志 20dp、次要文字色，触控区 48dp，带内容描述。
+ * 版本号在“关于”行副标题里，复制版本信息在关于面板里。
  */
 @Composable
-internal fun GitHubProjectFooter(
-    onOpen: () -> Unit,
-    versionInfo: AppVersionInfo = AppVersionInfo.current(),
-) {
-    val context = LocalContext.current
-    val channelLabel = stringResource(
-        if (versionInfo.isSideload) R.string.ux2_settings_channel_sideload else R.string.ux2_settings_channel_play,
-    )
-    val footerText = appVersionFooterText(versionInfo, stringResource(R.string.settings_ia_home_footer), channelLabel)
-    val copyText = appVersionCopyText(versionInfo, stringResource(R.string.ux2_settings_version_copy_text), channelLabel)
-    val copyLabel = stringResource(R.string.ux2_settings_version_copy_action)
-    val copiedToast = stringResource(R.string.ux2_settings_version_copied)
+internal fun GitHubProjectFooter(onOpen: () -> Unit) {
     val githubLabel = stringResource(R.string.ux2_settings_github_open)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .sizeIn(minHeight = InfinitySpacing.MinimumTouchTarget)
-                .clip(MaterialTheme.shapes.small)
-                .clickable(role = Role.Button, onClickLabel = copyLabel) {
-                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(copyLabel, copyText))
-                    // Android 13 起系统自带复制提示，只在更早版本补一条。
-                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
-                        android.widget.Toast.makeText(context, copiedToast, android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .padding(horizontal = InfinitySpacing.Small)
-                .testTag("settings_version_footer"),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = footerText,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
                 .size(InfinitySpacing.MinimumTouchTarget)
@@ -634,10 +616,71 @@ internal fun GitHubProjectFooter(
             Icon(
                 painter = painterResource(R.drawable.ic_github_mark),
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * 关于面板：版本一行（版本名、versionCode、渠道）与提交短 SHA，下面是“复制版本信息”和“在 GitHub 上打开”两行。
+ * 复制内容与原设置页底部一致；Android 13 起系统自带复制提示，只在更早版本补一条。
+ */
+@Composable
+internal fun AboutInfinitySheet(
+    onOpenGithub: () -> Unit,
+    onDismiss: () -> Unit,
+    popover: InfinityPopoverSpec? = null,
+    versionInfo: AppVersionInfo = AppVersionInfo.current(),
+) {
+    val context = LocalContext.current
+    val channel = channelLabel(versionInfo)
+    val copyText = appVersionCopyText(versionInfo, stringResource(R.string.ux2_settings_version_copy_text), channel)
+    val copyLabel = stringResource(R.string.ux2_settings_version_copy_action)
+    val copiedToast = stringResource(R.string.ux2_settings_version_copied)
+    InfinityBottomSheet(
+        show = true,
+        scrollContent = true,
+        onDismiss = onDismiss,
+        title = stringResource(R.string.settings_about_infinity),
+        popover = popover,
+    ) {
+        Text(
+            text = appVersionLine(versionInfo),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.testTag("settings_about_version"),
+        )
+        Text(
+            text = stringResource(R.string.settings_about_commit, versionInfo.commitOrUnknown),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = InfinitySpacing.XSmall, bottom = InfinitySpacing.Small),
+        )
+        InfinitySettingsItem(
+            horizontalPadding = 0.dp,
+            icon = Icons.Rounded.ContentCopy,
+            title = copyLabel,
+            onClick = {
+                val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText(copyLabel, copyText))
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                    android.widget.Toast.makeText(context, copiedToast, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.testTag("settings_about_copy_version"),
+        )
+        InfinitySettingsItem(
+            horizontalPadding = 0.dp,
+            icon = Icons.AutoMirrored.Rounded.OpenInNew,
+            title = stringResource(R.string.ux2_settings_github_open),
+            onClick = {
+                onDismiss()
+                onOpenGithub()
+            },
+            modifier = Modifier.testTag("settings_about_github"),
+        )
     }
 }
 

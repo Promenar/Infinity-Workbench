@@ -313,11 +313,10 @@ class GenerationMotionTest {
     }
 
     @Test
-    fun `本轮结束后停留显示平均速率，到时淡出`() {
+    fun `本轮结束即没有真实阶段，点阵屏不再单独停留`() {
         val motion = GenerationMotion(GenerationMotion.Source.LIVE)
         var length = 0
         motion.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = true)
-        // 2 秒内到达 100 字。
         repeat(120) { i ->
             if (i % 6 == 0) {
                 length += 5
@@ -326,30 +325,8 @@ class GenerationMotionTest {
             motion.step(frame)
         }
         motion.update(null, retry = null, outputLength = 0, animate = true)
-        assertTrue(motion.lingering)
-        assertEquals(50f, motion.summaryRate, 5f)
-        motion.run(0.5f)
-        assertEquals(1f, motion.summaryAlpha, 0.01f)
-        motion.run(GenerationMotion.ScopeSummarySeconds)
-        assertTrue(!motion.lingering)
-        assertEquals(0f, motion.summaryAlpha)
-    }
-
-    @Test
-    fun `没有内容或系统关闭动画时结束后不停留`() {
-        val idle = GenerationMotion(GenerationMotion.Source.LIVE)
-        idle.update(GenerationMotionPhase.WAIT, retry = null, outputLength = 0, animate = true)
-        idle.run(1f)
-        idle.update(null, retry = null, outputLength = 0, animate = true)
-        assertTrue(!idle.lingering)
-        val still = GenerationMotion(GenerationMotion.Source.LIVE)
-        still.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 0, animate = false)
-        still.update(GenerationMotionPhase.STREAM, retry = null, outputLength = 50, animate = false)
-        still.update(null, retry = null, outputLength = 0, animate = false)
-        assertTrue(!still.lingering)
-        assertNull(GenerationMotion.averageRate(0, 3f))
-        assertNull(GenerationMotion.averageRate(10, 0.1f))
-        assertEquals(20f, GenerationMotion.averageRate(60, 3f)!!, 1e-4f)
+        // 结束后不再有需要逐帧推进的停留画面，点阵屏只随浮岛生成态动画淡出。
+        assertNull(motion.actual)
     }
 
     @Test
