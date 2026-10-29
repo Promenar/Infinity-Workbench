@@ -35,18 +35,43 @@ class SharedFileImporter(
     private val indexScheduler: ShareIndexScheduler = ShareIndexScheduler { _, entry ->
         ShareIndexReceipt(taskId = "no-op-${entry.uuid}", fileUuid = entry.uuid)
     },
+    private val linuxFiles: com.promenar.infinity.domain.linux.LinuxFileSystem? = null,
+    private val linuxReady: () -> Boolean = { false },
 ) {
+    internal var linuxFileSystem: com.promenar.infinity.data.storage.RealPathFileSystem = com.promenar.infinity.data.storage.AndroidRealPathFileSystem
+
+    suspend fun import(
+        request: ShareRequest,
+        destination: ShareImportDestination,
+        retryUris: Set<Uri>? = null,
+    ): ShareImportBatchResult = when (destination) {
+        is ShareImportDestination.SessionFolder -> {
+            val root = withContext(Dispatchers.IO) { workspace.ensureSessionRoot(destination.sessionId) }
+            if (root.uuid != destination.workspaceRootUuid) rejectedBatch(request, retryUris, ShareRejectReason.TargetRequired)
+            else import(request, root.uuid, retryUris)
+        }
+        is ShareImportDestination.KnowledgeFolder -> import(request, destination.workspaceRootUuid, retryUris, destination.folderUuid)
+        is ShareImportDestination.LinuxDirectory -> importShareToLinux(request, destination.path, retryUris, source, linuxFiles, linuxReady, linuxFileSystem) { inspect(request) }
+    }
+
+    private suspend fun rejectedBatch(request: ShareRequest, retryUris: Set<Uri>?, reason: ShareRejectReason) =
+        ShareImportBatchResult(inspect(request).filter { retryUris == null || it.uri in retryUris }.map { it.reject(reason) })
+
     suspend fun inspect(request: ShareRequest): List<ShareImportItem> = withContext(Dispatchers.IO) {
         request.uris.map { uri ->
-            source.preflightItem(uri)?.let { return@map it }
-            val metadata = metadataOrNull(uri)
+            source.preflightItem(uri)?.let { return@map it.copy(parseable = isParseable(it.mimeType, it.displayName)) }
+            val metadata = try { source.metadata(uri) }
+            catch (_: SecurityException) { return@map fallback(uri, request.mimeType).reject(ShareRejectReason.PermissionDenied) }
+            catch (_: IOException) { return@map fallback(uri, request.mimeType).reject(ShareRejectReason.ReadFailed) }
+            catch (_: IllegalArgumentException) { return@map fallback(uri, request.mimeType).reject(ShareRejectReason.ReadFailed) }
             val item = ShareImportItem(
                 uri = uri,
-                displayName = metadata?.displayName?.takeIf { it.isNotBlank() }
+                displayName = metadata.displayName?.takeIf { it.isNotBlank() }
                     ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
                     ?: "shared-file",
-                mimeType = metadata?.mimeType ?: request.mimeType,
-                sizeBytes = metadata?.sizeBytes,
+                mimeType = metadata.mimeType ?: request.mimeType,
+                sizeBytes = metadata.sizeBytes,
+                parseable = isParseable(metadata.mimeType ?: request.mimeType, metadata.displayName ?: uri.lastPathSegment.orEmpty()),
             )
             source.preflightReason(uri)?.let { item.reject(it) } ?: item
         }
@@ -103,6 +128,7 @@ class SharedFileImporter(
                 mimeType = metadata.mimeType ?: request.mimeType,
                 sizeBytes = metadata.sizeBytes,
                 status = ShareImportStatus.Importing,
+                parseable = isParseable(metadata.mimeType ?: request.mimeType, metadata.displayName ?: uri.lastPathSegment.orEmpty()),
             )
             val safeName = normalizeName(initial.displayName)
             if (safeName == null) {
@@ -111,10 +137,6 @@ class SharedFileImporter(
             }
             val declared = normalizeMime(request.mimeType)
             val resolved = normalizeMime(metadata.mimeType ?: request.mimeType)
-            if (resolved !in SUPPORTED_MIME_TYPES || declared !in SUPPORTED_MIME_TYPES) {
-                results += initial.reject(ShareRejectReason.UnsupportedMime)
-                continue
-            }
             val size = metadata.sizeBytes
             if (size != null && size <= 0L) {
                 results += initial.reject(ShareRejectReason.EmptyFile)
@@ -129,8 +151,9 @@ class SharedFileImporter(
                 continue
             }
             try {
-                val sniffed = sniffSource(uri, resolved)
-                if (!mimeCompatible(declared, resolved, sniffed, safeName)) {
+                val contentMime = parseableMime(resolved, safeName)
+                val sniffed = contentMime?.let { sniffSource(uri, it) }
+                if (contentMime != null && !mimeCompatible(declared, resolved, sniffed, safeName)) {
                     results += initial.reject(ShareRejectReason.MimeMismatch)
                     continue
                 }
@@ -141,20 +164,13 @@ class SharedFileImporter(
                     parentUuid = target.uuid,
                     parentPath = target.materializedPath,
                     requestedName = safeName,
-                    mimeType = resolved,
+                    mimeType = contentMime ?: resolved,
                     maxBytes = itemLimit,
                     expectedHash = source.contentSha256(uri),
                 ) {
                     openSource(uri).use { input ->
-                        try {
-                            if (resolved in TEXT_MIME_TYPES) {
-                                copyUtf8Validated(input, it)
-                            } else {
-                                input.copyTo(it, DEFAULT_BUFFER_SIZE)
-                            }
-                        } catch (failure: IOException) {
-                            throw ShareSourceReadException(failure)
-                        }
+                        if (contentMime in TEXT_MIME_TYPES) copyUtf8Validated(input, it)
+                        else input.copyTo(it, DEFAULT_BUFFER_SIZE)
                     }
                 }
                 val entry = creation.entry
@@ -171,19 +187,19 @@ class SharedFileImporter(
                 }
                 acceptedBytes += entry.sizeBytes
                 try {
-                    val receipt = indexScheduler.schedule(workspaceRootUuid, entry)
+                    val receipt = if (initial.parseable) indexScheduler.schedule(workspaceRootUuid, entry) else null
                     if (creation.createdNow) {
                         workspace.confirmCreatedEntry(workspaceRootUuid, entry.uuid)
                     }
                     results += initial.copy(
                         displayName = entry.name,
-                        mimeType = resolved,
+                        mimeType = contentMime ?: resolved,
                         sizeBytes = entry.sizeBytes,
                         status = ShareImportStatus.Created,
                         created = entry,
-                        indexStatus = ShareIndexStatus.Pending,
-                        fileUuid = receipt.fileUuid,
-                        indexTaskId = receipt.taskId,
+                        indexStatus = receipt?.let { ShareIndexStatus.Pending },
+                        fileUuid = receipt?.fileUuid ?: entry.uuid,
+                        indexTaskId = receipt?.taskId,
                     )
                 } catch (cancelled: CancellationException) {
                     try {
@@ -210,6 +226,8 @@ class SharedFileImporter(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (_: ShareContentMismatchException) {
+                results += initial.reject(ShareRejectReason.MimeMismatch)
             } catch (_: WorkspaceFileTooLargeException) {
                 results += initial.reject(
                     if (acceptedBytes > 0L) ShareRejectReason.BatchTooLarge
@@ -232,13 +250,7 @@ class SharedFileImporter(
         ShareImportBatchResult(results)
     }
 
-    private fun openSource(uri: Uri): InputStream = try {
-        source.open(uri)
-    } catch (failure: IOException) {
-        throw ShareSourceReadException(failure)
-    } catch (failure: IllegalArgumentException) {
-        throw ShareSourceReadException(IOException(failure))
-    }
+    private fun openSource(uri: Uri): InputStream = source.openForShare(uri)
 
     private fun metadataOrNull(uri: Uri): SharedContentMetadata? = try {
         source.metadata(uri)
@@ -254,8 +266,10 @@ class SharedFileImporter(
         openSource(uri).use { sniffMime(it, expectedMime) }
     } catch (failure: ShareSourceReadException) {
         throw failure
-    } catch (failure: IOException) {
-        throw ShareSourceReadException(failure)
+    } catch (_: IOException) {
+        throw ShareContentMismatchException()
+    } catch (_: IllegalArgumentException) {
+        throw ShareContentMismatchException()
     }
 
     private suspend fun createWithStableName(
@@ -373,11 +387,11 @@ class SharedFileImporter(
             if (parentPath == "/") "/$name" else "${parentPath.trimEnd('/')}/$name"
 
         private fun isSafeParentPath(path: String): Boolean =
-            path.startsWith('/') && path.split('/').none { it == "." || it == ".." }
+            path.startsWith('/') && path.split('/').none { it == "." || it == ".." || com.promenar.infinity.domain.workspace.WorkspaceInternalPaths.isReservedName(it) }
 
-        private fun normalizeMime(value: String): String = value.substringBefore(';').trim().lowercase()
+        internal fun normalizeMime(value: String): String = value.substringBefore(';').trim().lowercase()
 
-        private fun sniffMime(input: InputStream, expectedMime: String): String? {
+        internal fun sniffMime(input: InputStream, expectedMime: String): String? {
             if (expectedMime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
                 var contentTypes = false
                 var wordDocument = false
@@ -459,7 +473,7 @@ class SharedFileImporter(
             false
         }
 
-        private fun copyUtf8Validated(input: InputStream, output: OutputStream) {
+        internal fun copyUtf8Validated(input: InputStream, output: OutputStream) {
             val decoder = Charsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
@@ -475,7 +489,7 @@ class SharedFileImporter(
                     count = 1
                 }
                 if (buffer.copyOfRange(0, count).any { it == 0.toByte() }) {
-                    throw IOException("文本包含 NUL 字节")
+                    throw InvalidShareTextException()
                 }
                 val combined = ByteArray(carry.size + count)
                 carry.copyInto(combined)
@@ -483,28 +497,48 @@ class SharedFileImporter(
                 val bytes = ByteBuffer.wrap(combined)
                 val chars = CharBuffer.allocate(combined.size.coerceAtLeast(1))
                 val result = decoder.decode(bytes, chars, false)
-                if (result.isError) result.throwException()
+                if (result.isError) throw InvalidShareTextException()
                 carry = ByteArray(bytes.remaining()).also { bytes.get(it) }
                 output.write(buffer, 0, count)
             }
             val bytes = ByteBuffer.wrap(carry)
             val chars = CharBuffer.allocate(carry.size.coerceAtLeast(1))
             val decoded = decoder.decode(bytes, chars, true)
-            if (decoded.isError) decoded.throwException()
+            if (decoded.isError) throw InvalidShareTextException()
             val flushed = decoder.flush(chars)
-            if (flushed.isError) flushed.throwException()
+            if (flushed.isError) throw InvalidShareTextException()
         }
 
-        private fun mimeCompatible(declared: String, resolved: String, sniffed: String?, name: String): Boolean {
-            if (sniffed == null) return false
-            if (resolved != declared && !(resolved.startsWith("text/") && declared.startsWith("text/"))) return false
-            return when (resolved) {
-                "application/pdf" -> sniffed == "application/pdf" && name.endsWith(".pdf", true)
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
-                    sniffed == resolved && name.endsWith(".docx", true)
+        internal fun mimeCompatible(declared: String, resolved: String, sniffed: String?, name: String): Boolean {
+            val effective = parseableMime(resolved, name) ?: return true
+            val extension = extensionMime(name)
+            if (resolved in SUPPORTED_MIME_TYPES && extension != null && family(resolved) != family(extension)) return false
+            val declaration = normalizeMime(declared)
+            if ('*' !in declaration && declaration in SUPPORTED_MIME_TYPES && family(declaration) != family(effective)) return false
+            return when (effective) {
+                "application/pdf" -> sniffed == effective && name.endsWith(".pdf", true)
+                DOCX_MIME -> sniffed == effective && name.endsWith(".docx", true)
                 else -> sniffed == "text/plain"
             }
         }
+
+        fun isParseable(mime: String?, name: String): Boolean = parseableMime(mime, name) != null
+
+        internal fun parseableMime(mime: String?, name: String): String? =
+            mime?.let(::normalizeMime)?.takeIf { it in SUPPORTED_MIME_TYPES } ?: extensionMime(name)
+
+        private fun extensionMime(name: String): String? = when (name.substringAfterLast('.', "").lowercase()) {
+            "txt" -> "text/plain"
+            "md", "markdown" -> "text/markdown"
+            "csv" -> "text/csv"
+            "htm", "html" -> "text/html"
+            "json" -> "application/json"
+            "pdf" -> "application/pdf"
+            "docx" -> DOCX_MIME
+            else -> null
+        }
+
+        private fun family(mime: String): String = if (mime in TEXT_MIME_TYPES) "text" else mime
 
         private fun fallback(uri: Uri, mime: String) = ShareImportItem(
             uri = uri,
@@ -524,7 +558,8 @@ class SharedFileImporter(
         private const val SNIFF_BYTES = 8_192
         private const val MAX_UTF8_SEQUENCE_BYTES = 4
         private const val DOCX_SNIFF_EXPANDED_BYTES = 64L * 1024 * 1024
-        private val TEXT_MIME_TYPES = setOf(
+        internal const val DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        internal val TEXT_MIME_TYPES = setOf(
             "text/plain",
             "text/markdown",
             "text/csv",
@@ -534,4 +569,4 @@ class SharedFileImporter(
     }
 }
 
-private class ShareSourceReadException(cause: IOException) : IOException(cause)
+internal class InvalidShareTextException : ShareContentMismatchException()

@@ -74,6 +74,13 @@ object ToolExecutionTargets {
             return tuple("process", host.lowercase(Locale.ROOT), command)
         }
         val target = when (tool.function.name) {
+            "copy_knowledge_to_linux" -> runCatching {
+                val source = args.string("source")?.takeIf { it.startsWith("/mnt/") } ?: return null
+                val target = com.promenar.infinity.data.workspace.LinuxSessionPaths.normalize(args.string("target")
+                    ?: com.promenar.infinity.ui.chat.manager.skills.CopyKnowledgeToLinuxSkill.DEFAULT_TARGET)
+                JsonArray(listOf(JsonPrimitive("path"), JsonPrimitive(target), JsonObject(mapOf("source" to JsonPrimitive(source), "linuxRootfs" to JsonPrimitive(
+                    com.promenar.infinity.data.workspace.LinuxSessionPaths.route(target, false, null).kind == com.promenar.infinity.data.workspace.LinuxSessionPathKind.ROOTFS))))).toString()
+            }.getOrNull()
             "media_fetch" -> runCatching {
                 com.promenar.infinity.domain.media.MediaFetchPaths.targetPath(args.string("path")) ?: "/media"
             }.getOrNull()?.let { tuple("path", it) }
@@ -250,5 +257,5 @@ object ToolExecutionTargets {
         )))).toString()
     }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
-    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file", "media_fetch")
+    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file", "media_fetch", "copy_knowledge_to_linux")
 }

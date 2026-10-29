@@ -48,7 +48,7 @@ internal enum class BuiltinToolCategory(@StringRes val titleRes: Int) {
 internal fun builtinToolCategory(id: String): BuiltinToolCategory = when (id) {
     "web_search", "web_fetch", "browser_open", "browser_snapshot", "browser_click", "browser_type" -> BuiltinToolCategory.WEB
     "file_read", "file_list", "file_search", "file_diff", "file_write", "file_patch",
-    "create_file", "create_directory", "move_file", "delete_file" -> BuiltinToolCategory.FILES
+    "create_file", "create_directory", "move_file", "delete_file", "copy_knowledge_to_linux" -> BuiltinToolCategory.FILES
     "exec_js", "run_script", "shell_exec", "python_exec", "python_sandbox" -> BuiltinToolCategory.EXECUTION
     "image_generation", "view_media", "media_fetch" -> BuiltinToolCategory.MEDIA
     "state_define", "state_update", "state_get", "state_remove",
@@ -81,6 +81,7 @@ internal fun builtinToolIcon(id: String): ImageVector = when (id) {
     "file_patch" -> Icons.Rounded.AutoFixHigh
     "create_file" -> Icons.AutoMirrored.Rounded.NoteAdd
     "create_directory" -> Icons.Rounded.CreateNewFolder
+    "copy_knowledge_to_linux" -> Icons.Rounded.Download
     "move_file" -> Icons.AutoMirrored.Rounded.DriveFileMove
     "delete_file" -> Icons.Rounded.DeleteOutline
     "exec_js" -> Icons.Rounded.Javascript

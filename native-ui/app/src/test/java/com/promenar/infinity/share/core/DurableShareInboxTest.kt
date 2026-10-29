@@ -367,13 +367,89 @@ class DurableShareInboxTest {
         assertThat(requests.listFiles().orEmpty()).isEmpty()
     }
 
+    @Test
+    fun `任意类型持久化四种落点与Linux收据往返且不建索引`() = runTest {
+        val uri = Uri.parse("content://fixture/data.sqlite")
+        val destinations = listOf(
+            ShareImportDestination.SessionFolder("current", "current-root", true),
+            ShareImportDestination.SessionFolder("other", "other-root", false),
+            ShareImportDestination.KnowledgeFolder("knowledge", "books", "/books"),
+            ShareImportDestination.LinuxDirectory("/root"),
+        )
+        for (destination in destinations) {
+            val directory = temporary.newFolder()
+            val inbox = DurableShareInbox(directory)
+            val resolver = resolver(mapOf(uri to Fixture("data.sqlite", "application/octet-stream", byteArrayOf(0, 1, 2))))
+            assertThat(inbox.stageFresh(share(uri, "*/*"), resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+            val lease = inbox.claimNext()!!
+            inbox.recordTarget(lease.request.requestId, destination)
+            val recovered = DurableShareInbox(directory).claimNext()!!
+            assertThat(recovered.request.targetDestination).isEqualTo(destination)
+            assertThat(inbox.contentSource().preflightReason(lease.request.uris.single())).isNull()
+            if (destination is ShareImportDestination.LinuxDirectory) {
+                inbox.recordCreated(lease.request.requestId, listOf(ShareImportItem(lease.request.uris.single(), "data.sqlite",
+                    "application/octet-stream", 3, ShareImportStatus.Created, parseable = false, linuxPath = "/root/data.sqlite")))
+                val item = DurableShareInbox(directory).contentSource().preflightItem(lease.request.uris.single())!!
+                assertThat(item.linuxPath).isEqualTo("/root/data.sqlite")
+                assertThat(item.parseable).isFalse()
+                assertThat(item.indexStatus).isNull()
+                assertThat(item.fileUuid).isNull()
+            }
+        }
+    }
+
+    @Test
+    fun `异常元数据MIME逐项拒绝且不会破坏批次恢复`() = runTest {
+        val bad = Uri.parse("content://fixture/bad.bin")
+        val good = Uri.parse("content://fixture/good.sqlite")
+        for (mime in listOf("a".repeat(513), "application/x-" + 0.toChar())) {
+            val directory = temporary.newFolder()
+            val inbox = DurableShareInbox(directory)
+            val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "*/*"; putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(bad, good))
+            }
+            val resolver = resolver(mapOf(bad to Fixture("bad.bin", mime, byteArrayOf(0, 1)),
+                good to Fixture("good.sqlite", "application/octet-stream", byteArrayOf(0, 1))))
+            assertThat(inbox.stageFresh(intent, resolver)).isEqualTo(ShareEnqueueResult.Accepted)
+            val restored = DurableShareInbox(directory)
+            val lease = restored.claimNext()!!
+            assertThat(restored.contentSource().preflightReason(lease.request.uris.first())).isEqualTo(ShareRejectReason.MimeMismatch)
+            assertThat(restored.contentSource().preflightReason(lease.request.uris.last())).isNull()
+        }
+    }
+
+    @Test
+    fun `只有旧工作区字段的记录兼容并保留空落点`() = runTest {
+        val uri = Uri.parse("content://fixture/book.epub")
+        val directory = temporary.newFolder()
+        val inbox = DurableShareInbox(directory)
+        inbox.stageFresh(share(uri, "application/epub+zip"), resolver(mapOf(uri to Fixture("book.epub", "application/epub+zip", byteArrayOf(0, 1)))))
+        val lease = inbox.claimNext()!!
+        inbox.recordTarget(lease.request.requestId, "legacy-root")
+        val request = DurableShareInbox(directory).claimNext()!!.request
+        assertThat(request.targetWorkspaceRootUuid).isEqualTo("legacy-root")
+        assertThat(request.targetDestination).isNull()
+    }
+
+    @Test
+    fun `通配声明仍校验可解析扩展名与完整文本NUL`() = runTest {
+        for ((name, bytes) in listOf("报告.pdf" to "not a pdf".toByteArray(),
+            "data.docx" to byteArrayOf(1, 2), "long.txt" to ("a".repeat(9000).toByteArray() + byteArrayOf(0)))) {
+            val uri = Uri.parse("content://fixture/$name")
+            val inbox = DurableShareInbox(temporary.newFolder())
+            inbox.stageFresh(share(uri, "*/*"), resolver(mapOf(uri to Fixture(name, "application/octet-stream", bytes))))
+            val lease = inbox.claimNext()!!
+            assertThat(inbox.contentSource().preflightReason(lease.request.uris.single())).isEqualTo(ShareRejectReason.MimeMismatch)
+        }
+    }
+
     private fun resolver(fixtures: Map<Uri, Fixture>, onOpen: () -> Unit = {}): ContentResolver {
         val resolver = mockk<ContentResolver>()
         every { resolver.getType(any()) } answers { fixtures[firstArg()]?.mime }
         every { resolver.query(any(), any(), null, null, null) } answers {
             val fixture = checkNotNull(fixtures[firstArg()])
             MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)).apply {
-                addRow(arrayOf(fixture.name, fixture.reportedSize))
+                addRow(arrayOf<Any?>(fixture.name, fixture.reportedSize))
             }
         }
         every { resolver.openInputStream(any()) } answers {
