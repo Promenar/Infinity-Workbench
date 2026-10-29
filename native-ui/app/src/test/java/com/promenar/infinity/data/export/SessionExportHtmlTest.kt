@@ -10,6 +10,28 @@ class SessionExportHtmlTest {
     private fun doc(body: String, attachments: List<ExportAttachment> = emptyList()) = ExportDocument("标题", "model", 1, 2,
         listOf(ExportMessage("ASSISTANT", 1, "actual-model", body, attachments = attachments)))
 
+    @Test fun `展示格式消息头用你和智能体名及模型显示名而不是原始角色与模型ID`() {
+        val document = ExportDocument("标题", "default::qwen-flash", 1, 2, listOf(
+            ExportMessage("USER", 1, "default::qwen-flash", "你好"),
+            ExportMessage("ASSISTANT", 2, "default::qwen-flash", "嗨"),
+            ExportMessage("ASSISTANT", 3, "other::unknown-model", "再见"),
+        ), agentName = "Misty", modelNames = mapOf("default::qwen-flash" to "Qwen Flash"))
+        val html = ExportHtmlRenderer(assets) { ExportLabels(user = "You", model = "Model", exportedAt = "Exported", htmlLang = "en") }
+            .render(document, SessionExportFormat.HTML, true)
+        assertTrue(html.contains("<html lang=\"en\">"))
+        assertTrue(html.contains("Model：Qwen Flash"))
+        assertTrue(html.contains(">You · ${exportTimestamp(1)}</h2>"))
+        assertTrue(html.contains(">Misty · ${exportTimestamp(2)} · Qwen Flash</h2>"))
+        assertTrue(html.contains(">Misty · ${exportTimestamp(3)} · unknown-model</h2>"))
+        assertFalse(html.contains("ASSISTANT"))
+        assertFalse(html.contains("default::"))
+    }
+
+    @Test fun `没有智能体名时回退为助手文案`() {
+        val heading = exportPresentationHeading(ExportMessage("ASSISTANT", 1, null, "x"), ExportDocument("t", "", 1, 2, emptyList()), ExportLabels())
+        assertEquals("助手 · ${exportTimestamp(1)}", heading)
+    }
+
     @Test fun `普通HTML不加载富内容脚本且原始HTML及危险链接不可执行`() {
         val html = ExportHtmlRenderer(assets).render(doc("<script>alert(1)</script>\n<img src=x onerror=alert(2)>\n\n[危险](javascript:alert(3))\n\n![网络图片](https://invalid.example/a.png)"), SessionExportFormat.HTML, true)
         assertTrue(html.contains("&lt;script&gt;"))

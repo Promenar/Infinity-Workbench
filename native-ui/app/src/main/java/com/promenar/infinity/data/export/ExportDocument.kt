@@ -18,6 +18,24 @@ internal data class ExportDocument(
     val createdAt: Long,
     val exportedAt: Long,
     val messages: List<ExportMessage>,
+    /** 以下两项只用于网页、PDF、图片等展示格式；Markdown 与纯文本保持可回传的原始标记。 */
+    val agentName: String? = null,
+    val modelNames: Map<String, String> = emptyMap(),
+)
+
+/** 展示格式的界面文案，跟随应用语言；默认值供测试与无 Context 场景使用。 */
+internal data class ExportLabels(
+    val user: String = "你",
+    val assistant: String = "助手",
+    val tool: String = "工具",
+    val model: String = "模型",
+    val exportedAt: String = "导出时间",
+    val thinking: String = "思考过程",
+    val attachments: String = "附件",
+    val noMessages: String = "（没有消息）",
+    val unreadable: String = "（不可读取）",
+    val imageAlt: String = "附件图片",
+    val htmlLang: String = "zh-CN",
 )
 
 internal data class ExportMessage(
@@ -179,6 +197,17 @@ internal fun exportBaseName(title: String, time: Long): String =
         SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date(time))
 internal fun exportHeading(message: ExportMessage): String = "${message.role} · ${exportTimestamp(message.timestamp)}" +
     (message.model?.takeIf { it.isNotBlank() }?.let { " · Model: $it" } ?: "")
+/** 展示格式的消息头：角色用“你/智能体名”，模型用显示名，找不到时去掉提供商前缀。 */
+internal fun exportPresentationHeading(message: ExportMessage, doc: ExportDocument, labels: ExportLabels): String {
+    val who = when (message.role) {
+        "USER" -> labels.user
+        "TOOL" -> labels.tool
+        else -> doc.agentName?.takeIf { it.isNotBlank() } ?: labels.assistant
+    }
+    val model = message.model?.takeIf { it.isNotBlank() && message.role != "USER" }?.let { exportModelName(it, doc) }
+    return listOfNotNull(who, exportTimestamp(message.timestamp), model).joinToString(" · ")
+}
+internal fun exportModelName(modelId: String, doc: ExportDocument): String = doc.modelNames[modelId] ?: modelId.substringAfter("::")
 internal fun escapeExportHtml(text: String): String = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     .replace("\"", "&quot;").replace("'", "&#39;")
 

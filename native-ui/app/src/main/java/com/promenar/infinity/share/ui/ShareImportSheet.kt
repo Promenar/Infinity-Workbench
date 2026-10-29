@@ -207,25 +207,29 @@ internal fun ColumnScope.ShareImportSheetContent(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = InfinitySpacing.Small),
             )
         }
+        // 全部导入成功后请求已确认，“稍后处理 / 取消导入”不再有意义，只留“完成”。
+        val finished = shareImportFinished(state)
         Spacer(Modifier.height(InfinitySpacing.Medium))
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small, Alignment.End),
             verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
         ) {
-            TextButton(
-                onClick = onClose,
-                enabled = !state.importing,
-                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_LATER).height(48.dp),
-            ) {
-                Text(stringResource(R.string.share_import_later))
-            }
-            TextButton(
-                onClick = onRequestCancel,
-                enabled = !state.importing,
-                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL).height(48.dp),
-            ) {
-                Text(stringResource(R.string.share_import_cancel))
+            if (!finished) {
+                TextButton(
+                    onClick = onClose,
+                    enabled = !state.importing,
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_LATER).height(48.dp),
+                ) {
+                    Text(stringResource(R.string.share_import_later))
+                }
+                TextButton(
+                    onClick = onRequestCancel,
+                    enabled = !state.importing,
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL).height(48.dp),
+                ) {
+                    Text(stringResource(R.string.share_import_cancel))
+                }
             }
             if (state.error != null ||
                 state.items.any { it.status == ShareImportStatus.Rejected && it.reason?.retryable == true } ||
@@ -244,16 +248,23 @@ internal fun ColumnScope.ShareImportSheetContent(
                     modifier = Modifier.height(48.dp),
                 ) { Text(stringResource(R.string.share_import_retry)) }
             }
-            Button(
-                onClick = onImport,
-                enabled = !state.importing && state.canImportTo &&
-                    state.items.any { it.status == ShareImportStatus.Pending },
-                modifier = Modifier.testTag(UiTags.SHARE_IMPORT_ACTION).height(48.dp),
-            ) {
-                Text(
-                    if (state.importing) stringResource(R.string.share_import_importing)
-                    else stringResource(R.string.share_import_action)
-                )
+            if (finished) {
+                Button(
+                    onClick = onClose,
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_DONE).height(48.dp),
+                ) { Text(stringResource(R.string.share_import_done)) }
+            } else {
+                Button(
+                    onClick = onImport,
+                    enabled = !state.importing && state.canImportTo &&
+                        state.items.any { it.status == ShareImportStatus.Pending },
+                    modifier = Modifier.testTag(UiTags.SHARE_IMPORT_ACTION).height(48.dp),
+                ) {
+                    Text(
+                        if (state.importing) stringResource(R.string.share_import_importing)
+                        else stringResource(R.string.share_import_action)
+                    )
+                }
             }
         }
     }
@@ -732,3 +743,7 @@ private fun formatShareBytes(bytes: Long): String = when {
     bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
     else -> "$bytes B"
 }
+
+internal fun shareImportFinished(state: ShareImportUiState): Boolean =
+    !state.importing && state.error == null && state.items.isNotEmpty() &&
+        state.items.all { it.status == ShareImportStatus.Created }

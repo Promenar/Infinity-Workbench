@@ -204,6 +204,7 @@
     <string name="share_import_retry">重试失败项</string>
     <string name="share_import_importing">正在导入…</string>
     <string name="share_import_action">导入</string>
+    <string name="share_import_done">完成</string>
     <string name="share_import_status_pending">可导入</string>
     <string name="share_import_status_importing">导入中</string>
     <string name="share_import_status_created">已导入</string>

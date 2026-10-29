@@ -38,32 +38,37 @@ internal class ExportAssets(private val read: (String) -> ByteArray) {
 }
 
 /** 所有会话内容经 Markdown AST 或文本转义；只有捆绑的渲染器代码可执行。 */
-internal class ExportHtmlRenderer(private val assets: ExportAssets) {
+internal class ExportHtmlRenderer(private val assets: ExportAssets, private val labels: () -> ExportLabels = { ExportLabels() }) {
     fun render(doc: ExportDocument, format: SessionExportFormat, includeAttachments: Boolean): String {
         val libraries = linkedSetOf<String>()
+        val labels = labels()
         val snapshot = format == SessionExportFormat.PDF || format == SessionExportFormat.PNG
         val showImages = snapshot || includeAttachments
-        fun markdown(text: String, attachments: List<ExportAttachment>): String = markdownHtml(text, libraries, attachments, showImages)
+        fun markdown(text: String, attachments: List<ExportAttachment>): String = markdownHtml(text, libraries, attachments, showImages, labels.imageAlt)
         val body = buildString {
             append("<header class=\"document-head\"><h1>${escapeExportHtml(doc.title)}</h1>")
-            append("<p>Model: ${escapeExportHtml(doc.model)} · 导出时间：${exportTimestamp(doc.exportedAt)}</p></header>")
-            if (doc.messages.isEmpty()) append("<p>(No messages)</p>")
+            val meta = listOfNotNull(
+                doc.model.takeIf { it.isNotBlank() }?.let { "${labels.model}：${exportModelName(it, doc)}" },
+                "${labels.exportedAt}：${exportTimestamp(doc.exportedAt)}",
+            ).joinToString(" · ")
+            append("<p>${escapeExportHtml(meta)}</p></header>")
+            if (doc.messages.isEmpty()) append("<p>${escapeExportHtml(labels.noMessages)}</p>")
             doc.messages.forEach { message ->
                 append("<article class=\"message ${if (message.role == "USER") "user" else "assistant"}\">")
-                append("<h2 class=\"message-head\">${escapeExportHtml(exportHeading(message))}</h2>")
+                append("<h2 class=\"message-head\">${escapeExportHtml(exportPresentationHeading(message, doc, labels))}</h2>")
                 message.thinking?.let {
-                    append("<details class=\"thinking\"${if (snapshot) " open" else ""}><summary>思考过程</summary>${markdown(it, message.attachments)}</details>")
+                    append("<details class=\"thinking\"${if (snapshot) " open" else ""}><summary>${escapeExportHtml(labels.thinking)}</summary>${markdown(it, message.attachments)}</details>")
                 }
                 append("<div class=\"body\">${markdown(message.body, message.attachments)}</div>")
                 message.tools.forEach { tool -> append("<p class=\"tool\">${escapeExportHtml("${tool.name} · ${tool.status} · ${tool.summary}")}</p>") }
                 if (!showImages && message.attachments.isNotEmpty()) {
-                    append("<p class=\"attachments\">附件：${escapeExportHtml(message.attachments.joinToString("、") { it.name })}</p>")
+                    append("<p class=\"attachments\">${escapeExportHtml(labels.attachments)}：${escapeExportHtml(message.attachments.joinToString("、") { it.name })}</p>")
                 } else message.attachments.forEach { attachment ->
                     val name = escapeExportHtml(attachment.name)
                     when {
                         attachment.isImage && attachment.dataUri != null -> append("<figure><img src=\"${escapeExportHtml(attachment.dataUri)}\" alt=\"$name\"><figcaption>$name</figcaption></figure>")
                         attachment.text != null && !snapshot -> append("<details class=\"attachment\"><summary>$name (${escapeExportHtml(attachment.mimeType)})</summary><pre><code>${escapeExportHtml(attachment.text)}</code></pre></details>")
-                        else -> append("<p class=\"attachments\">附件：$name${if (attachment.isImage && attachment.dataUri == null) "（不可读取）" else ""}</p>")
+                        else -> append("<p class=\"attachments\">${escapeExportHtml(labels.attachments)}：$name${if (attachment.isImage && attachment.dataUri == null) escapeExportHtml(labels.unreadable) else ""}</p>")
                     }
                 }
                 append("</article>")
@@ -73,7 +78,7 @@ internal class ExportHtmlRenderer(private val assets: ExportAssets) {
         fun script(code: String, library: String? = null): String = "<script nonce=\"$nonce\"${library?.let { " data-export-library=\"$it\"" }.orEmpty()}>" +
             code.replace(Regex("</script", RegexOption.IGNORE_CASE), "<\\/script") + "</script>"
         return buildString {
-            append("<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
+            append("<!DOCTYPE html><html lang=\"${escapeExportHtml(labels.htmlLang)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
             append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'nonce-$nonce'; connect-src 'none'; base-uri 'none'; form-action 'none'\">")
             append("<title>${escapeExportHtml(doc.title)}</title><style>$exportCss</style>")
             if ("katex" in libraries) append("<style>${assets.mathCss()}</style>")
@@ -84,7 +89,7 @@ internal class ExportHtmlRenderer(private val assets: ExportAssets) {
         }
     }
 
-    private fun markdownHtml(text: String, libraries: MutableSet<String>, attachments: List<ExportAttachment>, showImages: Boolean): String {
+    private fun markdownHtml(text: String, libraries: MutableSet<String>, attachments: List<ExportAttachment>, showImages: Boolean, imageAlt: String): String {
         val fragments = linkedMapOf<String, String>()
         val prefix = "IWEXPORT${UUID.randomUUID().toString().replace("-", "")}TOKEN"
         fun fragment(html: String): String = (prefix + fragments.size + "END").also { fragments[it] = html }
@@ -147,7 +152,7 @@ internal class ExportHtmlRenderer(private val assets: ExportAssets) {
                         val destination = find(node, Elements.LINK_DESTINATION)?.let { text.substring(it.startOffset, it.endOffset).trim('<', '>') }
                         val resolved = attachments.find { it.source == destination || it.name == destination }?.dataUri
                             ?: destination?.takeIf(::isExportImageDataUri)
-                        if (showImages && resolved != null) visitor.consumeHtml("<img src=\"${escapeExportHtml(resolved)}\" alt=\"附件图片\">")
+                        if (showImages && resolved != null) visitor.consumeHtml("<img src=\"${escapeExportHtml(resolved)}\" alt=\"${escapeExportHtml(imageAlt)}\">")
                         else visitor.consumeHtml(escapeExportHtml(text.substring(node.startOffset, node.endOffset)))
                     }
                 }

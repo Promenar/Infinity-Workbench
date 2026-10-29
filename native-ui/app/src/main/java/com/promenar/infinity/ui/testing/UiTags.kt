@@ -118,6 +118,7 @@ object UiTags {
     const val SHARE_IMPORT_LATER = "share_import_later"
     const val SHARE_IMPORT_CANCEL = "share_import_cancel"
     const val SHARE_IMPORT_ACTION = "share_import_action"
+    const val SHARE_IMPORT_DONE = "share_import_done"
 
     // ============ Agent Hub ==========
     const val HUB_ROOT = "hub_root"

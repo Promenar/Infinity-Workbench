@@ -504,7 +504,11 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
     }
 
     val sessionExporter: com.promenar.infinity.domain.export.SessionExporter by lazy {
-        com.promenar.infinity.data.export.DefaultSessionExporter(this, messageRepository, sessionRepository, workspaceMediaResolver)
+        com.promenar.infinity.data.export.DefaultSessionExporter(
+            this, messageRepository, sessionRepository, workspaceMediaResolver,
+            agentName = { agentId -> agentRepository.getById(agentId)?.name },
+            modelName = { modelId -> ProviderManager.getInstance().providerModels.value.firstOrNull { it.id == modelId }?.name },
+        )
     }
 
     val chatStore: ChatStore by lazy { ChatStore() }

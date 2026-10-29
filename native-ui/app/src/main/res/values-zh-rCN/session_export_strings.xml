@@ -23,6 +23,7 @@
     <string name="session_export_tools_desc">只列工具名和结果摘要；命令输出可能含路径或密钥，不会导出</string>
     <string name="session_export_attachments">附件</string>
     <string name="session_export_attachments_desc_text">文本附件内联；图片和其它文件打包为同名 .zip</string>
+    <string name="session_export_attachments_desc_snapshot">图片直接画进页面，其它文件只列文件名</string>
     <string name="session_export_attachments_desc_html">图片内嵌在网页里；其它文件打包为同名 .zip</string>
 
     <!-- 预计输出 -->
@@ -46,7 +47,7 @@
     <string name="session_export_footer_markdown">“分享”打开系统分享面板，可直接发到其它应用。</string>
     <string name="session_export_footer_txt">纯文本不保留格式和图片。</string>
     <string name="session_export_footer_html">用浏览器打开，代码块和图表保持原样。</string>
-    <string name="session_export_footer_pdf">PDF 中图片内嵌，其它附件只列文件名。</string>
+    <string name="session_export_footer_pdf">按 A4 竖版分页，适合打印和归档。</string>
     <string name="session_export_footer_png">长对话会切成多张图片，按编号顺序分享。</string>
 
     <!-- 操作与结果 -->
@@ -62,4 +63,13 @@
     <string name="session_export_failed">导出失败</string>
     <string name="session_export_save_failed">保存失败</string>
     <string name="session_export_no_target">没有可以接收导出文件的应用</string>
+    <string name="session_export_label_user">你</string>
+    <string name="session_export_label_assistant">助手</string>
+    <string name="session_export_label_tool">工具</string>
+    <string name="session_export_label_model">模型</string>
+    <string name="session_export_label_exported_at">导出时间</string>
+    <string name="session_export_label_no_messages">（没有消息）</string>
+    <string name="session_export_label_unreadable">（不可读取）</string>
+    <string name="session_export_label_image_alt">附件图片</string>
+    <string name="session_export_html_lang">zh-CN</string>
 </resources>

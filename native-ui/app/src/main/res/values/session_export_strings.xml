@@ -24,6 +24,7 @@
     <string name="session_export_tools_desc">Only tool names and result summaries; command output may contain paths or keys and is never exported</string>
     <string name="session_export_attachments">Attachments</string>
     <string name="session_export_attachments_desc_text">Text attachments inline; images and other files go into a .zip with the same name</string>
+    <string name="session_export_attachments_desc_snapshot">Images are drawn into the pages; other files are listed by name</string>
     <string name="session_export_attachments_desc_html">Images embedded in the page; other files go into a .zip with the same name</string>
 
     <!-- 预计输出 -->
@@ -50,7 +51,7 @@
     <string name="session_export_footer_markdown">Share opens the system share sheet so you can send it straight to another app.</string>
     <string name="session_export_footer_txt">Plain text keeps no formatting or images.</string>
     <string name="session_export_footer_html">Open it in a browser; code blocks and charts stay as they are.</string>
-    <string name="session_export_footer_pdf">Images are embedded in the PDF; other attachments are listed by name.</string>
+    <string name="session_export_footer_pdf">Paginated as A4 portrait, for printing and archiving.</string>
     <string name="session_export_footer_png">Long chats are split into several images, shared in order.</string>
 
     <!-- 操作与结果 -->
@@ -67,4 +68,13 @@
     <string name="session_export_failed">Export failed</string>
     <string name="session_export_save_failed">Couldn\'t save the export</string>
     <string name="session_export_no_target">No app can receive this export</string>
+    <string name="session_export_label_user">You</string>
+    <string name="session_export_label_assistant">Assistant</string>
+    <string name="session_export_label_tool">Tool</string>
+    <string name="session_export_label_model">Model</string>
+    <string name="session_export_label_exported_at">Exported</string>
+    <string name="session_export_label_no_messages">(No messages)</string>
+    <string name="session_export_label_unreadable"> (unreadable)</string>
+    <string name="session_export_label_image_alt">Attached image</string>
+    <string name="session_export_html_lang">en</string>
 </resources>

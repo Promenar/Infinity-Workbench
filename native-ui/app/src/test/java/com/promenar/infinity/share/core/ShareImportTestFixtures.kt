@@ -33,12 +33,25 @@ internal class ShareWorkspaceFixture(private val base: File) {
             val id = firstArg<String>()
             val path = arg<String>(5)
             val file = File(root(id).physicalRootPath, path.removePrefix("/"))
-            val output = java.io.ByteArrayOutputStream()
-            arg<(java.io.OutputStream) -> Unit>(7)(output)
-            if (output.size() > arg<Long>(6)) throw com.promenar.infinity.data.repository.WorkspaceFileTooLargeException(arg(6))
-            file.writeBytes(output.toByteArray())
+            // 直接流式落盘并边写边算哈希，避免 100MiB 级用例把整份内容攒在堆里。
+            val limit = arg<Long>(6)
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            try {
+                file.outputStream().use { disk ->
+                    var count = 0L
+                    arg<(java.io.OutputStream) -> Unit>(7)(object : java.io.OutputStream() {
+                        override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+                        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                            count += length
+                            if (count > limit) throw com.promenar.infinity.data.repository.WorkspaceFileTooLargeException(limit)
+                            disk.write(bytes, offset, length)
+                            digest.update(bytes, offset, length)
+                        }
+                    })
+                }
+            } catch (failure: Throwable) { file.delete(); throw failure }
             root(id).copy(uuid = arg(1), name = arg(2), mimeType = arg(3), parentUuid = arg(4), isDirectory = false,
-                materializedPath = path, sizeBytes = file.length(), hash = sha(file.readBytes())).also { entries[id to path] = it }
+                materializedPath = path, sizeBytes = file.length(), hash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }).also { entries[id to path] = it }
         }
         coEvery { repo.createDirectoryInWorkspace(any(), any(), any(), any(), any()) } answers {
             val id = firstArg<String>()

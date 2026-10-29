@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.export
 
 import android.content.Context
+import com.promenar.infinity.R
 import com.promenar.infinity.data.repository.IMessageRepository
 import com.promenar.infinity.data.repository.ISessionRepository
 import com.promenar.infinity.domain.export.*
@@ -15,10 +16,27 @@ class DefaultSessionExporter(
     private val messages: IMessageRepository,
     private val sessions: ISessionRepository,
     mediaResolver: WorkspaceMediaResolver,
+    /** 展示格式消息头用的智能体名与模型显示名；查不到时分别回退为“助手”与去掉提供商前缀的模型 ID。 */
+    private val agentName: suspend (agentId: String) -> String? = { null },
+    private val modelName: (modelId: String) -> String? = { null },
 ) : SessionExporter {
     private val context = context.applicationContext
     private val attachments = ExportAttachments(this.context, mediaResolver)
-    private val html = ExportHtmlRenderer(ExportAssets { this.context.assets.open(it).use { input -> input.readBytes() } })
+    private val html = ExportHtmlRenderer(ExportAssets { this.context.assets.open(it).use { input -> input.readBytes() } }) { labels() }
+
+    private fun labels() = ExportLabels(
+        user = context.getString(R.string.session_export_label_user),
+        assistant = context.getString(R.string.session_export_label_assistant),
+        tool = context.getString(R.string.session_export_label_tool),
+        model = context.getString(R.string.session_export_label_model),
+        exportedAt = context.getString(R.string.session_export_label_exported_at),
+        thinking = context.getString(R.string.session_export_thinking),
+        attachments = context.getString(R.string.session_export_attachments),
+        noMessages = context.getString(R.string.session_export_label_no_messages),
+        unreadable = context.getString(R.string.session_export_label_unreadable),
+        imageAlt = context.getString(R.string.session_export_label_image_alt),
+        htmlLang = context.getString(R.string.session_export_html_lang),
+    )
     private val root get() = File(context.cacheDir, "session-export")
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -73,7 +91,12 @@ class DefaultSessionExporter(
     private suspend fun document(sessionId: String, options: SessionExportOptions): ExportDocument {
         val session = sessions.getById(sessionId) ?: throw NoSuchElementException("会话不存在：$sessionId")
         currentCoroutineContext().ensureActive()
-        return ExportDocumentBuilder.build(session, messages.getBySession(sessionId), options, System.currentTimeMillis())
+        val doc = ExportDocumentBuilder.build(session, messages.getBySession(sessionId), options, System.currentTimeMillis())
+        val modelIds = (listOf(doc.model) + doc.messages.mapNotNull { it.model }).filter { it.isNotBlank() }.toSet()
+        return doc.copy(
+            agentName = runCatching { agentName(session.agentId) }.getOrNull(),
+            modelNames = modelIds.mapNotNull { id -> modelName(id)?.takeIf { it.isNotBlank() }?.let { id to it } }.toMap(),
+        )
     }
 
     override fun release(result: SessionExportResult) {

@@ -11,6 +11,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.promenar.infinity.share.core.ShareImportItem
 import com.promenar.infinity.share.core.ShareImportOptions
+import com.promenar.infinity.share.core.ShareImportStatus
 import com.promenar.infinity.share.core.ShareKnowledgeFolder
 import com.promenar.infinity.share.core.ShareLinuxAvailability
 import com.promenar.infinity.share.core.ShareSessionChoice
@@ -48,6 +49,8 @@ private val KnowledgeState = ShareImportUiState(
     knowledgeFolder = ShareKnowledgeFolder("kb-finance", "财务", "/资料/财务"),
 )
 
+private val DoneState = LinuxState.copy(items = Items.map { it.copy(status = ShareImportStatus.Created) })
+
 @Composable
 private fun Sheet(mode: InfinityThemeMode, state: ShareImportUiState) {
     InfinityTheme(preferences = InfinityThemePreferences(mode = mode, colorSource = InfinityColorSource.INFINITY)) {
@@ -79,3 +82,8 @@ fun shareImportLinuxPreview() = Sheet(InfinityThemeMode.DARK, LinuxState)
 @Preview(name = "分享导入 资料库 浅英360 大字", widthDp = 360, heightDp = 1200, locale = "en", fontScale = 1.3f)
 @Composable
 fun shareImportKnowledgePreview() = Sheet(InfinityThemeMode.LIGHT, KnowledgeState)
+
+@PreviewTest
+@Preview(name = "分享导入 完成 深中411", widthDp = 411, heightDp = 900, locale = "zh-rCN")
+@Composable
+fun shareImportDonePreview() = Sheet(InfinityThemeMode.DARK, DoneState)

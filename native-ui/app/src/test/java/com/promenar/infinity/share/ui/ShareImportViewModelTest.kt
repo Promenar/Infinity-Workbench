@@ -473,4 +473,17 @@ class ShareImportViewModelTest {
         const val FILE = "11111111-1111-1111-1111-111111111111"
         const val TASK = "doc-ref-fixture"
     }
+
+    @Test
+    fun `全部条目导入成功且无错误时面板进入完成态`() {
+        val uri = Uri.parse("content://fixture/done.txt")
+        val created = ShareImportItem(uri, "done.txt", "text/plain", 4, status = ShareImportStatus.Created)
+        val pending = created.copy(status = ShareImportStatus.Pending)
+        val rejected = created.copy(status = ShareImportStatus.Rejected)
+        assertThat(shareImportFinished(ShareImportUiState(items = listOf(created)))).isTrue()
+        assertThat(shareImportFinished(ShareImportUiState(items = listOf(created, pending)))).isFalse()
+        assertThat(shareImportFinished(ShareImportUiState(items = listOf(created, rejected)))).isFalse()
+        assertThat(shareImportFinished(ShareImportUiState(items = listOf(created), importing = true))).isFalse()
+        assertThat(shareImportFinished(ShareImportUiState())).isFalse()
+    }
 }

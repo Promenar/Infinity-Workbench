@@ -210,6 +210,7 @@
     <string name="share_import_retry">Retry failed</string>
     <string name="share_import_importing">Importing…</string>
     <string name="share_import_action">Import</string>
+    <string name="share_import_done">Done</string>
     <string name="share_import_status_pending">Ready</string>
     <string name="share_import_status_importing">Importing</string>
     <string name="share_import_status_created">Imported</string>

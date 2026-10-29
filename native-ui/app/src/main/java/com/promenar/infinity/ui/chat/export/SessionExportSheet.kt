@@ -27,6 +27,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -196,20 +197,23 @@ fun SessionExportSheetContent(
             tag = SessionExportTags.TOOLS,
             onChange = { actions.onOptions(state.options.copy(includeToolCalls = it)) },
         )
-        if (state.format.supportsAttachments) {
-            IncludeToggle(
-                title = stringResource(R.string.session_export_attachments),
-                description = stringResource(
-                    if (state.format == SessionExportFormat.HTML) R.string.session_export_attachments_desc_html
-                    else R.string.session_export_attachments_desc_text,
-                ),
-                icon = Icons.Rounded.AttachFile,
-                checked = state.options.includeAttachments,
-                enabled = !busy,
-                tag = SessionExportTags.ATTACHMENTS,
-                onChange = { actions.onOptions(state.options.copy(includeAttachments = it)) },
-            )
-        }
+        // PDF 与图片固定把图片画进页面，开关只读但保留这一行，切换格式时面板高度不跳。
+        val attachmentsConfigurable = state.format.supportsAttachments
+        IncludeToggle(
+            title = stringResource(R.string.session_export_attachments),
+            description = stringResource(
+                when (state.format) {
+                    SessionExportFormat.HTML -> R.string.session_export_attachments_desc_html
+                    SessionExportFormat.PDF, SessionExportFormat.PNG -> R.string.session_export_attachments_desc_snapshot
+                    else -> R.string.session_export_attachments_desc_text
+                },
+            ),
+            icon = Icons.Rounded.AttachFile,
+            checked = if (attachmentsConfigurable) state.options.includeAttachments else true,
+            enabled = !busy && attachmentsConfigurable,
+            tag = SessionExportTags.ATTACHMENTS,
+            onChange = { actions.onOptions(state.options.copy(includeAttachments = it)) },
+        )
         Spacer(Modifier.height(InfinitySpacing.Small))
         EstimateBox(state, onCancel = actions.onCancel)
         Spacer(Modifier.height(InfinitySpacing.Large))
@@ -362,7 +366,18 @@ private fun IncludeToggle(
             }
             .testTag(tag),
     ) {
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+        // 格式锁定为“始终包含”时，默认禁用色在纯黑底上只剩一个黑点；改用淡化的主色轨道保持“已开启”可辨。
+        val colors = MaterialTheme.colorScheme
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                disabledCheckedTrackColor = colors.primary.copy(alpha = 0.32f),
+                disabledCheckedThumbColor = colors.onSurface.copy(alpha = 0.6f),
+                disabledCheckedBorderColor = Color.Transparent,
+            ),
+        )
     }
 }
 
