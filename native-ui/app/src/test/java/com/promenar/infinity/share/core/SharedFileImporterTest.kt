@@ -222,7 +222,7 @@ class SharedFileImporterTest {
 
         val result = SharedFileImporter(source, repository()).import(request(listOf(uri)), ROOT)
 
-        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.ReadFailed)
+        assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.MimeMismatch)
     }
 
     @Test
@@ -552,6 +552,96 @@ class SharedFileImporterTest {
 
         assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.PermissionDenied)
         coVerify(exactly = 0) { repository.permanentDelete(any(), any()) }
+    }
+
+    @Test
+    fun `任意二进制格式与通配声明原样保存且不排入索引`() = runTest {
+        val names = listOf("data.sqlite", "book.epub", "photo.png", "raw.bin")
+        val mimes = listOf("application/vnd.sqlite3", "application/epub+zip", "image/png", "application/octet-stream")
+        val bytes = byteArrayOf(0, 1, 0xff.toByte(), 3)
+        for (declared in listOf("*/*", "application/*", "", "application/octet-stream")) {
+            for ((name, mime) in names.zip(mimes)) {
+                val uri = Uri.parse("content://fixture/$name")
+                val scheduler = mockk<ShareIndexScheduler>()
+                val source = FakeSource(mapOf(uri to meta(name, mime, bytes.size.toLong())), mapOf(uri to bytes))
+                val importer = SharedFileImporter(source, repository(), scheduler)
+                val request = request(listOf(uri), declared)
+                val result = importer.import(request, ROOT)
+                assertThat(result.created).hasSize(1)
+                assertThat(result.created.single().parseable).isFalse()
+                assertThat(importer.inspect(request).single().parseable).isFalse()
+                assertThat(result.created.single().indexTaskId).isNull()
+                assertThat(result.created.single().indexStatus).isNull()
+                coVerify(exactly = 0) { scheduler.schedule(any(), any()) }
+            }
+        }
+    }
+
+    @Test
+    fun `未知大小二进制写入限额与目标IO失败保留逐项错误类型`() = runTest {
+        val uri = Uri.parse("content://fixture/data.sqlite")
+        val bytes = byteArrayOf(0, 1, 2)
+        val source = FakeSource(mapOf(uri to SharedContentMetadata("data.sqlite", "application/octet-stream", null)), mapOf(uri to bytes))
+        for (tooLarge in listOf(true, false)) {
+            val repo = repository()
+            coEvery { repo.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+                arg<(java.io.OutputStream) -> Unit>(7)(object : java.io.OutputStream() {
+                    override fun write(value: Int) {
+                        if (tooLarge) throw com.promenar.infinity.data.repository.WorkspaceFileTooLargeException(SharedFileImporter.MAX_ITEM_BYTES)
+                        else throw IOException("目标磁盘写入失败")
+                    }
+                })
+                throw AssertionError("写入应失败")
+            }
+            val item = SharedFileImporter(source, repo).import(request(listOf(uri), "*/*"), ROOT).rejected.single()
+            assertThat(item.reason).isEqualTo(if (tooLarge) ShareRejectReason.ItemTooLarge else ShareRejectReason.WriteFailed)
+        }
+    }
+
+    @Test
+    fun `通用元数据依扩展名识别七种格式并调度索引`() = runTest {
+        val docx = ByteArrayOutputStream().also { output ->
+            java.util.zip.ZipOutputStream(output).use { zip ->
+                for (name in listOf("[Content_Types].xml", "word/document.xml")) {
+                    zip.putNextEntry(java.util.zip.ZipEntry(name)); zip.write("<xml/>".toByteArray()); zip.closeEntry()
+                }
+            }
+        }.toByteArray()
+        val fixtures = listOf("a.TXT" to "文本".toByteArray(), "a.md" to "# 标题".toByteArray(),
+            "a.csv" to "a,b".toByteArray(), "a.html" to "<p>文本</p>".toByteArray(), "a.json" to "{}".toByteArray(),
+            "a.pdf" to "%PDF-1.7".toByteArray(), "a.docx" to docx)
+        for ((name, bytes) in fixtures) {
+            val uri = Uri.parse("content://fixture/$name")
+            val source = FakeSource(mapOf(uri to meta(name, "application/octet-stream", bytes.size.toLong())), mapOf(uri to bytes))
+            val scheduler = mockk<ShareIndexScheduler>()
+            coEvery { scheduler.schedule(any(), any()) } coAnswers { ShareIndexReceipt("task", secondArg<FileEntry>().uuid) }
+            val importer = SharedFileImporter(source, repository(), scheduler)
+            val request = request(listOf(uri), "*/*")
+            assertThat(importer.inspect(request).single().parseable).isTrue()
+            val result = importer.import(request, ROOT)
+            assertThat(result.created.single().parseable).isTrue()
+            assertThat(result.created.single().indexTaskId).isEqualTo("task")
+            coVerify(exactly = 1) { scheduler.schedule(ROOT, any()) }
+        }
+        assertThat(SharedFileImporter.isParseable(" APPLICATION/PDF; charset=x ", "any.bin")).isTrue()
+        assertThat(SharedFileImporter.isParseable("application/octet-stream", "asset.sqlite")).isFalse()
+    }
+
+    @Test
+    fun `扩展名要求内容校验且声明的不同可解析族被拒绝`() = runTest {
+        val cases = listOf(
+            Triple("report.pdf", "application/octet-stream", "*/*"),
+            Triple("report.docx", "application/octet-stream", "application/octet-stream"),
+            Triple("report.txt", "application/octet-stream", "*/*"),
+            Triple("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/pdf"),
+        )
+        for ((name, resolved, declared) in cases) {
+            val uri = Uri.parse("content://fixture/$name")
+            val bytes = byteArrayOf(0, 1, 2, 3)
+            val source = FakeSource(mapOf(uri to meta(name, resolved, 4)), mapOf(uri to bytes))
+            val result = SharedFileImporter(source, repository()).import(request(listOf(uri), declared), ROOT)
+            assertThat(result.rejected.single().reason).isEqualTo(ShareRejectReason.MimeMismatch)
+        }
     }
 
     private fun repository(

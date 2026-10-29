@@ -41,6 +41,9 @@ import com.promenar.infinity.share.core.ShareImportTargetProvider
 import com.promenar.infinity.share.core.SharedFileImporter
 import com.promenar.infinity.share.ui.ShareImportSheet
 import com.promenar.infinity.share.ui.ShareImportViewModel
+import com.promenar.infinity.share.ui.ShareImportPickerActions
+import com.promenar.infinity.share.ui.ShareImportTargetSource
+import com.promenar.infinity.share.core.ShareImportOptions
 import com.promenar.infinity.share.ui.SharePendingBanner
 import com.promenar.infinity.ui.startup.StartupGate
 import com.promenar.infinity.ui.theme.InfinityTheme
@@ -88,7 +91,8 @@ open class MainActivity : ComponentActivity() {
         ShareImportTargetProvider(
             app.database.sessionDao(),
             app.workspaceRepository,
-            app.globalKnowledgeWorkspaceProvisioner::ensureRoot,
+            ensureKnowledgeRoot = app.globalKnowledgeWorkspaceProvisioner::ensureRoot,
+            linuxRuntime = app.linux.runtime,
         )
     }
     private val sharedFileImporter by lazy {
@@ -97,22 +101,26 @@ open class MainActivity : ComponentActivity() {
             source = durableShareInbox.contentSource(),
             workspace = app.workspaceRepository,
             indexScheduler = AndroidShareIndexScheduler(app),
+            linuxFiles = app.linux.files,
+            linuxReady = { app.linux.runtime.state.value is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready },
         )
     }
     private val shareImportViewModel by viewModels<ShareImportViewModel> {
         ShareImportViewModel.factory(
             queue = shareIntentQueue,
             importer = sharedFileImporter,
-            targetProvider = {
-                val session = currentSessionId?.let { appSessionId ->
-                    (application as InfinityApplication).chatStore.current.sessions
-                        .firstOrNull { it.id == appSessionId }
+            targets = object : ShareImportTargetSource {
+                override suspend fun options(): ShareImportOptions {
+                    val session = currentSessionId?.let { appSessionId ->
+                        (application as InfinityApplication).chatStore.current.sessions
+                            .firstOrNull { it.id == appSessionId }
+                    }
+                    return shareTargetProvider.options(currentSessionId, session?.title)
                 }
-                shareTargetProvider.load(
-                    currentSessionId = currentSessionId,
-                    currentSessionTitle = session?.title,
-                    knowledgeBaseLabel = getString(R.string.share_import_knowledge_base),
-                )
+                override suspend fun sessions(excludeSessionId: String?) = shareTargetProvider.sessions(excludeSessionId)
+                override suspend fun knowledgeFolders(parentUuid: String) = shareTargetProvider.knowledgeFolders(parentUuid)
+                override suspend fun sessionDestination(sessionId: String, current: Boolean) =
+                    shareTargetProvider.sessionDestination(sessionId, current)
             },
             indexQueueState = (application as InfinityApplication).vectorizationQueueState,
             retryIndex = { root, fileUuid ->
@@ -257,6 +265,22 @@ open class MainActivity : ComponentActivity() {
                             onRetry = shareImportViewModel::retryLastFailure,
                             onClose = { shareImportViewModel.postpone() },
                             onCancel = shareImportViewModel::cancelConfirmed,
+                            pickers = ShareImportPickerActions(
+                                onOpenSessionPicker = shareImportViewModel::openSessionPicker,
+                                onPickSession = shareImportViewModel::pickSession,
+                                onDismissSessionPicker = shareImportViewModel::dismissSessionPicker,
+                                onOpenFolderPicker = shareImportViewModel::openFolderPicker,
+                                onEnterFolder = shareImportViewModel::enterFolder,
+                                onFolderUp = shareImportViewModel::folderUp,
+                                onConfirmFolder = shareImportViewModel::confirmFolder,
+                                onDismissFolderPicker = shareImportViewModel::dismissFolderPicker,
+                                onPickLinuxDirectory = shareImportViewModel::pickLinuxDirectory,
+                                // 先把这次分享留到稍后处理，再去安装 Linux；装好后从待处理横幅回来。
+                                onInstallLinux = {
+                                    shareImportViewModel.postpone()
+                                    navController.navigate(NavDestinations.LINUX_ENVIRONMENT) { launchSingleTop = true }
+                                },
+                            ),
                         )
                         com.promenar.infinity.ui.ssh.SshUserPromptHost(app.sshUserPrompts)
                         SharePendingBanner(

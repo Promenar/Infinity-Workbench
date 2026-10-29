@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.promenar.infinity.share.core.DurableShareInbox
 import com.promenar.infinity.share.core.ShareImportItem
+import com.promenar.infinity.share.core.ShareImportDestination
 import kotlinx.coroutines.flow.StateFlow
 
 enum class ShareEnqueueResult {
@@ -44,6 +45,7 @@ class ShareRequest internal constructor(
     internal val canonicalSizeBytes: Int,
     val requestId: String,
     val targetWorkspaceRootUuid: String? = null,
+    val targetDestination: ShareImportDestination? = null,
 )
 
 class ShareLease internal constructor(
@@ -95,6 +97,10 @@ class ShareIntentQueue(
 
     suspend fun recordTargetDurably(requestId: String, workspaceRootUuid: String) {
         durableInbox.recordTarget(requestId, workspaceRootUuid)
+    }
+
+    suspend fun recordTargetDurably(requestId: String, destination: ShareImportDestination) {
+        durableInbox.recordTarget(requestId, destination)
     }
 
     suspend fun refreshDurableCount() = durableInbox.refresh()

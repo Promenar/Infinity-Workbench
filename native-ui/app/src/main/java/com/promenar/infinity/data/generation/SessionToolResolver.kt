@@ -31,6 +31,8 @@ class DefaultSessionToolResolver(
             if (!SessionToolAvailability.allows(session, tool)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "knowledge_search" && !knowledgeSearchAllowed(session)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "request_knowledge_access" && !knowledgeAccessAllowed(session)) return@filter false
+            if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } == "copy_knowledge_to_linux" &&
+                !com.promenar.infinity.ui.chat.manager.skills.KnowledgeLinuxCopyPolicy.allows(session, knowledgeAccessAllowed(session))) return@filter false
             if (tool.sourceId == "builtin" && tool.function.name == "session_branch" &&
                 (session.parentSessionId != null || session.branchPlanJson != null || session.parentSessionDeleted)) return@filter false
             if (tool.sourceId == "builtin" && tool.runtimeToolId.ifBlank { tool.function.name } in com.promenar.infinity.data.memory.LongTermMemoryPreferences.TOOL_IDS && !memoryToolsAllowed) return@filter false

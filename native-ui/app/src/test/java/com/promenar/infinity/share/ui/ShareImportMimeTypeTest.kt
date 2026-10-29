@@ -18,4 +18,20 @@ class ShareImportMimeTypeTest {
             .isEqualTo("application/x-custom-format")
         assertThat(compactMimeType(null)).isNull()
     }
+
+    @Test
+    fun `应用不解析的格式优先用扩展名作类型标签`() {
+        assertThat(shareFileTypeLabel("application/pdf", "报告.pdf")).isEqualTo("PDF")
+        assertThat(shareFileTypeLabel("application/vnd.sqlite3", "chat_backup.sqlite")).isEqualTo("SQLITE")
+        assertThat(shareFileTypeLabel("application/epub+zip", "设计模式.epub")).isEqualTo("EPUB")
+        assertThat(shareFileTypeLabel("application/octet-stream", "README")).isEqualTo("application/octet-stream")
+        assertThat(shareFileTypeLabel(null, "archive.tar.gz")).isEqualTo("GZ")
+        assertThat(shareFileTypeLabel(null, "no-extension")).isNull()
+    }
+
+    @Test
+    fun `资料库路径按层级显示`() {
+        assertThat(knowledgeFolderLabel("/资料/财务")).isEqualTo("资料 / 财务")
+        assertThat(knowledgeFolderLabel("/资料/")).isEqualTo("资料")
+    }
 }

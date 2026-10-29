@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分享导入：任意格式、四种导入位置与目标选择器。 -->
+<resources>
+    <string name="share_import_ext_reason_linux_unavailable">Linux 环境不可用</string>
+    <string name="share_import_ext_reason_linux_path">Linux 目录无效或不在 Linux 环境内</string>
+    <string name="share_import_ext_parseable">可解析、可建索引</string>
+    <string name="share_import_ext_raw">应用不解析，原样保存</string>
+    <string name="share_import_ext_target_current">当前会话 · 本会话文件夹</string>
+    <string name="share_import_ext_target_current_sub">%1$s · 智能体在 %2$s 能看到</string>
+    <string name="share_import_ext_target_other">其他会话…</string>
+    <string name="share_import_ext_target_other_sub">从会话列表里选，导入到它的本会话文件夹</string>
+    <string name="share_import_ext_target_linux">Linux 环境…</string>
+    <string name="share_import_ext_target_linux_sub">选 Linux 里的目录；所有 Linux 会话的智能体都能用命令处理</string>
+    <string name="share_import_ext_target_linux_needs_install">Linux 环境还没有安装</string>
+    <string name="share_import_ext_target_linux_unsupported">此版本或此设备不支持 Linux 环境</string>
+    <string name="share_import_ext_linux_install">去安装</string>
+    <string name="share_import_ext_target_kb">资料库…</string>
+    <string name="share_import_ext_target_kb_sub">可选资料库里的文件夹；能解析的格式会建索引</string>
+    <string name="share_import_ext_change">更换</string>
+    <string name="share_import_ext_choose_session">选择会话</string>
+    <string name="share_import_ext_choose_folder">选择文件夹</string>
+    <string name="share_import_ext_kb_root">资料库根目录</string>
+    <string name="share_import_ext_session_unselected">还没有选会话</string>
+    <string name="share_import_ext_result_title">结果</string>
+    <string name="share_import_ext_note_current">文件保存到本会话文件夹。能解析的格式会建索引，其它格式原样保存，由智能体自己处理。</string>
+    <string name="share_import_ext_note_other">导入到“%1$s”的本会话文件夹，下次打开那个会话时智能体能看到。</string>
+    <string name="share_import_ext_note_other_unselected">请选择要导入到哪个会话，应用不会替你选。</string>
+    <string name="share_import_ext_note_linux">写入 Linux 的 %1$s。智能体可以直接用命令处理，例如用 sqlite3 打开 .sqlite、用 pandoc 转 .epub。Linux 环境不进备份。</string>
+    <string name="share_import_ext_note_kb">保存到“%1$s”。能解析的格式会建索引；其它只保存，智能体需要时可以复制到 Linux 里处理。</string>
+    <string name="share_import_ext_session_picker_title">选择会话</string>
+    <string name="share_import_ext_session_picker_empty">没有其他会话</string>
+    <string name="share_import_ext_folder_picker_title">选择资料库文件夹</string>
+    <string name="share_import_ext_linux_picker_title">选择 Linux 目录</string>
+    <string name="share_import_ext_picker_use">选这个目录</string>
+    <string name="share_import_ext_picker_up">上一级</string>
+    <string name="share_import_ext_picker_empty">没有子目录</string>
+    <string name="share_import_ext_picker_error">无法打开这个目录</string>
+    <string name="share_import_ext_picker_cancel">取消</string>
+</resources>

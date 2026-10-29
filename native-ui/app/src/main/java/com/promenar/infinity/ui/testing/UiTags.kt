@@ -628,4 +628,20 @@ object UiTags {
     fun chatQuoteCard(id: String) = "chat_quote_card:$id"
     fun chatQuoteAnnotation(id: String) = "chat_quote_annotation:$id"
     fun chatQuoteRemove(id: String) = "chat_quote_remove:$id"
+
+    // ============ 分享导入：四种导入位置与选择器 ==========
+    const val SHARE_IMPORT_TARGET_CURRENT = "share_import_target_current"
+    const val SHARE_IMPORT_TARGET_OTHER = "share_import_target_other"
+    const val SHARE_IMPORT_TARGET_LINUX = "share_import_target_linux"
+    const val SHARE_IMPORT_TARGET_CHANGE = "share_import_target_change"
+    const val SHARE_IMPORT_LINUX_INSTALL = "share_import_linux_install"
+    const val SHARE_IMPORT_NOTE = "share_import_note"
+    const val SHARE_IMPORT_SESSION_PICKER = "share_import_session_picker"
+    fun shareImportSession(id: String) = "share_import_session:$id"
+    const val SHARE_IMPORT_FOLDER_PICKER = "share_import_folder_picker"
+    const val SHARE_IMPORT_FOLDER_UP = "share_import_folder_up"
+    const val SHARE_IMPORT_FOLDER_CONFIRM = "share_import_folder_confirm"
+    fun shareImportFolder(uuid: String) = "share_import_folder:$uuid"
+    const val LINUX_FILES_PICKER_BAR = "linux_files_picker_bar"
+    const val LINUX_FILES_PICKER_CONFIRM = "linux_files_picker_confirm"
 }

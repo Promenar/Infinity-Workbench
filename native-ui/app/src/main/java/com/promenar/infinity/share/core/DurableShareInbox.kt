@@ -95,11 +95,13 @@ class DurableShareInbox(
                         val displayName = metadata.displayName?.takeIf { it.isNotBlank() }
                             ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
                             ?: "shared-$position"
-                        val mime = metadata.mimeType.substringBefore(';').trim().lowercase()
+                        val resolvedMime = metadata.mimeType.substringBefore(';').trim().lowercase()
+                        val mimeValid = resolvedMime.length <= 512 && resolvedMime.none(Char::isISOControl)
+                        val mime = if (mimeValid) resolvedMime else "application/octet-stream"
                         val safeName = SharedFileImporter.normalizeName(displayName)
                         var rejection = when {
                             safeName == null -> ShareRejectReason.InvalidName
-                            mime !in SharedFileImporter.SUPPORTED_MIME_TYPES -> ShareRejectReason.UnsupportedMime
+                            !mimeValid -> ShareRejectReason.MimeMismatch
                             metadata.sizeBytes != null && metadata.sizeBytes <= 0L -> ShareRejectReason.EmptyFile
                             metadata.sizeBytes != null && metadata.sizeBytes > maxItemBytes ->
                                 ShareRejectReason.ItemTooLarge
@@ -122,7 +124,7 @@ class DurableShareInbox(
                                 )
                                 size = staged.size
                                 sha256 = staged.sha256
-                                rejection = validateStaged(target, raw.mimeType, mime, safeName!!, staged.prefix)
+                                rejection = validateStaged(target, raw.mimeType, mime, safeName!!)
                                 if (rejection == null) batchBytes += staged.size else target.delete()
                             } catch (_: SecurityException) {
                                 rejection = ShareRejectReason.PermissionDenied
@@ -307,6 +309,7 @@ class DurableShareInbox(
                         .put("importedMime", result.mimeType ?: JSONObject.NULL)
                         .put("importedFileUuid", result.fileUuid ?: JSONObject.NULL)
                         .put("indexTaskId", result.indexTaskId ?: JSONObject.NULL)
+                        .put("importedLinuxPath", result.linuxPath ?: JSONObject.NULL)
                 }
             }
             writeAuthenticated(manifest, json.toString())
@@ -321,9 +324,30 @@ class DurableShareInbox(
             val manifest = AtomicFile(File(directory, REQUEST_MANIFEST))
             val json = JSONObject(readAuthenticated(manifest))
                 .put("targetWorkspaceRootUuid", workspaceRootUuid)
+                .put("targetDestination", JSONObject.NULL)
             writeAuthenticated(manifest, json.toString())
         }
     }
+
+    suspend fun recordTarget(requestId: String, destination: ShareImportDestination) = withContext(Dispatchers.IO) {
+        val encoded = destination.toJson()
+        shareImportDestination(encoded)
+        mutex.withLock {
+            val directory = File(requestsRoot, requestId)
+            readValidatedManifest(directory)
+            val manifest = AtomicFile(File(directory, REQUEST_MANIFEST))
+            val root = when (destination) {
+                is ShareImportDestination.SessionFolder -> destination.workspaceRootUuid
+                is ShareImportDestination.KnowledgeFolder -> destination.workspaceRootUuid
+                is ShareImportDestination.LinuxDirectory -> null
+            }
+            val json = JSONObject(readAuthenticated(manifest))
+                .put("targetDestination", encoded).put("targetWorkspaceRootUuid", root ?: JSONObject.NULL)
+            writeAuthenticated(manifest, json.toString())
+        }
+    }
+
+    suspend fun recordTargetDurably(requestId: String, destination: ShareImportDestination) = recordTarget(requestId, destination)
 
     fun contentSource(): SharedContentSource = object : SharedContentSource {
         override fun metadata(uri: Uri): SharedContentMetadata {
@@ -348,9 +372,11 @@ class DurableShareInbox(
                 mimeType = item.importedMime ?: item.mimeType,
                 sizeBytes = item.importedSize ?: item.sizeBytes,
                 status = ShareImportStatus.Created,
-                indexStatus = ShareIndexStatus.Pending,
+                indexStatus = if (item.importedLinuxPath == null && SharedFileImporter.isParseable(item.mimeType, importedName)) ShareIndexStatus.Pending else null,
                 fileUuid = item.importedFileUuid,
                 indexTaskId = item.indexTaskId,
+                parseable = SharedFileImporter.isParseable(item.importedMime ?: item.mimeType, importedName),
+                linuxPath = item.importedLinuxPath,
             )
         }
     }
@@ -525,7 +551,7 @@ class DurableShareInbox(
         val fingerprint = json.getString("fingerprint")
         require(SHA256_PATTERN.matches(fingerprint))
         val mimeType = json.getString("mimeType")
-        require(mimeType in SharedFileImporter.SUPPORTED_MIME_TYPES)
+        require(mimeType.length <= 512 && mimeType.none(Char::isISOControl))
         val targetWorkspaceRootUuid = if (json.isNull("targetWorkspaceRootUuid")) null
             else json.getString("targetWorkspaceRootUuid").also { require(it.isNotBlank()) }
         val itemsJson = json.getJSONArray("items")
@@ -541,7 +567,12 @@ class DurableShareInbox(
             if (item.rejection != ShareRejectReason.InvalidName) {
                 require(SharedFileImporter.normalizeName(item.displayName) == item.displayName)
             }
-            require(item.mimeType in SharedFileImporter.SUPPORTED_MIME_TYPES)
+            require(item.mimeType.length <= 512 && item.mimeType.none(Char::isISOControl))
+            item.importedLinuxPath?.let { path ->
+                require(path.startsWith('/') && path.length <= MAX_URI_CHARS && path.none(Char::isISOControl) &&
+                    path.split('/').none { it == "." || it == ".." })
+                require(item.importedFileUuid == null && item.indexTaskId == null)
+            }
             require(item.sizeBytes == null || item.sizeBytes >= 0L)
             item.importedName?.let { require(SharedFileImporter.normalizeName(it) == it) }
             require(item.importedSize == null || item.importedSize >= 0L)
@@ -567,6 +598,7 @@ class DurableShareInbox(
             canonicalSizeBytes = payload.toByteArray(Charsets.UTF_8).size,
             requestId = requestId,
             targetWorkspaceRootUuid = targetWorkspaceRootUuid,
+            targetDestination = if (json.isNull("targetDestination")) null else shareImportDestination(json.getJSONObject("targetDestination")),
         )
         ValidatedManifest(request, fingerprint, directory.lastModified().takeIf { it > 0 } ?: now(), stagedItems)
     }
@@ -617,7 +649,6 @@ class DurableShareInbox(
     ): StagedWrite {
         val input = resolver.openInputStream(uri) ?: throw java.io.FileNotFoundException()
         val digest = MessageDigest.getInstance("SHA-256")
-        val prefix = java.io.ByteArrayOutputStream(SNIFF_BYTES)
         var size = 0L
         input.use { source ->
             FileOutputStream(target).use { output ->
@@ -627,8 +658,6 @@ class DurableShareInbox(
                     if (count < 0) break
                     if (size > itemLimit - count) throw StageTooLargeException(ShareRejectReason.ItemTooLarge)
                     if (size > batchLimit - count) throw StageTooLargeException(ShareRejectReason.BatchTooLarge)
-                    val prefixCount = minOf(count, SNIFF_BYTES - prefix.size())
-                    if (prefixCount > 0) prefix.write(buffer, 0, prefixCount)
                     output.write(buffer, 0, count)
                     digest.update(buffer, 0, count)
                     size += count
@@ -636,7 +665,7 @@ class DurableShareInbox(
                 output.fd.sync()
             }
         }
-        return StagedWrite(size, digest.digest().hex(), prefix.toByteArray())
+        return StagedWrite(size, digest.digest().hex())
     }
 
     private fun validateStaged(
@@ -644,24 +673,22 @@ class DurableShareInbox(
         declaredMime: String,
         resolvedMime: String,
         name: String,
-        prefix: ByteArray,
     ): ShareRejectReason? {
         if (file.length() == 0L) return ShareRejectReason.EmptyFile
-        val declared = declaredMime.substringBefore(';').trim().lowercase()
-        if (declared !in SharedFileImporter.SUPPORTED_MIME_TYPES ||
-            resolvedMime !in SharedFileImporter.SUPPORTED_MIME_TYPES
-        ) return ShareRejectReason.UnsupportedMime
-        if (declared != resolvedMime && !(declared.startsWith("text/") && resolvedMime.startsWith("text/"))) {
-            return ShareRejectReason.MimeMismatch
-        }
-        return when (resolvedMime) {
-            "application/pdf" -> if (prefix.startsWithAscii("%PDF-") && name.endsWith(".pdf", true)) null
-                else ShareRejectReason.MimeMismatch
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
-                if (isSafeDocx(file) && name.endsWith(".docx", true)) null else ShareRejectReason.MimeMismatch
-            "application/json" -> if (isUtf8File(file) && isValidJson(file)) null else ShareRejectReason.MimeMismatch
-            else -> if (isUtf8File(file)) null else ShareRejectReason.MimeMismatch
-        }
+        val effective = SharedFileImporter.parseableMime(resolvedMime, name)
+        if (effective == null) return null
+        return try {
+            val sniffed = file.inputStream().use { SharedFileImporter.sniffMime(it, effective) }
+            if (!SharedFileImporter.mimeCompatible(declaredMime, resolvedMime, sniffed, name)) return ShareRejectReason.MimeMismatch
+            if (effective in SharedFileImporter.TEXT_MIME_TYPES) {
+                file.inputStream().use { SharedFileImporter.copyUtf8Validated(it, object : java.io.OutputStream() {
+                    override fun write(value: Int) = Unit
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) = Unit
+                }) }
+            }
+            if (effective == "application/json" && !isValidJson(file)) ShareRejectReason.MimeMismatch else null
+        } catch (_: IOException) { ShareRejectReason.MimeMismatch }
+          catch (_: IllegalArgumentException) { ShareRejectReason.MimeMismatch }
     }
 
     private fun isValidJson(file: File): Boolean = try {
@@ -671,49 +698,6 @@ class DurableShareInbox(
             if (reader.peek() != android.util.JsonToken.END_DOCUMENT) throw IllegalArgumentException("JSON 尾部存在额外内容")
         }
         true
-    } catch (_: IOException) {
-        false
-    } catch (_: IllegalArgumentException) {
-        false
-    }
-
-    private fun isUtf8File(file: File): Boolean = try {
-        val decoder = Charsets.UTF_8.newDecoder()
-            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-        java.io.InputStreamReader(file.inputStream(), decoder).use { reader ->
-            val buffer = CharArray(DEFAULT_BUFFER_SIZE)
-            while (reader.read(buffer) >= 0) Unit
-        }
-        true
-    } catch (_: IOException) {
-        false
-    } catch (_: IllegalArgumentException) {
-        false
-    }
-
-    private fun isSafeDocx(file: File): Boolean = try {
-        var entries = 0
-        var expanded = 0L
-        var contentTypes = false
-        var document = false
-        java.util.zip.ZipInputStream(file.inputStream().buffered()).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                entries++
-                if (entries > MAX_ZIP_ENTRIES) return false
-                if (entry.name == "[Content_Types].xml") contentTypes = true
-                if (entry.name == "word/document.xml") document = true
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val count = zip.read(buffer)
-                    if (count < 0) break
-                    expanded += count
-                    if (expanded > MAX_DOCX_EXPANDED_BYTES) return false
-                }
-            }
-        }
-        contentTypes && document
     } catch (_: IOException) {
         false
     } catch (_: IllegalArgumentException) {
@@ -791,7 +775,7 @@ class DurableShareInbox(
         Uri.Builder().scheme(STAGED_SCHEME).authority(requestId).appendPath(itemId).build()
 
     private data class Metadata(val displayName: String?, val mimeType: String, val sizeBytes: Long?)
-    private data class StagedWrite(val size: Long, val sha256: String, val prefix: ByteArray)
+    private data class StagedWrite(val size: Long, val sha256: String)
     private data class ResolvedItem(val directory: File, val item: StagedItem)
     private data class ValidatedManifest(
         val request: ShareRequest,
@@ -826,6 +810,7 @@ class DurableShareInbox(
         val importedMime: String?,
         val importedFileUuid: String?,
         val indexTaskId: String?,
+        val importedLinuxPath: String? = null,
     )
 
     private class StageTooLargeException(val reason: ShareRejectReason) : Exception()
@@ -842,8 +827,8 @@ class DurableShareInbox(
                 return try {
                     val action = intent.action?.takeIf { it == Intent.ACTION_SEND || it == Intent.ACTION_SEND_MULTIPLE }
                         ?: return null
-                    val mime = intent.type?.substringBefore(';')?.trim()?.lowercase()
-                        ?.takeIf { it in SharedFileImporter.SUPPORTED_MIME_TYPES } ?: return null
+                    val mime = intent.type?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+                    if (mime.length > 512 || mime.any(Char::isISOControl)) return null
                     @Suppress("DEPRECATION")
                     val extras = if (action == Intent.ACTION_SEND) {
                         listOfNotNull(intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
@@ -884,6 +869,7 @@ class DurableShareInbox(
         .put("importedMime", importedMime ?: JSONObject.NULL)
         .put("importedFileUuid", importedFileUuid ?: JSONObject.NULL)
         .put("indexTaskId", indexTaskId ?: JSONObject.NULL)
+        .put("importedLinuxPath", importedLinuxPath ?: JSONObject.NULL)
 
     private fun JSONObject.toStagedItem() = StagedItem(
         id = getString("id"), stagedName = getString("stagedName"), displayName = getString("displayName"),
@@ -895,6 +881,7 @@ class DurableShareInbox(
         importedMime = if (isNull("importedMime")) null else getString("importedMime"),
         importedFileUuid = if (isNull("importedFileUuid")) null else getString("importedFileUuid"),
         indexTaskId = if (isNull("indexTaskId")) null else getString("indexTaskId"),
+        importedLinuxPath = if (isNull("importedLinuxPath")) null else getString("importedLinuxPath"),
     )
 
     private fun InboxRecord.toJson() = JSONObject()
@@ -922,8 +909,6 @@ class DurableShareInbox(
         return digest.digest().hex()
     }
     private fun ByteArray.hex() = joinToString("") { "%02x".format(it.toInt() and 0xff) }
-    private fun ByteArray.startsWithAscii(value: String): Boolean =
-        size >= value.length && copyOfRange(0, value.length).toString(Charsets.US_ASCII) == value
     companion object {
         private val instances = ConcurrentHashMap<String, DurableShareInbox>()
 
@@ -948,9 +933,6 @@ class DurableShareInbox(
         private const val MAX_URI_CHARS = 4_096
         private const val MAX_CONSUMED = 32
         private const val MAX_MANIFEST_BYTES = 256 * 1024
-        private const val SNIFF_BYTES = 8 * 1024
-        private const val MAX_ZIP_ENTRIES = 2_048
-        private const val MAX_DOCX_EXPANDED_BYTES = 64L * 1024 * 1024
         private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
         private val ITEM_ID_PATTERN = Regex("(?:0|[1-9][0-9]?)")
         private val DURABLE_ID_PATTERN = Regex("[A-Za-z0-9._-]{1,128}")

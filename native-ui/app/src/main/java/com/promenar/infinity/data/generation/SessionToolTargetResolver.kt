@@ -26,6 +26,8 @@ suspend fun resolveSessionToolTarget(
     val paths = mutableMapOf<String, String>()
     try {
         val usesLinux = session.runMode == SessionRunMode.LINUX
+        if (tool.sourceId == "builtin" && tool.mcpServerId == null && tool.function.name == "copy_knowledge_to_linux")
+            return knowledgeLinuxCopyTarget(session, args, repository, mounts)
         if (usesLinux && tool.mcpServerId == null && tool.sourceId == "builtin" &&
             tool.function.name in setOf("read_file", "write_file", "patch_file", "diff_file", "delete_file", "create_file", "create_directory", "move_file", "list_files", "search_files")
         ) return linuxFiles?.executionTarget(session.id, tool, args)
