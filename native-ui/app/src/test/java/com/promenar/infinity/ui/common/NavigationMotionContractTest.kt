@@ -84,7 +84,9 @@ class NavigationMotionContractTest {
     @Test
     fun `高频路径的状态切换带过渡`() {
         val tabs = source("MainTabScaffold.kt")
-        assertThat(tabs).contains("transitionSpec = { InfinityMotion.fadeThrough() }")
+        // 标签按顺序整页滑动：底栏横滑、导航轨纵滑，内容区裁剪。
+        assertThat(tabs).contains("InfinityMotion.tabSlide(tabSlideDirection(initialState, targetState), vertical = tabSlideVertical(navigationRail))")
+        assertThat(tabs).contains("modifier = Modifier.fillMaxSize().clipToBounds(),")
         assertThat(tabs).contains("animateColorAsState(")
         assertThat(tabs).contains("expandHorizontally(")
 
@@ -116,12 +118,32 @@ class NavigationMotionContractTest {
     }
 
     @Test
-    fun `页面路由统一使用共享 X 轴基准`() {
-        val nav = Files.readAllBytes(Path.of("app/src/main/java/com/promenar/infinity/navigation/NavGraph.kt")).toString(Charsets.UTF_8)
+    fun `页面路由统一使用视差推入`() {
+        fun read(path: String) = Files.readAllBytes(Path.of(path)).toString(Charsets.UTF_8)
+        val nav = read("app/src/main/java/com/promenar/infinity/navigation/NavGraph.kt")
+        val settingsPane = source("settings/SettingsTwoPane.kt")
+        val hubPane = source("hub/HubThreePane.kt")
 
-        assertThat(nav).contains("enterTransition = { InfinityMotion.sharedAxisXEnter(forward = true) }")
-        assertThat(nav).contains("popEnterTransition = { InfinityMotion.sharedAxisXEnter(forward = false) }")
+        // 主导航、设置右列与首页会话列都经同一个页面级 NavHost，目的地都有不透明外框。
+        for ((name, text) in listOf("NavGraph" to nav, "SettingsTwoPane" to settingsPane, "HubThreePane" to hubPane)) {
+            assertWithMessage(name).that(text).contains("InfinityPageNavHost(")
+            assertWithMessage(name).that(Regex("(?<![A-Za-z])NavHost\\(").containsMatchIn(text)).isFalse()
+            assertWithMessage(name).that(text).doesNotContain("import androidx.navigation.compose.composable")
+        }
         assertThat(nav).doesNotContain("tween(300)")
+        // 栏内换根页面叠化；会话列迁移进来的初始层级直接出现。
+        assertThat(settingsPane).contains("isSameLevel = isPaneRoot,")
+        assertThat(hubPane).contains("isSameLevel = isPaneRoot,")
+        assertThat(hubPane).contains("isInstant = { entry -> entry.id in initialEntryIds },")
+
+        val pages = read("app/src/main/java/com/promenar/infinity/navigation/PageTransitions.kt")
+        assertThat(pages).contains("modifier = modifier.clipToBounds(),")
+        assertThat(pages).contains(".background(background),")
+        assertThat(pages).contains("propagateMinConstraints = true,")
+
+        val motion = source("theme/Motion.kt")
+        assertThat(motion).contains("const val DurationPagePush = 360")
+        assertThat(motion).contains("val PageSlideEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)")
     }
 
     @Test

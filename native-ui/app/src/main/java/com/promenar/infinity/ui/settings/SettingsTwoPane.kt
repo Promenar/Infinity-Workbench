@@ -21,17 +21,17 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
+import com.promenar.infinity.navigation.InfinityPageNavHost
 import com.promenar.infinity.navigation.SettingsNavigator
 import com.promenar.infinity.navigation.SettingsPaneEntriesSaver
 import com.promenar.infinity.navigation.SettingsPaneEntry
 import com.promenar.infinity.navigation.SettingsPaneRoots
 import com.promenar.infinity.navigation.concreteRoute
+import com.promenar.infinity.navigation.isPaneRootEntry
 import com.promenar.infinity.navigation.trackSettingsPaneStack
 import com.promenar.infinity.ui.MainTabsState
 import com.promenar.infinity.ui.hub.UserSettingsHomeScreen
-import com.promenar.infinity.ui.theme.InfinityMotion
 
 /** 双列时左列（设置目录）宽度。 */
 internal val SettingsListPaneWidth = 320.dp
@@ -87,7 +87,7 @@ internal fun SettingsTwoPane(
             paneNav.navigate(route) { popUpTo(paneNav.graph.id) { inclusive = true } }
         }
     }
-    val isPaneRoot: (NavBackStackEntry) -> Boolean = { entry -> paneEntries.firstOrNull()?.id == entry.id }
+    val isPaneRoot: (NavBackStackEntry) -> Boolean = { entry -> isPaneRootEntry(paneEntries, entry.id) }
 
     Row(modifier = Modifier.fillMaxSize().testTag(SettingsTwoPaneTags.ROOT)) {
         Box(modifier = Modifier.width(SettingsListPaneWidth).fillMaxHeight().testTag(SettingsTwoPaneTags.LIST)) {
@@ -99,21 +99,12 @@ internal fun SettingsTwoPane(
             )
         }
         VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        NavHost(
+        // 右列内前进、后退用视差推入（以右列宽度为准并裁剪在右列内）；左列切换根页面时新页盖在旧页上叠化。
+        InfinityPageNavHost(
             navController = paneNav,
             startDestination = initialStack.first(),
             modifier = Modifier.weight(1f).fillMaxHeight().testTag(SettingsTwoPaneTags.DETAIL),
-            // 左列切换根页面时淡入淡出；右列内前进、后退仍用共享 X 轴。
-            enterTransition = {
-                if (isPaneRoot(targetState)) InfinityMotion.fadeThrough().targetContentEnter
-                else InfinityMotion.sharedAxisXEnter(forward = true)
-            },
-            exitTransition = {
-                if (isPaneRoot(targetState)) InfinityMotion.fadeThrough().initialContentExit
-                else InfinityMotion.sharedAxisXExit(forward = true)
-            },
-            popEnterTransition = { InfinityMotion.sharedAxisXEnter(forward = false) },
-            popExitTransition = { InfinityMotion.sharedAxisXExit(forward = false) },
+            isSameLevel = isPaneRoot,
         ) {
             paneGraph(navigator)
         }

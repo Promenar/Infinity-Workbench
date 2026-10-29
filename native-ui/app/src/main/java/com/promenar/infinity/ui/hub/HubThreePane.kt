@@ -1,8 +1,6 @@
 package com.promenar.infinity.ui.hub
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.tween
@@ -70,16 +68,17 @@ import androidx.compose.ui.zIndex
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.promenar.infinity.R
 import com.promenar.infinity.data.model.Session
 import com.promenar.infinity.navigation.HUB_PANE_EMPTY
 import com.promenar.infinity.navigation.HubPaneNavigator
+import com.promenar.infinity.navigation.InfinityPageNavHost
 import com.promenar.infinity.navigation.SettingsPaneEntriesSaver
 import com.promenar.infinity.navigation.SettingsPaneEntry
+import com.promenar.infinity.navigation.composablePage
 import com.promenar.infinity.navigation.concreteRoute
+import com.promenar.infinity.navigation.isPaneRootEntry
 import com.promenar.infinity.navigation.trackSettingsPaneStack
 import com.promenar.infinity.ui.MainTabsState
 import com.promenar.infinity.ui.chat.LocalChatNavigationIcon
@@ -223,12 +222,12 @@ internal fun HubThreePane(
         initializing = false
         state.updateHubStack(paneEntries.map { it.route })
     }
-    val isPaneRoot: (NavBackStackEntry) -> Boolean = { entry -> paneEntries.firstOrNull()?.id == entry.id }
+    val isPaneRoot: (NavBackStackEntry) -> Boolean = { entry -> isPaneRootEntry(paneEntries, entry.id) }
     val currentEmpty by rememberUpdatedState(empty)
     val paneGraph = host.paneGraph
     val graph: NavGraphBuilder.() -> Unit = remember(navigator, paneGraph) {
         {
-            composable(HUB_PANE_EMPTY) { currentEmpty(openSession) }
+            composablePage(HUB_PANE_EMPTY) { currentEmpty(openSession) }
             paneGraph(navigator)
         }
     }
@@ -271,27 +270,14 @@ internal fun HubThreePane(
         val expanded = state.hubExpanded
         val navigationIcon: @Composable () -> Unit = { HubExpandButton(expanded = expanded, onClick = state::toggleHubExpanded) }
         CompositionLocalProvider(LocalChatNavigationIcon provides navigationIcon) {
-            NavHost(
+            // 会话之上的子代理页用视差推入（以会话列宽度为准并裁剪在列内）；换会话时新会话盖在旧会话上叠化；
+            // 迁移进来的初始层级直接出现，开合屏不触发换页动画。
+            InfinityPageNavHost(
                 navController = paneNav,
                 startDestination = HUB_PANE_EMPTY,
                 modifier = Modifier.fillMaxSize(),
-                // 换会话淡入淡出；会话之上的子代理页用共享 X 轴；迁移进来的初始层级直接出现。
-                enterTransition = {
-                    when {
-                        targetState.id in initialEntryIds -> EnterTransition.None
-                        isPaneRoot(targetState) -> InfinityMotion.fadeThrough().targetContentEnter
-                        else -> InfinityMotion.sharedAxisXEnter(forward = true)
-                    }
-                },
-                exitTransition = {
-                    when {
-                        targetState.id in initialEntryIds -> ExitTransition.None
-                        isPaneRoot(targetState) -> InfinityMotion.fadeThrough().initialContentExit
-                        else -> InfinityMotion.sharedAxisXExit(forward = true)
-                    }
-                },
-                popEnterTransition = { InfinityMotion.sharedAxisXEnter(forward = false) },
-                popExitTransition = { InfinityMotion.sharedAxisXExit(forward = false) },
+                isSameLevel = isPaneRoot,
+                isInstant = { entry -> entry.id in initialEntryIds },
                 builder = graph,
             )
         }

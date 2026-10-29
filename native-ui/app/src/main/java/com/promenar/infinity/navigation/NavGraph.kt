@@ -1,7 +1,6 @@
 package com.promenar.infinity.navigation
 
 import androidx.compose.runtime.Composable
-import com.promenar.infinity.ui.theme.InfinityMotion
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -15,8 +14,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.promenar.infinity.InfinityApplication
 import com.promenar.infinity.BuildConfig
@@ -211,16 +208,12 @@ fun InfinityNavGraph(
         { navigator -> hubPaneDestinations(navigator, navController, chatDestination, app) }
     }
 
-    NavHost(
+    // 页面层级导航统一用视差推入：新页整页从右缘推入，旧页左移并压暗；返回反向。内屏同样按全宽推入。
+    InfinityPageNavHost(
         navController = navController,
         startDestination = startDestination,
-        // 页面层级导航统一用共享 X 轴：前进从右侧滑入，返回从左侧滑入，旧页先淡出。
-        enterTransition = { InfinityMotion.sharedAxisXEnter(forward = true) },
-        exitTransition = { InfinityMotion.sharedAxisXExit(forward = true) },
-        popEnterTransition = { InfinityMotion.sharedAxisXEnter(forward = false) },
-        popExitTransition = { InfinityMotion.sharedAxisXExit(forward = false) },
     ) {
-        composable(NavDestinations.WELCOME) {
+        composablePage(NavDestinations.WELCOME) {
             OnboardingRoute(
                 store = onboardingStore,
                 languageSelection = languageSelection,
@@ -230,7 +223,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(NavDestinations.MAIN_TAB_SCAFFOLD) {
+        composablePage(NavDestinations.MAIN_TAB_SCAFFOLD) {
             com.promenar.infinity.ui.MainTabScaffold(
                 onNavigateToSecondary = { route ->
                     navController.navigate(route)
@@ -247,7 +240,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(
+        composablePage(
             route = NavDestinations.CHAT_HERO,
             arguments = listOf(navArgument("sessionId") { type = NavType.StringType })
         ) { backStackEntry ->
@@ -266,14 +259,14 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(
+        composablePage(
             route = NavDestinations.SUBAGENT_VIEWER_ROUTE,
             arguments = SubagentViewerArguments,
         ) { backStackEntry ->
             SubagentViewerDestination(app, backStackEntry, onBack = { navController.popBackStack() })
         }
 
-        composable(
+        composablePage(
             route = NavDestinations.AGENT_EDIT,
             arguments = listOf(navArgument("agentId") { type = NavType.StringType })
         ) { backStackEntry ->
@@ -288,7 +281,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(
+        composablePage(
             route = NavDestinations.DOC_EDITOR,
             arguments = listOf(
                 navArgument("workspaceRootUuid") { type = NavType.StringType },
@@ -306,7 +299,7 @@ fun InfinityNavGraph(
 
         settingsDestinations(SettingsNavigator(navController))
 
-        composable(
+        composablePage(
             route = NavDestinations.KNOWLEDGE_GRAPH_ROUTE,
             arguments = listOf(navArgument("query") { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) { backStackEntry ->
@@ -317,7 +310,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(
+        composablePage(
             route = NavDestinations.RAG_FOLDER,
             arguments = listOf(
                 navArgument("folderId") { type = NavType.StringType }
@@ -333,7 +326,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(
+        composablePage(
             NavDestinations.LINUX_TERMINAL,
             arguments = listOf("session", "dir", "cmd").map { name ->
                 navArgument(name) { type = NavType.StringType; nullable = true; defaultValue = null }
@@ -352,7 +345,7 @@ fun InfinityNavGraph(
                 onOpenEnvironment = { navController.navigate(NavDestinations.LINUX_ENVIRONMENT) },
             )
         }
-        composable(
+        composablePage(
             NavDestinations.LINUX_FILES,
             arguments = listOf(navArgument("path") { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) { backStackEntry ->
@@ -364,7 +357,7 @@ fun InfinityNavGraph(
                 onOpenFile = { navController.navigate(NavDestinations.linuxFile(it)) },
             )
         }
-        composable(
+        composablePage(
             NavDestinations.LINUX_FILE,
             arguments = listOf(navArgument("path") { type = NavType.StringType }),
         ) { backStackEntry ->
@@ -374,7 +367,7 @@ fun InfinityNavGraph(
                 onOpenTerminal = { directory, command -> navController.navigate(NavDestinations.linuxTerminal(directory = directory, command = command)) },
             )
         }
-        composable(
+        composablePage(
             NavDestinations.COMMAND_OUTPUT,
             arguments = listOf("sessionId", "messageId", "toolCallId").map { navArgument(it) { type = NavType.StringType } },
         ) { backStackEntry ->
@@ -390,7 +383,7 @@ fun InfinityNavGraph(
             )
         }
 
-        composable(NavDestinations.SSH_TERMINAL) { entry ->
+        composablePage(NavDestinations.SSH_TERMINAL) { entry ->
             val alias = entry.arguments?.getString("alias").orEmpty()
             com.promenar.infinity.ui.ssh.SshTerminalScreen(alias, onBack = { navController.popBackStack() })
         }
@@ -482,7 +475,7 @@ private fun NavGraphBuilder.hubPaneDestinations(
     chatDestination: ChatDestination,
     app: InfinityApplication,
 ) {
-    composable(
+    composablePage(
         route = NavDestinations.CHAT_HERO,
         arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
     ) { backStackEntry ->
@@ -496,7 +489,7 @@ private fun NavGraphBuilder.hubPaneDestinations(
             onOpenSubagent = { owner, stepId, index -> navigator.open(NavDestinations.subagentViewer(owner, stepId, index)) },
         )
     }
-    composable(route = NavDestinations.SUBAGENT_VIEWER_ROUTE, arguments = SubagentViewerArguments) { backStackEntry ->
+    composablePage(route = NavDestinations.SUBAGENT_VIEWER_ROUTE, arguments = SubagentViewerArguments) { backStackEntry ->
         SubagentViewerDestination(app, backStackEntry, onBack = navigator::back)
     }
 }
@@ -507,7 +500,7 @@ private fun NavGraphBuilder.hubPaneDestinations(
  */
 /** “智能体运行”的四个页面：执行轮次与预算、内置工具、技能包、MCP 服务器。 */
 private fun NavGraphBuilder.agentRuntimeDestination(navigator: SettingsNavigator, route: String, section: AgentRuntimeSection) {
-    composable(route) { entry ->
+    composablePage(route) { entry ->
         navigator.Page(entry) {
             SkillsScreen(onNavigateBack = { navigator.back() }, section = section)
         }
@@ -515,7 +508,7 @@ private fun NavGraphBuilder.agentRuntimeDestination(navigator: SettingsNavigator
 }
 
 internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) {
-    composable(NavDestinations.RAG_ADVANCED_KG) { entry ->
+    composablePage(NavDestinations.RAG_ADVANCED_KG) { entry ->
         navigator.Page(entry) {
             KnowledgeGraphSettingsScreen(
                 onNavigateBack = { navigator.back() },
@@ -525,7 +518,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.RAG_GLOBAL_CONFIG) { entry ->
+    composablePage(NavDestinations.RAG_GLOBAL_CONFIG) { entry ->
         navigator.Page(entry) {
             KnowledgeBaseSettingsScreen(
                 onNavigateBack = { navigator.back() },
@@ -534,13 +527,13 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.LONG_TERM_MEMORY) { entry ->
+    composablePage(NavDestinations.LONG_TERM_MEMORY) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.memory.LongTermMemoryScreen(onNavigateBack = { navigator.back() })
         }
     }
 
-    composable(NavDestinations.RAG_DEBUG) { entry ->
+    composablePage(NavDestinations.RAG_DEBUG) { entry ->
         navigator.Page(entry) {
             KnowledgeDebugSettingsScreen(
                 onNavigateBack = { navigator.back() },
@@ -549,13 +542,13 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.RAG_VECTOR_STATS) { entry ->
+    composablePage(NavDestinations.RAG_VECTOR_STATS) { entry ->
         navigator.Page(entry) {
             RagDebugScreen(onNavigateBack = { navigator.back() })
         }
     }
 
-    composable(
+    composablePage(
         route = NavDestinations.PROVIDER_FORM,
         arguments = listOf(
             navArgument("providerId") {
@@ -594,7 +587,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(
+    composablePage(
         route = NavDestinations.PROVIDER_MODELS,
         arguments = listOf(navArgument("providerId") { type = NavType.StringType })
     ) { backStackEntry ->
@@ -611,7 +604,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.TOKEN_USAGE) { entry ->
+    composablePage(NavDestinations.TOKEN_USAGE) { entry ->
         navigator.Page(entry) {
             TokenUsageScreen(
                 onNavigateBack = { navigator.back() }
@@ -624,7 +617,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
     agentRuntimeDestination(navigator, NavDestinations.SKILLS_CONFIG, AgentRuntimeSection.SkillPacks)
     agentRuntimeDestination(navigator, NavDestinations.MCP_SERVERS, AgentRuntimeSection.Mcp)
 
-    composable(NavDestinations.LINUX_ENVIRONMENT) { entry ->
+    composablePage(NavDestinations.LINUX_ENVIRONMENT) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.linux.settings.LinuxEnvironmentScreen(
                 onBack = { navigator.back() },
@@ -638,19 +631,19 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.LINUX_PACKAGES) { entry ->
+    composablePage(NavDestinations.LINUX_PACKAGES) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.linux.settings.LinuxPackagesScreen(onBack = { navigator.back() })
         }
     }
 
-    composable(NavDestinations.LINUX_MIRRORS) { entry ->
+    composablePage(NavDestinations.LINUX_MIRRORS) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.linux.settings.LinuxMirrorsScreen(onBack = { navigator.back() })
         }
     }
 
-    composable(NavDestinations.NETWORK_ACCESS) { entry ->
+    composablePage(NavDestinations.NETWORK_ACCESS) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.NetworkAccessSettingsScreen(
                 onBack = { navigator.back() },
@@ -659,7 +652,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.BACKGROUND_ACTIVITY) { entry ->
+    composablePage(NavDestinations.BACKGROUND_ACTIVITY) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.BackgroundActivitySettingsScreen(
                 onBack = { navigator.back() },
@@ -668,13 +661,13 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.TAILSCALE_CONFIG) { entry ->
+    composablePage(NavDestinations.TAILSCALE_CONFIG) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.TailscaleSettingsScreen(onBack = { navigator.back() })
         }
     }
 
-    composable(NavDestinations.TERMUX_CONFIG) { entry ->
+    composablePage(NavDestinations.TERMUX_CONFIG) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.TermuxSettingsScreen(
                 onBack = { navigator.back() },
@@ -683,7 +676,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.SSH_CONFIG) { entry ->
+    composablePage(NavDestinations.SSH_CONFIG) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.SshSettingsScreen(
                 onBack = { navigator.back() },
@@ -692,7 +685,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.GIT_CREDENTIALS) { entry ->
+    composablePage(NavDestinations.GIT_CREDENTIALS) { entry ->
         navigator.Page(entry) {
             com.promenar.infinity.ui.settings.GitCredentialSettingsScreen(
                 onBack = { navigator.back() },
@@ -701,7 +694,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.THEME_CONFIG) { entry ->
+    composablePage(NavDestinations.THEME_CONFIG) { entry ->
         navigator.Page(entry) {
             ThemeScreen(
                 onNavigateBack = { navigator.back() }
@@ -709,7 +702,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.PROVIDER_LIST) { entry ->
+    composablePage(NavDestinations.PROVIDER_LIST) { entry ->
         navigator.Page(entry) {
             ProviderListScreen(
                 onNavigateToSecondary = { route -> navigator.open(route) },
@@ -718,7 +711,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.DEFAULT_MODELS) { entry ->
+    composablePage(NavDestinations.DEFAULT_MODELS) { entry ->
         navigator.Page(entry) {
             DefaultModelsScreen(
                 onNavigateBack = { navigator.back() }
@@ -726,7 +719,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
         }
     }
 
-    composable(NavDestinations.BACKUP_SETTINGS) { entry ->
+    composablePage(NavDestinations.BACKUP_SETTINGS) { entry ->
         navigator.Page(entry) {
             BackupSettingsScreen(
                 onNavigateBack = { navigator.back() }
@@ -735,7 +728,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
     }
 
     if (BuildConfig.LOCAL_INFERENCE_AVAILABLE) {
-        composable(NavDestinations.LOCAL_MODELS) { entry ->
+        composablePage(NavDestinations.LOCAL_MODELS) { entry ->
             navigator.Page(entry) {
                 LocalModelsScreen(
                     onNavigateBack = { navigator.back() }

@@ -202,3 +202,7 @@ internal fun trackSettingsPaneStack(
     val previous = stack.indexOfFirst { it.id == previousId }
     return if (previous >= 0) stack.take(previous + 1) + current else stack + current
 }
+
+/** [entryId] 是否为栏内层级的根页面：栏内换到新的根页面（换设置根页、换会话）属于同级替换，不做视差推入。 */
+internal fun isPaneRootEntry(stack: List<SettingsPaneEntry>, entryId: String): Boolean =
+    stack.firstOrNull()?.id == entryId
