@@ -4,4 +4,6 @@
     <cache-path name="legacy_attachment_preview" path="legacy-attachment-preview/" />
     <!-- 工作区媒体分享与“用其它应用打开”的临时副本，旧文件在后续分享时清理。 -->
     <cache-path name="workspace_media_share" path="workspace-media-share/" />
+    <!-- 会话导出的主文件与附件包，分享后保留以供接收方延后读取。 -->
+    <cache-path name="session_export" path="session-export/" />
 </paths>

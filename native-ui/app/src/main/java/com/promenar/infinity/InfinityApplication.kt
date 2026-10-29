@@ -503,6 +503,10 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         MessageRepository(database.messageDao())
     }
 
+    val sessionExporter: com.promenar.infinity.domain.export.SessionExporter by lazy {
+        com.promenar.infinity.data.export.DefaultSessionExporter(this, messageRepository, sessionRepository, workspaceMediaResolver)
+    }
+
     val chatStore: ChatStore by lazy { ChatStore() }
     val sessionExecutionGate by lazy { com.promenar.infinity.data.session.SessionExecutionGate() }
     private val sessionWorkspaceParent: java.nio.file.Path
