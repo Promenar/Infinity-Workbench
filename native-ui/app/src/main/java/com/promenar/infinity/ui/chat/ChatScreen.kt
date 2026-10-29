@@ -904,9 +904,12 @@ fun ChatScreenContent(
                 label = "chat_generating_bottom",
             )
             val focusManager = LocalFocusManager.current
+            // 毛玻璃浮岛：列表把自己录进背景来源，浮岛在自身范围内模糊后垫在底下；环境光材质不创建。
+            val composerBackdrop = rememberComposerBackdrop(LocalInfinityMotionStyles.current.surface)
             LazyColumn(
                 state = listState,
                 modifier = Modifier
+                    .composerBackdropSource(composerBackdrop)
                     .align(Alignment.Center)
                     .fillMaxHeight()
                     .widthIn(max = InfinitySpacing.ChatMaxWidth)
@@ -1157,6 +1160,7 @@ fun ChatScreenContent(
                 bottomInset = with(density) { composerHeightPx.toDp() },
             )
 
+            CompositionLocalProvider(LocalComposerBackdrop provides composerBackdrop) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1340,6 +1344,7 @@ fun ChatScreenContent(
                             }
                         }
                     }
+            }
             }
 
             AnimatedVisibility(
@@ -2731,13 +2736,14 @@ fun ChatInputBar(
         // 灯语样式的灯效铺在浮岛底色之上、输入内容之下，随浮岛尺寸变化。
         val motionStyle = LocalInfinityMotionStyles.current.composer
         Box {
+        // 材质层垫在最底：毛玻璃的模糊背景，或环境光的阶段色柔光。
+        ComposerIslandSurface(glow, Modifier.matchParentSize())
         ComposerIslandLights(glow, motionStyle, Modifier.matchParentSize())
         // 尺寸动画会按矩形裁剪，放在容器内部；放在外层会把圆角投影切成直角。
         Column(Modifier.animateContentSize()) {
         // 同一浮岛只保留一条点阵带：运行坞下沿的细灯带，或顶沿模式的点阵屏（贴在输入区上沿，运行坞出现时就在接缝处）。
         val motionStyles = LocalInfinityMotionStyles.current
-        val scopeLingering = com.promenar.infinity.ui.common.motion.LocalGenerationMotion.current.lingering
-        val bands = composerBandLayout(motionStyles, runDockVisible, screenActive = isGenerating || awaitingUser || scopeLingering)
+        val bands = composerBandLayout(motionStyles, runDockVisible, screenActive = isGenerating || awaitingUser)
         AnimatedVisibility(
             visible = runDockVisible,
             enter = fadeIn(tween(220, delayMillis = 60)) + expandVertically(TaskPanelSizeSpring, expandFrom = Alignment.Bottom),

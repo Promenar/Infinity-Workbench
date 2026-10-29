@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 外观：浮岛材质 -->
+    <string name="motion_surface_title">Island material</string>
+    <string name="motion_surface_frosted">Frosted glass</string>
+    <string name="motion_surface_ambient">Ambient light</string>
+    <string name="motion_surface_desc">Frosted glass lets the conversation show through, blurred. Ambient light keeps a solid surface and glows from inside while generating.</string>
+    <string name="motion_preview_backdrop">Here is a quick summary of today’s weather: cloudy with light rain this afternoon, around 18°C, humidity 70%. Clearing tonight with a low of 12°C.</string>
+
+    <!-- 外观：空会话动画 -->
+    <string name="motion_empty_led_morph">LED morph</string>
+    <string name="motion_empty_led_morph_desc">LED beads shift between the wordmark and the Möbius ring. Tap to skip ahead; drag the ring to rotate.</string>
+</resources>

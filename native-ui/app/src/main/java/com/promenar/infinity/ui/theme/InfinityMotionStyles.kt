@@ -20,7 +20,20 @@ enum class ComposerGlowStyle {
 
     companion object {
         internal fun fromPreferenceValue(value: String?): ComposerGlowStyle =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: AURORA
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: SCOPE_SCREEN
+    }
+}
+
+/** 输入框浮岛的材质。 */
+enum class ComposerSurfaceStyle {
+    /** 毛玻璃：半透明表面，背后的会话内容实时模糊，上沿一道细高光；生成光效沿用所选流光样式但减弱。 */
+    FROSTED,
+    /** 环境光：实色表面，不画超出浮岛边界的光晕；生成时阶段色从点阵屏一侧在浮岛内部漫开。 */
+    AMBIENT;
+
+    companion object {
+        internal fun fromPreferenceValue(value: String?): ComposerSurfaceStyle =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: AMBIENT
     }
 }
 
@@ -56,7 +69,7 @@ enum class GenerationIndicatorStyle {
 
     companion object {
         internal fun fromPreferenceValue(value: String?): GenerationIndicatorStyle =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: WAVE
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: MATRIX
     }
 }
 
@@ -73,11 +86,13 @@ enum class EmptyChatStyle {
     /** 粒子在字标与莫比乌斯带之间往复变形。 */
     MORPH,
     /** 灯珠排成缓缓自转的球。 */
-    LED_GLOBE;
+    LED_GLOBE,
+    /** 灯珠字标与灯珠莫比乌斯环之间往复变形。 */
+    LED_MORPH;
 
     companion object {
         internal fun fromPreferenceValue(value: String?): EmptyChatStyle =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: FLOW
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: LED_MORPH
     }
 }
 
@@ -98,11 +113,14 @@ enum class InfinitySchemeStyle {
     }
 }
 
+/** 默认值只作用于从未手动选择过的用户：偏好里没有对应键时才回退到这里，选择过的值原样保留。 */
 @Immutable
 data class InfinityMotionStyles(
-    val composer: ComposerGlowStyle = ComposerGlowStyle.AURORA,
-    val indicator: GenerationIndicatorStyle = GenerationIndicatorStyle.WAVE,
-    val emptyChat: EmptyChatStyle = EmptyChatStyle.FLOW,
+    val composer: ComposerGlowStyle = ComposerGlowStyle.SCOPE_SCREEN,
+    val indicator: GenerationIndicatorStyle = GenerationIndicatorStyle.MATRIX,
+    val emptyChat: EmptyChatStyle = EmptyChatStyle.LED_MORPH,
+    /** 输入框浮岛的材质。 */
+    val surface: ComposerSurfaceStyle = ComposerSurfaceStyle.AMBIENT,
     /** 点阵波形屏的位置，只在 [composer] 为 [ComposerGlowStyle.SCOPE_SCREEN] 时生效。 */
     val scopePlacement: ScopeScreenPlacement = ScopeScreenPlacement.INPUT_ROW,
     /** 点阵波形屏是否显示数字读数；关闭时波形铺满整块屏。 */

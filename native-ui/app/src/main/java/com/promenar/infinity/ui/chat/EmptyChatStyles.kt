@@ -57,7 +57,7 @@ internal fun globeRadius(widthPx: Float, heightPx: Float): Float = min(widthPx *
 /** 图形中心到提示语顶边的距离（dp）：字标留 56dp，莫比乌斯带与球体按各自尺寸往下让。 */
 internal fun emptyChatPromptGapDp(style: EmptyChatStyle, widthDp: Float, heightDp: Float): Float = when (style) {
     EmptyChatStyle.FLOW, EmptyChatStyle.LED_WORDMARK -> 56f
-    EmptyChatStyle.MOBIUS, EmptyChatStyle.MOBIUS_LED, EmptyChatStyle.MORPH -> mobiusRadius(widthDp, heightDp) * 0.62f + 20f
+    EmptyChatStyle.MOBIUS, EmptyChatStyle.MOBIUS_LED, EmptyChatStyle.MORPH, EmptyChatStyle.LED_MORPH -> mobiusRadius(widthDp, heightDp) * 0.62f + 20f
     EmptyChatStyle.LED_GLOBE -> globeRadius(widthDp, heightDp) + 24f
 }
 
@@ -74,6 +74,9 @@ private class EmptyChatScene(val style: EmptyChatStyle) {
     var dust: FloatArray? = null
     var morph: MorphParticles? = null
     var morphMask: WordmarkMask? = null
+    var ledMorph: LedMorphBeads? = null
+    /** 灯珠变形的时间轴时钟（秒），见 [LedMorphTimeline]。 */
+    var ledMorphClock = 0f
     val ripples = ArrayList<FloatArray>()
     val sphere: FloatArray by lazy { fibonacciSphere(GlobeBeads) }
     val beads = LedBatch(levels = 8, glowFrom = 4)
@@ -115,7 +118,7 @@ internal fun LedEmptyChat(
     val clock = rememberMotionClock(running = animate)
     val scene = remember(style, particleScale) { EmptyChatScene(style) }
     val dim by animateFloatAsState(if (dispersed) 0.3f else 1f, tween(500), label = "empty_scene_dim")
-    val needsMask = style == EmptyChatStyle.LED_WORDMARK || style == EmptyChatStyle.MORPH
+    val needsMask = style == EmptyChatStyle.LED_WORDMARK || style == EmptyChatStyle.MORPH || style == EmptyChatStyle.LED_MORPH
 
     BoxWithConstraints(modifier) {
         val widthPx = constraints.maxWidth.toFloat()
@@ -157,6 +160,7 @@ internal fun LedEmptyChat(
                     EmptyChatStyle.MOBIUS_LED -> drawMobiusLed(scene, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.MORPH -> if (mask != null) drawMorph(scene, mask, centerY, time, delta, tapped, palette, particleScale)
                     EmptyChatStyle.LED_GLOBE -> drawLedGlobe(scene, centerY, time, delta, tapped, palette, particleScale)
+                    EmptyChatStyle.LED_MORPH -> if (mask != null) drawLedMorph(scene, mask, centerY, time, delta, tapped, palette)
                     EmptyChatStyle.FLOW -> Unit
                 }
                 native.restore()
@@ -203,6 +207,58 @@ private fun DrawScope.drawLedWordmark(scene: EmptyChatScene, mask: WordmarkMask,
         for (ripple in scene.ripples) {
             val radius = (t - ripple[0]) * 260 * k
             if (kotlin.math.abs(hypot(x - ripple[1], y - ripple[2]) - radius) < pitch * 1.4f) level = maxOf(level, 1 - (t - ripple[0]) / 1.6f)
+        }
+        scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.05f) 1 else 0, level, x, y, bead, bead * 1.8f)
+    }
+    flushBeads(scene, palette)
+}
+
+/**
+ * 灯珠变形：灯珠字标与灯珠环之间往复变形（时间轴见 [LedMorphTimeline]）。两种形态灯珠数一致、按横向位置一一配对，
+ * 变形时按横向位置错开出发，飞行途中带少量旋涡偏移。字标阶段数据光带从左往右扫过，环阶段两段光带沿 ∞ 流过，零星有琥珀灯。
+ * 点按跳到下一形态；环阶段拖动转视角。系统关闭动画时时钟不走，停在静态字标。
+ */
+private fun DrawScope.drawLedMorph(scene: EmptyChatScene, mask: WordmarkMask, centerY: Float, t: Float, delta: Float, tapped: Boolean, palette: MotionPalette) {
+    val k = density
+    val pitch = 4.2f * k
+    val radius = mobiusRadius(size.width, size.height)
+    val beads = scene.ledMorph?.takeIf { it.mask === mask && it.width == size.width }
+        ?: buildLedMorphBeads(mask, size.width, size.height, k, pitch, radius).also { scene.ledMorph = it }
+    if (tapped) scene.ledMorphClock = LedMorphTimeline.skip(scene.ledMorphClock)
+    scene.ledMorphClock += delta
+    scene.bandClock += delta
+    val clock = scene.ledMorphClock
+    val progress = LedMorphTimeline.progress(clock)
+    val gathering = LedMorphTimeline.stageAt(clock) == LedMorphTimeline.Stage.GATHER
+    val view = mobiusView(scene, centerY, t)
+    val offsetY = centerY - mask.centerY
+    val wordBead = pitch * 0.56f
+    val p = scene.point
+    scene.beads.reset()
+    for (i in 0 until beads.count) {
+        val id = beads.id[i]
+        val e = LedMorphTimeline.beadProgress(progress, gathering, beads.rank[i])
+        val wx = beads.wordX[i]
+        val wy = beads.wordY[i] + offsetY
+        var x = wx
+        var y = wy
+        var level = 0f
+        var bead = wordBead
+        if (e < 1f) {
+            val band = (0.5f + 0.5f * sin(beads.column[i] * 0.2f - scene.bandClock * 2.2f)).pow(14)
+            level = beadLevel(id, t, band, 0.32f) * (1 - e)
+            bead = wordBead * (1 - e)
+        }
+        if (e > 0f) {
+            val u = beads.ringU[i]
+            view.project(u, beads.ringV[i] * view.halfWidth, p)
+            val swirl = sin(Math.PI.toFloat() * e) * 14 * k
+            val angle = beads.angle[i] + t * 0.8f
+            x = wx + (p[0] - wx) * e + cos(angle) * swirl
+            y = wy + (p[1] - wy) * e + sin(angle) * swirl
+            val band = (0.5f + 0.5f * sin(2 * u - scene.bandClock * 1.6f)).pow(14)
+            level += beadLevel(id, t, band, 0.22f) * (0.45f + 0.55f * p[2]) * e
+            bead += (1.2f + 1.0f * p[2]) * k * e
         }
         scene.beads.dot(if (level > 0.5f && motionHash(id.toFloat(), 4.4f) < 0.05f) 1 else 0, level, x, y, bead, bead * 1.8f)
     }

@@ -42,6 +42,8 @@ import com.promenar.infinity.ui.common.motion.rememberMotionPalette
 import com.promenar.infinity.ui.common.motion.slowBlink
 import com.promenar.infinity.ui.common.network.rememberAnimationsEnabled
 import com.promenar.infinity.ui.theme.ComposerGlowStyle
+import com.promenar.infinity.ui.theme.ComposerSurfaceStyle
+import com.promenar.infinity.ui.theme.InfinityPureWhite
 import com.promenar.infinity.ui.theme.LocalInfinityMotionStyles
 import com.promenar.infinity.ui.theme.InfinityMotionStyles
 import com.promenar.infinity.ui.theme.ScopeScreenPlacement
@@ -59,19 +61,40 @@ internal val ComposerIslandCorner = 24.dp
 internal const val ComposerGlowPeriodSeconds = 2.8f
 
 /**
- * 浮岛材质：深色沿用底部导航栏的抬升底色、半透明描边与顶边高光；
+ * 浮岛材质。环境光为实色：深色沿用底部导航栏的抬升底色、半透明描边与顶边高光；
  * 浅色改用纯白底，层次主要靠投影，顶边高光在亮底上不可见因此不画。
+ * 毛玻璃时容器透明，底色由 [ComposerIslandSurface] 画模糊背景再叠 [frostedTint]；描边改为浅色亮边，深浅色都画上沿 1px 内高光。
  */
 internal data class ComposerIslandMaterial(
     val container: Color,
     val border: BorderStroke,
     val topHighlight: Color?,
+    /** 毛玻璃叠在模糊背景上的半透明色；实色材质为 null。 */
+    val frostedTint: Color? = null,
 )
 
 @Composable
 internal fun composerIslandMaterial(): ComposerIslandMaterial {
     val scheme = MaterialTheme.colorScheme
-    return if (MaterialTheme.infinityDomainColors.isDark) {
+    val dark = MaterialTheme.infinityDomainColors.isDark
+    if (LocalInfinityMotionStyles.current.surface == ComposerSurfaceStyle.FROSTED) {
+        return if (dark) {
+            ComposerIslandMaterial(
+                container = Color.Transparent,
+                border = BorderStroke(1.dp, scheme.onSurface.copy(alpha = 0.14f)),
+                topHighlight = scheme.onSurface.copy(alpha = 0.16f),
+                frostedTint = scheme.surfaceContainer.copy(alpha = 0.6f),
+            )
+        } else {
+            ComposerIslandMaterial(
+                container = Color.Transparent,
+                border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.5f)),
+                topHighlight = InfinityPureWhite.copy(alpha = 0.9f),
+                frostedTint = scheme.surfaceContainerLowest.copy(alpha = 0.6f),
+            )
+        }
+    }
+    return if (dark) {
         ComposerIslandMaterial(
             container = scheme.surfaceContainer,
             border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.55f)),
@@ -183,7 +206,7 @@ internal enum class ScopeSlot {
 internal data class ComposerBandLayout(val scope: ScopeSlot, val dockStrip: Boolean)
 
 /**
- * 按光效样式、点阵屏位置、运行坞是否出现、点阵屏此刻是否在显示（生成中或本轮结束后停留），决定点阵带排布：
+ * 按光效样式、点阵屏位置、运行坞是否出现、点阵屏此刻是否在显示（生成中或等待审批），决定点阵带排布：
  * - 点阵屏为输入行右侧模式或其它样式时，运行坞出现就画细灯带；
  * - 点阵屏为顶沿模式且正在显示时，它贴在输入区上沿：有运行坞时位于接缝处、顶替细灯带，没有运行坞时就是浮岛顶沿；
  * - 顶沿模式的点阵屏不在显示时收起，运行坞照常画细灯带。
@@ -280,6 +303,8 @@ internal fun rememberComposerGlowState(generating: Boolean, error: Boolean, comp
  * 工具执行时光带停下、整圈换第三色呼吸；等待审批时整圈第三色慢闪；重试时只剩一圈暗描边等间隔闪。
  * 潮汐呼吸画随各阶段节奏扩散的外圈光晕与渐变描边；灯语样式只留一圈按阶段换色的描边，灯效由 [ComposerIslandLights] 画在浮岛内。
  * 出错时所有样式都整圈泛红、本轮完成时整圈泛绿，深色另加顶边高光。光晕画在浮岛自身边界之外，因此本修饰符须放在裁剪与背景之前。
+ * 材质（[ComposerSurfaceStyle]）：毛玻璃整体减弱到 [FrostedGlowScale]；环境光不画任何超出浮岛边界的光晕，
+ * 只留贴边描边，柔光、出错与完成的泛色由 [ComposerIslandSurface] 画在浮岛内部。
  */
 @Composable
 internal fun Modifier.composerIslandGlow(
@@ -289,6 +314,9 @@ internal fun Modifier.composerIslandGlow(
 ): Modifier {
     val (colorA, colorB) = composerGlowColors()
     val style = LocalInfinityMotionStyles.current.composer
+    val surface = LocalInfinityMotionStyles.current.surface
+    val outerHalo = surface != ComposerSurfaceStyle.AMBIENT
+    val glowScale = if (surface == ComposerSurfaceStyle.FROSTED) FrostedGlowScale else 1f
     val motion = LocalGenerationMotion.current
     val palette = rememberMotionPalette()
     val outlinePaints = remember { ComposerOutlinePaints() }
@@ -298,8 +326,8 @@ internal fun Modifier.composerIslandGlow(
     val colorMid = remember(colorA, colorB) { com.promenar.infinity.ui.common.hueMidpoint(colorA, colorB) }
     // 静态预览不跑着色器；Android 12 只保留描边。着色器按颜色缓存，重组时不重新编译。
     val inspection = LocalInspectionMode.current
-    val haloShader: android.graphics.Shader? = remember(colorA, colorB, errorColor, successColor, dark, inspection) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !inspection) {
+    val haloShader: android.graphics.Shader? = remember(colorA, colorB, errorColor, successColor, dark, inspection, outerHalo) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !inspection && outerHalo) {
             composerHaloShader(colorA, colorB, errorColor, successColor, dark)
         } else {
             null
@@ -327,9 +355,9 @@ internal fun Modifier.composerIslandGlow(
         haloShader?.let { updateHaloGeometry(it, center, size, cornerPx, density) }
         val haloBrush = haloShader?.let { ShaderBrush(it) }
         onDrawWithContent {
-            val generating = state.generating.value
-            val error = state.error.value
-            val success = state.success.value
+            val generating = state.generating.value * glowScale
+            val error = state.error.value * glowScale
+            val success = state.success.value * glowScale
             val time = state.timeSeconds
             val aurora = style == ComposerGlowStyle.AURORA
             val wait = motion.weight(GenerationMotionPhase.WAIT)
@@ -343,11 +371,11 @@ internal fun Modifier.composerIslandGlow(
                 updateHaloShader(haloShader, state, haloGenerating, error, success, if (stream + wait > 0f) lerp(colorB, colorMid, wait / (stream + wait)) else colorB)
                 drawRect(haloBrush!!, topLeft = Offset(-reach, -reach), size = Size(size.width + reach * 2, size.height + reach * 2))
             }
-            if (aurora && generating > 0f) {
+            if (outerHalo && aurora && generating > 0f) {
                 drawHaloRing(generating * tool * (0.12f + 0.45f * breath(time, 1.2f)), 12f, 9f, cornerPx, colorB, colorB, outlinePaints)
                 drawHaloRing(generating * approval * (0.1f + 0.5f * slowBlink(time)), 12f, 9f, cornerPx, colorB, colorB, outlinePaints)
             }
-            if (style == ComposerGlowStyle.BREATHE && generating > 0f) {
+            if (outerHalo && style == ComposerGlowStyle.BREATHE && generating > 0f) {
                 drawBreatheHalo(generating, state, motion, cornerPx, palette, colorA, colorB, outlinePaints)
             }
             drawContent()

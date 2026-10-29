@@ -24,6 +24,7 @@ class ThemePreferenceStore(context: Context) {
         const val EMPTY_CHAT_STYLE_KEY = "motion_empty_chat"
         const val SCOPE_PLACEMENT_KEY = "motion_scope_placement"
         const val SCOPE_DIGITS_KEY = "motion_scope_digits"
+        const val COMPOSER_SURFACE_KEY = "motion_composer_surface"
         const val RECENT_CUSTOM_COLORS_KEY = "theme_recent_custom_colors"
         /** 最近使用的自定义色最多保留几个。 */
         const val RECENT_CUSTOM_COLOR_LIMIT = 8
@@ -45,6 +46,7 @@ class ThemePreferenceStore(context: Context) {
             EMPTY_CHAT_STYLE_KEY,
             SCOPE_PLACEMENT_KEY,
             SCOPE_DIGITS_KEY,
+            COMPOSER_SURFACE_KEY,
             RECENT_CUSTOM_COLORS_KEY,
         )
     }
@@ -147,6 +149,11 @@ class ThemePreferenceStore(context: Context) {
         preferences.edit().putBoolean(SCOPE_DIGITS_KEY, enabled).apply()
     }
 
+    fun setComposerSurfaceStyle(style: ComposerSurfaceStyle) {
+        _state.value = _state.value.copy(motion = _state.value.motion.copy(surface = style))
+        preferences.edit().putString(COMPOSER_SURFACE_KEY, style.name.lowercase()).apply()
+    }
+
     /** 把自定义色放到最近使用的最前面，去重后截断到 [RECENT_CUSTOM_COLOR_LIMIT] 个。 */
     fun rememberCustomColor(argb: Int) {
         val recent = pushRecentColor(_state.value.recentCustomColors, argb, RECENT_CUSTOM_COLOR_LIMIT)
@@ -186,6 +193,7 @@ class ThemePreferenceStore(context: Context) {
             composer = ComposerGlowStyle.fromPreferenceValue(preferences.getString(COMPOSER_GLOW_STYLE_KEY, null)),
             indicator = GenerationIndicatorStyle.fromPreferenceValue(preferences.getString(INDICATOR_STYLE_KEY, null)),
             emptyChat = EmptyChatStyle.fromPreferenceValue(preferences.getString(EMPTY_CHAT_STYLE_KEY, null)),
+            surface = ComposerSurfaceStyle.fromPreferenceValue(preferences.getString(COMPOSER_SURFACE_KEY, null)),
             scopePlacement = ScopeScreenPlacement.fromPreferenceValue(preferences.getString(SCOPE_PLACEMENT_KEY, null)),
             // 缺省显示数字。
             scopeDigits = !preferences.contains(SCOPE_DIGITS_KEY) || preferences.getBoolean(SCOPE_DIGITS_KEY, true),

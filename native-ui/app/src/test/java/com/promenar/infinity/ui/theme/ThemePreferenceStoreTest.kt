@@ -203,7 +203,7 @@ class ThemePreferenceStoreTest {
             InfinityMotionStyles(
                 composer = ComposerGlowStyle.BOTTOM_STRIP,
                 indicator = GenerationIndicatorStyle.INFINITY_LED,
-                emptyChat = EmptyChatStyle.FLOW,
+                emptyChat = EmptyChatStyle.LED_MORPH,
             ),
         )
         assertThat(state.schemeStyle).isEqualTo(InfinitySchemeStyle.FIDELITY)
@@ -230,6 +230,59 @@ class ThemePreferenceStoreTest {
         verify { editor.putString("motion_generation_indicator", "ports") }
         verify { editor.putString("motion_empty_chat", "mobius_led") }
         verify { editor.putString("theme_scheme_style", "vibrant") }
+    }
+
+    @Test
+    fun `从未选择过动效时走新默认值：点阵波形屏、运算矩阵、灯珠变形与环境光`() {
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { getString(any(), any()) } returns null
+            every { contains(any()) } returns false
+        }
+
+        val motion = ThemePreferenceStore(contextFor(prefs)).state.value.motion
+
+        assertThat(motion.composer).isEqualTo(ComposerGlowStyle.SCOPE_SCREEN)
+        assertThat(motion.scopePlacement).isEqualTo(ScopeScreenPlacement.INPUT_ROW)
+        assertThat(motion.scopeDigits).isTrue()
+        assertThat(motion.indicator).isEqualTo(GenerationIndicatorStyle.MATRIX)
+        assertThat(motion.emptyChat).isEqualTo(EmptyChatStyle.LED_MORPH)
+        assertThat(motion.surface).isEqualTo(ComposerSurfaceStyle.AMBIENT)
+        assertThat(motion).isEqualTo(InfinityMotionStyles())
+    }
+
+    @Test
+    fun `手动选过的旧默认值原样保留，不被新默认覆盖`() {
+        val prefs = mockk<SharedPreferences>(relaxed = true) {
+            every { getString("motion_composer_glow", any()) } returns "aurora"
+            every { getString("motion_generation_indicator", any()) } returns "wave"
+            every { getString("motion_empty_chat", any()) } returns "flow"
+            every { getString("motion_composer_surface", any()) } returns "frosted"
+        }
+
+        val motion = ThemePreferenceStore(contextFor(prefs)).state.value.motion
+
+        assertThat(motion.composer).isEqualTo(ComposerGlowStyle.AURORA)
+        assertThat(motion.indicator).isEqualTo(GenerationIndicatorStyle.WAVE)
+        assertThat(motion.emptyChat).isEqualTo(EmptyChatStyle.FLOW)
+        assertThat(motion.surface).isEqualTo(ComposerSurfaceStyle.FROSTED)
+    }
+
+    @Test
+    fun `浮岛材质回退与写入`() {
+        assertThat(ComposerSurfaceStyle.fromPreferenceValue(null)).isEqualTo(ComposerSurfaceStyle.AMBIENT)
+        assertThat(ComposerSurfaceStyle.fromPreferenceValue("glassy")).isEqualTo(ComposerSurfaceStyle.AMBIENT)
+        assertThat(ComposerSurfaceStyle.fromPreferenceValue("FROSTED")).isEqualTo(ComposerSurfaceStyle.FROSTED)
+        assertThat(ComposerGlowStyle.fromPreferenceValue("removed")).isEqualTo(ComposerGlowStyle.SCOPE_SCREEN)
+        assertThat(GenerationIndicatorStyle.fromPreferenceValue(null)).isEqualTo(GenerationIndicatorStyle.MATRIX)
+        assertThat(EmptyChatStyle.fromPreferenceValue("led_morph")).isEqualTo(EmptyChatStyle.LED_MORPH)
+
+        val editor = mockk<SharedPreferences.Editor>(relaxed = true)
+        every { editor.putString(any(), any()) } returns editor
+        val prefs = mockk<SharedPreferences>(relaxed = true) { every { edit() } returns editor }
+        val store = ThemePreferenceStore(contextFor(prefs))
+        store.setComposerSurfaceStyle(ComposerSurfaceStyle.FROSTED)
+        assertThat(store.state.value.motion.surface).isEqualTo(ComposerSurfaceStyle.FROSTED)
+        verify { editor.putString("motion_composer_surface", "frosted") }
     }
 
     @Test
