@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.6-beta] - 2026-10-29
+
+### 修复
+
+- 智能体可达范围的“各工具明细”在 Linux 模式会话中不再列出 Termux（Linux 会话不提供 Termux，与“运行代码”一节一致）。
+- 运行模式选择、导出、修复与重置提示及 Linux 设置的路径说明中，“会话专用空间”“会话目录”“会话私有文件”统一称“本会话文件夹”。
+
 ## [0.4.5-beta] - 2026-10-29
 
 ### 变更
@@ -3193,8 +3200,6 @@ All notable changes to this project will be documented in this file.
 - 移除占位用的“工作台”功能。
 
 ## [Unreleased]
-
-## [0.4.5-beta] - 2026-10-29
 
 ### 新增
 - **智能上下文管理**:

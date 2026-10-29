@@ -18,12 +18,12 @@ class NetworkRowScopeTest {
     }
 
     @Test
-    fun `会话为 Linux 模式时总表去掉脚本行，内置命令行沿用同一组规则，全局页列出全部`() {
+    fun `会话为 Linux 模式时总表去掉脚本与 Termux 行，内置命令行沿用同一组规则，全局页列出全部`() {
         val rows = com.promenar.infinity.domain.network.AgentNetworkPolicy.rows
         assertThat(networkRowsFor(rows, null)).isEqualTo(rows)
         assertThat(networkRowsFor(rows, NetworkRunMode.BUILTIN)).isEqualTo(rows)
         val linux = networkRowsFor(rows, NetworkRunMode.LINUX)
-        assertThat(linux.map { it.tool }).isEqualTo(AgentNetworkTool.entries.filter { it != AgentNetworkTool.SCRIPT })
+        assertThat(linux.map { it.tool }).isEqualTo(AgentNetworkTool.entries.filter { it != AgentNetworkTool.SCRIPT && it != AgentNetworkTool.TERMUX })
         // Linux 命令与内置命令注入同一组 tailnet 代理变量：公网、局域网、本机不限，tailnet 需内置 Tailscale。
         val commands = linux.first { it.tool == AgentNetworkTool.BUILTIN_PROCESS }.cells.associate { it.target to it.state }
         assertThat(commands).containsExactly(

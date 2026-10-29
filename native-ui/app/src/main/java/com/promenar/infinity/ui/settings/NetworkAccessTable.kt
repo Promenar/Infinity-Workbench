@@ -63,13 +63,16 @@ internal fun networkRowScope(tool: AgentNetworkTool): NetworkRowScope = when (to
 }
 
 /**
- * 会话可达范围按运行模式取总表的行：Linux 会话没有隔离脚本，去掉该行；全局设置页（null）列出全部。
+ * 会话可达范围按运行模式取总表的行：Linux 会话没有隔离脚本与 Termux，去掉这两行；全局设置页（null）列出全部。
  * Linux 模式下“内置命令”一行显示为 Linux 命令：两者都由系统网络决定，内置 Tailscale 运行时
  * 都注入同一组代理变量（`LinuxLaunchBuilder` 与 `BuiltinExecEnvironment` 均取 `subprocessEnvironment()`），
  * proot 不隔离网络，guest 能连到本机代理，因此 tailnet 一格与内置命令相同。
  */
 internal fun networkRowsFor(rows: List<NetworkAccessRow>, runMode: NetworkRunMode?): List<NetworkAccessRow> =
-    if (runMode == NetworkRunMode.LINUX) rows.filterNot { it.tool == AgentNetworkTool.SCRIPT } else rows
+    if (runMode == NetworkRunMode.LINUX) rows.filterNot { it.tool in LINUX_ABSENT_TOOLS } else rows
+
+/** Linux 会话工具集不含的联网工具，与 `SessionToolResolver.LINUX_HIDDEN_TOOLS` 对应。 */
+private val LINUX_ABSENT_TOOLS = setOf(AgentNetworkTool.SCRIPT, AgentNetworkTool.TERMUX)
 
 /** 把总表的静态规则与当前设置合成用户能直接读懂的状态，例如白名单为空时局域网实际不可达。 */
 internal fun networkCell(target: NetworkTargetClass, state: NetworkAccessState, snapshot: AgentNetworkSnapshot): NetworkCell = when (state) {

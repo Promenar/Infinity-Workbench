@@ -41,7 +41,7 @@
     </plurals>
     <string name="run_mode_action_reset">Reset Linux</string>
     <string name="run_mode_action_export">Export projects under /root…</string>
-    <string name="run_mode_export_private">Export to session space</string>
+    <string name="run_mode_export_private">Export to session folder</string>
     <string name="run_mode_export_external">Choose a folder…</string>
     <string name="run_mode_reset_confirm_title">Reset Linux?</string>
     <string name="run_mode_reset_confirm_message">Installed packages and projects under /root are deleted and can\'t be restored. /home/session is kept.</string>
@@ -51,7 +51,7 @@
         <item quantity="one">Exported %1$d file (%2$s) to %3$s</item>
         <item quantity="other">Exported %1$d files (%2$s) to %3$s</item>
     </plurals>
-    <string name="run_mode_export_private_location">session space</string>
+    <string name="run_mode_export_private_location">session folder</string>
     <string name="run_mode_export_none">This conversation has no Linux home projects to export.</string>
     <string name="run_mode_export_failures">Not exported:</string>
     <string name="run_mode_export_reason_link">link skipped</string>
@@ -60,7 +60,7 @@
     <string name="run_mode_export_reason_changed">changed during export</string>
     <string name="run_mode_export_reason_source">source unavailable</string>
     <string name="run_mode_export_offer_title">Export Linux home projects?</string>
-    <string name="run_mode_export_offer_body">The main workspace is in the Linux home folder, which built-in mode can\'t use. Export its projects to the session space first.</string>
+    <string name="run_mode_export_offer_body">The main workspace is in the Linux home folder, which built-in mode can\'t use. Export its projects to the session folder first.</string>
     <string name="run_mode_done">Done</string>
     <string name="run_mode_switch_failed">Couldn\'t switch the run mode. Try again.</string>
     <string name="run_mode_action_failed">Couldn\'t finish. Try again.</string>
