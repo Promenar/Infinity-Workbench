@@ -4,7 +4,7 @@ import com.promenar.infinity.data.skills.DiscoveredSkill
 import com.promenar.infinity.data.skills.SkillSlashInvocation
 import com.promenar.infinity.data.skills.SkillStatus
 import com.promenar.infinity.domain.model.ExecutionMode
-import com.promenar.infinity.domain.usecase.ExportSessionUseCase
+import com.promenar.infinity.domain.export.SessionExportFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -34,7 +34,9 @@ sealed interface SlashCommandAction {
     /** 打开会话设置的“工具”页（执行模式所在位置）。 */
     data object OpenToolSettings : SlashCommandAction
     data class SetToolsEnabled(val enabled: Boolean) : SlashCommandAction
-    data class Export(val format: ExportSessionUseCase.Format) : SlashCommandAction
+    /** 不带参数的 /export：打开导出面板。 */
+    data object OpenExportSheet : SlashCommandAction
+    data class Export(val format: SessionExportFormat) : SlashCommandAction
     data class Reject(val reason: SlashCommandRejection, val argument: String = "") : SlashCommandAction
 }
 
@@ -57,8 +59,13 @@ object BuiltinSlashCommandResolver {
     )
     private val ON = setOf("on", "开", "开启", "打开", "启用", "enable", "true", "1")
     private val OFF = setOf("off", "关", "关闭", "停用", "禁用", "disable", "false", "0")
-    private val MARKDOWN = setOf("", "md", "markdown")
-    private val TEXT = setOf("txt", "text", "文本", "纯文本")
+    private val EXPORT_FORMAT_ALIASES = mapOf(
+        SessionExportFormat.MARKDOWN to setOf("md", "markdown"),
+        SessionExportFormat.TXT to setOf("txt", "text", "文本", "纯文本"),
+        SessionExportFormat.HTML to setOf("html", "htm", "web", "网页"),
+        SessionExportFormat.PDF to setOf("pdf"),
+        SessionExportFormat.PNG to setOf("png", "image", "img", "图片", "长图", "图像"),
+    )
 
     fun resolve(command: BuiltinSlashCommand, argument: String, context: SlashCommandContext): SlashCommandAction {
         val arg = argument.trim()
@@ -91,13 +98,15 @@ object BuiltinSlashCommandResolver {
                 else -> SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_TOGGLE, arg)
             }
             BuiltinSlashCommand.EXPORT -> {
-                val format = when (key) {
-                    in MARKDOWN -> ExportSessionUseCase.Format.MARKDOWN
-                    in TEXT -> ExportSessionUseCase.Format.TXT
-                    else -> return SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_EXPORT_FORMAT, arg)
+                val format = if (key.isEmpty()) null else {
+                    EXPORT_FORMAT_ALIASES.entries.firstOrNull { key.removePrefix(".") in it.value }?.key
+                        ?: return SlashCommandAction.Reject(SlashCommandRejection.UNKNOWN_EXPORT_FORMAT, arg)
                 }
-                if (context.hasMessages) SlashCommandAction.Export(format)
-                else SlashCommandAction.Reject(SlashCommandRejection.NOTHING_TO_EXPORT)
+                when {
+                    !context.hasMessages -> SlashCommandAction.Reject(SlashCommandRejection.NOTHING_TO_EXPORT)
+                    format == null -> SlashCommandAction.OpenExportSheet
+                    else -> SlashCommandAction.Export(format)
+                }
             }
         }
     }

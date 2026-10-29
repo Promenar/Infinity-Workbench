@@ -81,6 +81,8 @@ internal sealed interface ChatOverlay {
     data object ClearHistory : ChatOverlay
     data object DeleteSession : ChatOverlay
     data object RenameSession : ChatOverlay
+    /** 导出会话面板（会话菜单或不带参数的 /export）。 */
+    data object ExportSession : ChatOverlay
     data class Truncate(val messageId: String) : ChatOverlay
     data class TurnMemory(val messageId: String) : ChatOverlay
 }
@@ -125,6 +127,7 @@ internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     ChatOverlay.ClearHistory -> "clear_history"
     ChatOverlay.DeleteSession -> "delete_session"
     ChatOverlay.RenameSession -> "rename_session"
+    ChatOverlay.ExportSession -> "export_session"
     is ChatOverlay.Truncate -> TRUNCATE_OVERLAY_PREFIX + overlay.messageId
     is ChatOverlay.TurnMemory -> TURN_MEMORY_OVERLAY_PREFIX + overlay.messageId
 }
@@ -138,6 +141,7 @@ internal fun restoreChatOverlay(token: String?): ChatOverlay? = when {
     token == "clear_history" -> ChatOverlay.ClearHistory
     token == "delete_session" -> ChatOverlay.DeleteSession
     token == "rename_session" -> ChatOverlay.RenameSession
+    token == "export_session" -> ChatOverlay.ExportSession
     token?.startsWith(TRUNCATE_OVERLAY_PREFIX) == true ->
         ChatOverlay.Truncate(token.removePrefix(TRUNCATE_OVERLAY_PREFIX))
     token?.startsWith(TURN_MEMORY_OVERLAY_PREFIX) == true ->
@@ -648,6 +652,15 @@ fun ChatRoute(
         if (result == SnackbarResult.Dismissed) chatViewModel.dismissTaskCompletionUndo(undo.token)
     }
 
+    val showCommandFeedback: (String, SnackbarType) -> Unit = { message, type ->
+        snackbarAction = null
+        snackbarData = InfinitySnackbarData(message, type)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+        }
+    }
+    val sessionExportViewModel = com.promenar.infinity.ui.chat.export.rememberSessionExportViewModel(sessionId)
     val slashCommands = rememberChatSlashCommands(
         sessionId = sessionId,
         chatViewModel = chatViewModel,
@@ -656,14 +669,8 @@ fun ChatRoute(
         isCompressing = compressionState.isCompressing,
         requestOverlay = requestOverlay,
         onNavigateToSession = onNavigateToSession,
-        showFeedback = { message, type ->
-            snackbarAction = null
-            snackbarData = InfinitySnackbarData(message, type)
-            scope.launch {
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-            }
-        },
+        showFeedback = showCommandFeedback,
+        sessionExportViewModel = sessionExportViewModel,
     )
 
     val latestProviderModels by rememberUpdatedState(providerModels)
@@ -909,6 +916,7 @@ fun ChatRoute(
                 onOpenPromptEditor = { requestOverlay(ChatOverlay.PromptEditor) },
                 onOpenClearDialog = { requestOverlay(ChatOverlay.ClearHistory) },
                 onOpenRenameDialog = { requestOverlay(ChatOverlay.RenameSession) },
+                onOpenExport = { requestOverlay(ChatOverlay.ExportSession) },
                 onOpenDeleteDialog = { requestOverlay(ChatOverlay.DeleteSession) },
                 onContentChange = chatViewModel::updateMessageContentOnly,
                 onCopy = { text ->
@@ -1088,6 +1096,17 @@ fun ChatRoute(
             loadWorktreeBranch = com.promenar.infinity.ui.workspace.worktreeBranchLoader(application),
         )
     }
+    // 导出面板始终在场：面板关闭时也负责 /export <格式> 的保存与分享流程。
+    com.promenar.infinity.ui.chat.export.SessionExportHost(
+        viewModel = sessionExportViewModel,
+        show = activeOverlay == ChatOverlay.ExportSession,
+        sessionTitle = uiState.session?.title ?: stringResource(R.string.chat_title_new),
+        messageCount = uiState.messages.count {
+            it.role == com.promenar.infinity.data.model.MessageRole.USER || it.role == com.promenar.infinity.data.model.MessageRole.ASSISTANT
+        },
+        onDismiss = { if (activeOverlay == ChatOverlay.ExportSession) activeOverlayToken = null },
+        showFeedback = showCommandFeedback,
+    )
     if (activeOverlay == ChatOverlay.RenameSession) {
         RenameDialog(
             currentName = uiState.session?.title ?: stringResource(R.string.chat_title_new),

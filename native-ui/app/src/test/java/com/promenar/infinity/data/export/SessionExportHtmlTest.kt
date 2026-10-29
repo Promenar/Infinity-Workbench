@@ -1,0 +1,83 @@
+package com.promenar.infinity.data.export
+
+import com.promenar.infinity.domain.export.SessionExportFormat
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import java.io.File
+
+class SessionExportHtmlTest {
+    private val assets = ExportAssets { path -> File("app/src/main/assets", path).readBytes() }
+    private fun doc(body: String, attachments: List<ExportAttachment> = emptyList()) = ExportDocument("标题", "model", 1, 2,
+        listOf(ExportMessage("ASSISTANT", 1, "actual-model", body, attachments = attachments)))
+
+    @Test fun `普通HTML不加载富内容脚本且原始HTML及危险链接不可执行`() {
+        val html = ExportHtmlRenderer(assets).render(doc("<script>alert(1)</script>\n<img src=x onerror=alert(2)>\n\n[危险](javascript:alert(3))\n\n![网络图片](https://invalid.example/a.png)"), SessionExportFormat.HTML, true)
+        assertTrue(html.contains("&lt;script&gt;"))
+        assertFalse(html.contains("<script>alert(1)"))
+        assertFalse(html.contains("<img src=x"))
+        assertFalse(Regex("(?i)(?:src|href)=[\"'](?:https?:|javascript:)").containsMatchIn(html))
+        assertFalse(html.contains("data-export-library"))
+        assertFalse(Regex("(?i)<script[^>]+src=").containsMatchIn(html))
+    }
+
+    @Test fun `GFM表格代码高亮和各类公式标记存在且忽略代码链接中的公式`() {
+        val body = """
+            |列一|列二|
+            |---|---|
+            |a|b|
+
+            ```kotlin
+            val text = "<tag>"
+            ```
+
+        """.trimIndent() + "\n数学：\$x^2\$，\$\$y=2\$\$，\\(z\\)，\\[a+b\\]"
+        val html = ExportHtmlRenderer(assets).render(doc(body), SessionExportFormat.HTML, true)
+        assertTrue(html.contains("<table>"))
+        assertTrue(html.contains("language-kotlin"))
+        assertTrue(html.contains("<span style=\"color:"))
+        assertTrue(html.contains("data-math"))
+        assertTrue(html.contains("data-export-library=\"katex\""))
+        assertTrue(html.contains("data:font/woff2;base64,"))
+        assertFalse(Regex("url\\([^)]*\\.(?:woff|ttf)[\"']?\\)").containsMatchIn(html))
+        val literal = ExportHtmlRenderer(assets).render(doc("`\$x\$`\n\n```text\n\$\$x\$\$\n```\n\n[link](https://example.org/\$x\$)"), SessionExportFormat.HTML, true)
+        assertFalse(literal.contains("data-export-library=\"katex\""))
+    }
+
+    @Test fun `图表按需内嵌且保留原始代码回退不用执行用户JS`() {
+        listOf("mermaid" to "graph TD\nA-->B", "echarts" to "{\"series\":[{\"type\":\"bar\",\"data\":[1,2]}]}").forEach { (kind, code) ->
+            val html = ExportHtmlRenderer(assets).render(doc("```$kind\n$code\n```"), SessionExportFormat.HTML, true)
+            assertTrue(html.contains("data-export-library=\"$kind\""))
+            assertTrue(html.contains("data-diagram=\"$kind\""))
+            assertTrue(html.contains("window.__sessionExportReady"))
+            assertFalse(html.contains("data-export-library=\"katex\""))
+            assertFalse(Regex("(?i)<script[^>]+src=").containsMatchIn(html))
+        }
+    }
+
+    @Test fun `空公式保留字面量且不使整份导出失败`() {
+        val html = ExportHtmlRenderer(assets).render(doc("空公式：\\(\\) 与 \\[\\]"), SessionExportFormat.HTML, true)
+        assertTrue(html.contains("空公式"))
+        assertFalse(html.contains("data-export-library=\"katex\""))
+    }
+
+    @Test fun `HTML附件图片内嵌文本折叠而快照仅列文本名`() {
+        val input = doc("正文", listOf(
+            ExportAttachment("a.png", "image/png", source = "data:image/png;base64,AQID", dataUri = "data:image/png;base64,AQID"),
+            ExportAttachment("notes.txt", "text/plain", text = "秘密全文"),
+            ExportAttachment("a.pdf", "application/pdf", source = "content://docs/1")))
+        val renderer = ExportHtmlRenderer(assets)
+        val html = renderer.render(input, SessionExportFormat.HTML, true)
+        assertTrue(html.contains("<img src=\"data:image/png;base64,AQID\""))
+        assertTrue(html.contains("<details"))
+        assertTrue(html.contains("秘密全文"))
+        val off = renderer.render(input, SessionExportFormat.HTML, false)
+        assertFalse(off.contains("秘密全文"))
+        assertFalse(off.contains("<img"))
+        listOf(SessionExportFormat.PDF, SessionExportFormat.PNG).forEach { format ->
+            val snapshot = renderer.render(input, format, false)
+            assertTrue(snapshot.contains("<img src=\"data:image/png;base64,AQID\""))
+            assertFalse(snapshot.contains("秘密全文"))
+            assertTrue(snapshot.contains("notes.txt"))
+        }
+    }
+}

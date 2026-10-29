@@ -1,9 +1,6 @@
 package com.promenar.infinity.ui.chat
 
 import android.app.Application
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -16,7 +13,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.model.ExecutionMode
 import com.promenar.infinity.domain.model.ExecutionModeCodec
-import com.promenar.infinity.domain.usecase.ExportSessionUseCase
 import com.promenar.infinity.ui.chat.command.SlashBlockReason
 import com.promenar.infinity.ui.chat.command.SlashCommand
 import com.promenar.infinity.ui.chat.command.SlashCommandAction
@@ -26,11 +22,9 @@ import com.promenar.infinity.ui.chat.command.SlashCommandController
 import com.promenar.infinity.ui.chat.command.SlashCommandRejection
 import com.promenar.infinity.ui.chat.command.SlashCommandViewModel
 import com.promenar.infinity.ui.chat.command.rememberBuiltinSlashCommands
+import com.promenar.infinity.ui.chat.export.labelRes
 import com.promenar.infinity.ui.common.SnackbarType
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** 聊天页的斜杠命令入口：命令目录、点选与发送拦截。 */
 internal class ChatSlashCommands(
@@ -55,6 +49,7 @@ internal fun rememberChatSlashCommands(
     requestOverlay: (ChatOverlay) -> Unit,
     onNavigateToSession: (String) -> Unit,
     showFeedback: (String, SnackbarType) -> Unit,
+    sessionExportViewModel: com.promenar.infinity.ui.chat.export.SessionExportViewModel,
 ): ChatSlashCommands {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -71,30 +66,6 @@ internal fun rememberChatSlashCommands(
     val latestInput by rememberUpdatedState(inputText)
     val latestSessionId by rememberUpdatedState(sessionId)
     val latestFeedback by rememberUpdatedState(showFeedback)
-
-    // 导出：先生成内容，再让用户在系统文件选择器中选保存位置。
-    val pendingExport = remember { arrayOfNulls<ExportSessionUseCase.ExportResult>(1) }
-    val onExportTarget: (Uri?) -> Unit = { uri ->
-        val export = pendingExport[0]
-        pendingExport[0] = null
-        if (uri != null && export != null) {
-            scope.launch {
-                val saved = try {
-                    withContext(Dispatchers.IO) {
-                        context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(export.content.toByteArray(Charsets.UTF_8)) } != null
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    false
-                }
-                if (saved) latestFeedback(resources.getString(R.string.slash_feedback_exported, export.fileName), SnackbarType.SUCCESS)
-                else latestFeedback(resources.getString(R.string.slash_feedback_export_failed), SnackbarType.ERROR)
-            }
-        }
-    }
-    val markdownLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown"), onExportTarget)
-    val textLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain"), onExportTarget)
 
     val perform: (SlashCommandAction) -> Unit = { action ->
         val feedback = latestFeedback
@@ -140,26 +111,15 @@ internal fun rememberChatSlashCommands(
                     SnackbarType.SUCCESS,
                 )
             }
-            is SlashCommandAction.Export -> scope.launch {
-                val export = try {
-                    chatViewModel.exportSession(latestSessionId, action.format)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    null
+            SlashCommandAction.OpenExportSheet -> requestOverlay(ChatOverlay.ExportSession)
+            // 按默认开关生成后让用户选保存位置；保存流程与结果提示由导出面板宿主负责。
+            is SlashCommandAction.Export -> {
+                // PDF 与长图需要后台渲染几秒，先提示正在生成。
+                if (!action.format.supportsAttachments) {
+                    val label = resources.getString(action.format.labelRes())
+                    feedback(resources.getString(R.string.session_export_running, label), SnackbarType.INFO)
                 }
-                if (export == null) {
-                    feedback(resources.getString(R.string.slash_feedback_export_failed), SnackbarType.ERROR)
-                } else {
-                    pendingExport[0] = export
-                    val launcher = if (action.format == ExportSessionUseCase.Format.MARKDOWN) markdownLauncher else textLauncher
-                    try {
-                        launcher.launch(export.fileName)
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        pendingExport[0] = null
-                        feedback(resources.getString(R.string.slash_feedback_export_failed), SnackbarType.ERROR)
-                    }
-                }
+                sessionExportViewModel.exportDirectly(action.format)
             }
             is SlashCommandAction.Reject -> feedback(
                 when (action.reason) {

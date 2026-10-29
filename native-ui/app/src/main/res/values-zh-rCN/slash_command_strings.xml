@@ -22,7 +22,7 @@
     <string name="slash_cmd_tools_name">工具调用</string>
     <string name="slash_cmd_tools_desc">为本会话开启或关闭工具调用</string>
     <string name="slash_cmd_export_name">导出会话</string>
-    <string name="slash_cmd_export_desc">保存为 Markdown 文件，加 txt 导出纯文本</string>
+    <string name="slash_cmd_export_desc">选择格式和包含内容；加 md、txt、html、pdf 或 png 直接导出</string>
 
     <!-- 执行结果 -->
     <string name="slash_feedback_renamed">已重命名为“%1$s”</string>
@@ -41,7 +41,7 @@
     <string name="slash_reject_nothing_to_export">本会话还没有可导出的消息</string>
     <string name="slash_reject_unknown_mode">没有“%1$s”，可用：命令需批准或免批准</string>
     <string name="slash_reject_unknown_toggle">用法：/tools on 或 /tools off</string>
-    <string name="slash_reject_unknown_format">导出只支持 md 或 txt</string>
+    <string name="slash_reject_unknown_format">导出只支持 md、txt、html、pdf 或 png</string>
     <string name="slash_block_disabled">技能 /%1$s 已停用，可在会话设置的“工具”中启用</string>
     <string name="slash_block_pending_trust">技能 /%1$s 尚未信任，请在会话设置的“工具”中确认</string>
     <string name="slash_block_broken">技能 /%1$s 无法加载，请检查它的 SKILL.md</string>
