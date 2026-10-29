@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0-beta] - 2026-10-29
+
 ### 产品更名为 Infinity Workbench
 
 - 产品名 Nexara 更名为 Infinity Workbench，桌面名称为全名；空会话粒子、灯珠、变形字标与首次引导改拼 INFINITY。仓库迁到 `Promenar/Infinity-Workbench`。
