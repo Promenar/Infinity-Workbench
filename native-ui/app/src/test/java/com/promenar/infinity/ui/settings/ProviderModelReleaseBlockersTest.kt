@@ -28,6 +28,10 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -124,7 +128,8 @@ class ProviderModelReleaseBlockersTest {
         val success = coordinator.states.value.getValue("provider-a::remote-a") as ModelTestState.Success
         assertThat(success.latencyMs).isAtLeast(0)
         assertThat(captured!!.model).isEqualTo("remote-a")
-        assertThat(captured!!.maxTokens).isEqualTo(1)
+        assertThat(captured!!.maxTokens).isEqualTo(16)
+        assertThat(captured!!.maxTokens).isEqualTo(ProviderModelTestCoordinator.PROBE_MAX_OUTPUT_TOKENS)
         assertThat(captured!!.messages).containsExactly(ProtocolMessage("user", "Reply OK."))
     }
 
@@ -214,7 +219,7 @@ class ProviderModelReleaseBlockersTest {
                 PromptRequest(
                     messages = listOf(ProtocolMessage("user", "Reply OK.")),
                     model = "remote-a",
-                    maxTokens = 1,
+                    maxTokens = 16,
                 ),
             ).toList()
             val coordinator = coordinator(this, RecordingProtocol { flowOf(*classifiedChunks.toTypedArray()) })
@@ -227,7 +232,9 @@ class ProviderModelReleaseBlockersTest {
         val rateLimit = probe(HttpStatusCode.TooManyRequests, "private quota details", "17")
 
         assertThat(auth.code).isEqualTo(GenerationFailureCode.AUTH)
+        assertThat(auth.retryAfterSeconds).isNull()
         assertThat(rateLimit.code).isEqualTo(GenerationFailureCode.RATE_LIMIT)
+        assertThat(rateLimit.retryAfterSeconds).isEqualTo(17)
         assertThat(auth.toString()).doesNotContain("private")
         assertThat(rateLimit.toString()).doesNotContain("private")
     }
@@ -287,7 +294,7 @@ class ProviderModelReleaseBlockersTest {
         advanceUntilIdle()
 
         val state = coordinator.states.value.getValue("provider-a::remote-a")
-        assertThat(state).isInstanceOf(ModelTestState.Error::class.java)
+        assertThat(state).isEqualTo(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
     }
 
     @Test
@@ -309,7 +316,7 @@ class ProviderModelReleaseBlockersTest {
     }
 
     @Test
-    fun `payload without done becomes a structured error`() = runTest {
+    fun `payload without done is sufficient for success`() = runTest {
         val protocol = RecordingProtocol { flowOf(StreamChunk.TextDelta("OK")) }
         val coordinator = coordinator(this, protocol)
 
@@ -317,7 +324,7 @@ class ProviderModelReleaseBlockersTest {
         advanceUntilIdle()
 
         val state = coordinator.states.value.getValue("provider-a::remote-a")
-        assertThat(state).isInstanceOf(ModelTestState.Error::class.java)
+        assertThat(state).isInstanceOf(ModelTestState.Success::class.java)
     }
 
     @Test
@@ -325,8 +332,8 @@ class ProviderModelReleaseBlockersTest {
         val hold = CompletableDeferred<Unit>()
         val protocol = RecordingProtocol {
             flow {
-                emit(StreamChunk.TextDelta("OK"))
                 hold.await()
+                emit(StreamChunk.TextDelta("OK"))
                 emit(StreamChunk.Completed(com.promenar.infinity.domain.generation.CompletionReason.END_TURN))
             }
         }
@@ -346,11 +353,109 @@ class ProviderModelReleaseBlockersTest {
         assertThat(coordinator.states.value["provider-a::remote-a"]).isInstanceOf(ModelTestState.Success::class.java)
     }
 
+    @Test
+    fun `thinking or text before output limit is sufficient for success`() = runTest {
+        for (payload in listOf(StreamChunk.Thinking("正在思考"), StreamChunk.TextDelta("O"))) {
+            val protocol = RecordingProtocol {
+                flowOf(payload, StreamChunk.Error(code = GenerationFailureCode.OUTPUT_LIMIT))
+            }
+            val coordinator = coordinator(this, protocol)
+            coordinator.test("provider-a::remote-a")
+            advanceUntilIdle()
+            assertThat(coordinator.states.value["provider-a::remote-a"])
+                .isInstanceOf(ModelTestState.Success::class.java)
+        }
+    }
+
+    @Test
+    fun `output limit without payload keeps the output limit code`() = runTest {
+        val coordinator = coordinator(this, RecordingProtocol {
+            flowOf(StreamChunk.TextDelta(""), StreamChunk.Thinking(""), StreamChunk.Error(GenerationFailureCode.OUTPUT_LIMIT))
+        })
+        coordinator.test("provider-a::remote-a")
+        advanceUntilIdle()
+        assertThat(coordinator.states.value["provider-a::remote-a"])
+            .isEqualTo(ModelTestState.Error(GenerationFailureCode.OUTPUT_LIMIT))
+    }
+
+    @Test
+    fun `first payload cancels upstream and latency excludes cancellation cleanup`() = runTest {
+        var cancelled = false
+        var cleanupFinished = false
+        val protocol = RecordingProtocol {
+            flow {
+                try {
+                    emit(StreamChunk.TextDelta(""))
+                    emit(StreamChunk.Thinking(""))
+                    delay(37)
+                    emit(StreamChunk.Thinking("开始"))
+                    awaitCancellation()
+                } catch (error: CancellationException) {
+                    cancelled = true
+                    throw error
+                } finally {
+                    withContext(NonCancellable) { delay(100) }
+                    cleanupFinished = true
+                }
+            }
+        }
+        val coordinator = coordinator(this, protocol, nowNanos = { testScheduler.currentTime * 1_000_000L })
+        coordinator.test("provider-a::remote-a")
+        advanceUntilIdle()
+        assertThat(coordinator.states.value["provider-a::remote-a"]).isEqualTo(ModelTestState.Success(37))
+        assertThat(cancelled).isTrue()
+        assertThat(cleanupFinished).isTrue()
+        assertThat(testScheduler.currentTime).isEqualTo(137)
+    }
+
+    @Test
+    fun `error before payload stops collection immediately`() = runTest {
+        var cancelled = false
+        val coordinator = coordinator(this, RecordingProtocol {
+            flow {
+                try {
+                    emit(StreamChunk.Error(GenerationFailureCode.RATE_LIMIT, retryAfterSeconds = 23))
+                    awaitCancellation()
+                } finally { cancelled = true }
+            }
+        })
+        coordinator.test("provider-a::remote-a")
+        advanceUntilIdle()
+        assertThat(coordinator.states.value["provider-a::remote-a"])
+            .isEqualTo(ModelTestState.Error(GenerationFailureCode.RATE_LIMIT, 23))
+        assertThat(cancelled).isTrue()
+    }
+
+    @Test
+    fun `empty text thinking and tool metadata do not establish text generation`() = runTest {
+        val coordinator = coordinator(this, RecordingProtocol {
+            flowOf(
+                StreamChunk.TextDelta(""), StreamChunk.Thinking(""),
+                StreamChunk.ToolCallDelta("call-1", "unrequested_tool", "{}", 0),
+                StreamChunk.Completed(com.promenar.infinity.domain.generation.CompletionReason.TOOL_CALLS, listOf("call-1")),
+            )
+        })
+        coordinator.test("provider-a::remote-a")
+        advanceUntilIdle()
+        assertThat(coordinator.states.value["provider-a::remote-a"])
+            .isEqualTo(ModelTestState.Error(GenerationFailureCode.UNKNOWN))
+    }
+
+    @Test
+    fun `stream exceptions keep normalizer classification`() = runTest {
+        val coordinator = coordinator(this, RecordingProtocol { throw java.net.ConnectException("connection refused") })
+        coordinator.test("provider-a::remote-a")
+        advanceUntilIdle()
+        assertThat(coordinator.states.value["provider-a::remote-a"])
+            .isEqualTo(ModelTestState.Error(GenerationFailureCode.NETWORK))
+    }
+
     private fun coordinator(
         scope: CoroutineScope,
         protocol: LlmProtocol,
         timeoutMillis: Long = 15_000,
         beforeJobStartForTest: (String) -> Unit = {},
+        nowNanos: () -> Long = System::nanoTime,
     ): ProviderModelTestCoordinator {
         val resolved = ResolvedProviderModel(
             modelId = "provider-a::remote-a",
@@ -383,6 +488,7 @@ class ProviderModelReleaseBlockersTest {
             scope = scope,
             timeoutMillis = timeoutMillis,
             beforeJobStartForTest = beforeJobStartForTest,
+            nowNanos = nowNanos,
         )
     }
 

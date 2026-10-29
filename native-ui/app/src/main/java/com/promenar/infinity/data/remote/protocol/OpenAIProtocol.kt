@@ -74,7 +74,13 @@ class OpenAIProtocol(
                     val normalized = ErrorNormalizer.normalize(
                         HttpStatusException(response.status.value, errorBody)
                     )
-                    send(normalized.toStreamChunkError())
+                    val error = normalized.toStreamChunkError()
+                    // 保留服务商给出的限流等待秒数，无有效响应头时沿用归一化默认值。
+                    val retryAfter = response.headers[HttpHeaders.RetryAfter]?.trim()?.toLongOrNull()
+                        ?.takeIf { it > 0 }?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+                    send(if (error.code == com.promenar.infinity.domain.generation.GenerationFailureCode.RATE_LIMIT && retryAfter != null) {
+                        error.copy(retryAfterSeconds = retryAfter)
+                    } else error)
                     return@execute
                 }
 
