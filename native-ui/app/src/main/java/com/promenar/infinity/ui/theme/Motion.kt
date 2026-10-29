@@ -10,6 +10,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -24,7 +25,7 @@ import androidx.compose.ui.unit.IntSize
 
 /**
  * 全站动效基准，参照 Material 3 的时长与缓动分档：
- * - 页面级换页（NavHost）用视差推入：新页整页从右缘推入，下层页左移四分之一并压暗，返回反向；
+ * - 页面级换页（NavHost）用视差推入：新页整页从右缘推入，下层页左移四分之一并压暗，返回反向；系统返回手势拖动时同样的位移跟手进行；
  * - 底部标签与导航轨切换按标签顺序整页横滑或纵滑，两页都不透明；
  * - 面板、弹层内的层级导航（进入子目录、面板内下一页）用共享 X 轴：前进从右侧滑入，返回从左侧滑入，滑动距离只取一小段并叠加淡入淡出；
  * - 同级内容替换（分段标签、加载/空/内容状态）用交叉淡入；
@@ -105,6 +106,19 @@ object InfinityMotion {
     /** 视差推入的退出：前进时旧页左移 25%（被新页盖住）；返回时被弹出的页整页向右滑出。 */
     fun pageExit(pop: Boolean): ExitTransition =
         slideOutHorizontally(pageSpec(pop)) { width -> if (pop) width else -width / PAGE_UNDER_SHIFT_DIVISOR }
+
+    /**
+     * 跟手返回（系统返回手势拖动中）的位移曲线：导航库按手势进度定位到转场的对应时刻，
+     * 线性曲线让位移与进度一一对应，页面跟着手指走；松手后剩余部分按同一曲线走完，取消时由导航库回弹到起点。
+     */
+    fun <T> pagePredictiveSpec(): FiniteAnimationSpec<T> = tween(DurationMedium, easing = LinearEasing)
+
+    /** 跟手返回的进入：下层页从 -25% 跟手回到原位，位移与 [pageEnter] 返回时相同。 */
+    fun pagePredictiveEnter(): EnterTransition =
+        slideInHorizontally(pagePredictiveSpec()) { width -> -width / PAGE_UNDER_SHIFT_DIVISOR }
+
+    /** 跟手返回的退出：被弹出的页跟手向右滑出，位移与 [pageExit] 返回时相同。 */
+    fun pagePredictiveExit(): ExitTransition = slideOutHorizontally(pagePredictiveSpec()) { width -> width }
 
     /** 栏内同级替换（换设置根页面、换会话）：新页盖在旧页上 150ms 淡入，旧页原地保留到淡入结束再移除。 */
     val paneRootEnter: EnterTransition get() = fadeIn(tween(DurationShort, easing = LinearOutSlowInEasing))

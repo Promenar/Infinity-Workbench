@@ -147,6 +147,24 @@ class NavigationMotionContractTest {
     }
 
     @Test
+    fun `系统返回手势跟手进行视差返回`() {
+        fun read(path: String) = Files.readAllBytes(Path.of(path)).toString(Charsets.UTF_8)
+        // 不传跟手返回的转场时，导航库在手势中改用淡入与缩小，视差与压暗都会丢失。
+        val pages = read("app/src/main/java/com/promenar/infinity/navigation/PageTransitions.kt")
+        assertThat(pages).contains("predictivePopEnterTransition = { pageEnterFor(predictiveBackward()) },")
+        assertThat(pages).contains("predictivePopExitTransition = { pageExitFor(predictiveBackward()) },")
+        // 手势进度直接定位转场，位移曲线须为线性，页面才与手指同步。
+        assertThat(source("theme/Motion.kt")).contains("tween(DurationMedium, easing = LinearEasing)")
+        // Android 13–15 也走 OnBackInvokedCallback，才有跟手返回；Android 16 起 targetSdk 36 默认如此。
+        assertThat(read("app/src/main/AndroidManifest.xml")).contains("android:enableOnBackInvokedCallback=\"true\"")
+
+        // BackHandler 优先取 NavigationEvent 调度器：被遮住的层必须连同它一起换成不接收返回的调度器。
+        val pane = source("common/InfinityAdaptivePane.kt")
+        assertThat(pane).contains("LocalNavigationEventDispatcherOwner provides if (active) it else inert")
+        assertThat(pane).contains("LocalOnBackPressedDispatcherOwner provides if (active) it else inert")
+    }
+
+    @Test
     fun `聊天消息只淡入不做位移以免干扰跟随滚动`() {
         val chat = source("chat/ChatScreen.kt")
 

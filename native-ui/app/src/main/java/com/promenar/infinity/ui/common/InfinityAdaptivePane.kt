@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventDispatcherOwner
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.promenar.infinity.ui.theme.InfinityMotion
 
 /** 二级内容的承载方式：窄窗口为整页覆盖主内容的二级页面，宽窗口为主内容自己的浮动检视器。 */
@@ -134,22 +137,30 @@ fun BoxScope.InfinityPaneLevel(
 }
 
 /**
- * [active] 为 false 时，内容中的 BackHandler 改挂到一个不接收系统返回的调度器上；
+ * [active] 为 false 时，内容中的 BackHandler、PredictiveBackHandler 与 NavHost 改挂到不接收系统返回的调度器上；
  * 重新激活时按当前时刻重新注册，排在已有的返回处理之前。切换只换提供的值，不改变组合结构，内容状态保留。
+ * BackHandler 优先取 [LocalNavigationEventDispatcherOwner]，取不到才用 [LocalOnBackPressedDispatcherOwner]，两者都要替换。
  */
 @Composable
 fun InfinityBackScope(active: Boolean, content: @Composable () -> Unit) {
     val parent = LocalOnBackPressedDispatcherOwner.current
-    if (parent == null) {
+    val parentEvents = LocalNavigationEventDispatcherOwner.current
+    if (parent == null && parentEvents == null) {
         content()
         return
     }
     val lifecycleOwner = LocalLifecycleOwner.current
     val inert = remember(lifecycleOwner) {
-        object : OnBackPressedDispatcherOwner {
+        // 两个调度器都是没有输入来源的根调度器，系统返回不会派发到这里。
+        object : OnBackPressedDispatcherOwner, NavigationEventDispatcherOwner {
             override val onBackPressedDispatcher = OnBackPressedDispatcher()
+            override val navigationEventDispatcher = NavigationEventDispatcher()
             override val lifecycle: Lifecycle get() = lifecycleOwner.lifecycle
         }
     }
-    CompositionLocalProvider(LocalOnBackPressedDispatcherOwner provides if (active) parent else inert, content = content)
+    val provided = listOfNotNull(
+        parent?.let { LocalOnBackPressedDispatcherOwner provides if (active) it else inert },
+        parentEvents?.let { LocalNavigationEventDispatcherOwner provides if (active) it else inert },
+    )
+    CompositionLocalProvider(*provided.toTypedArray(), content = content)
 }
