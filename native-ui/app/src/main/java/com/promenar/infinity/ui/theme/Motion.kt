@@ -120,6 +120,26 @@ object InfinityMotion {
     /** 跟手返回的退出：被弹出的页跟手向右滑出，位移与 [pageExit] 返回时相同。 */
     fun pagePredictiveExit(): ExitTransition = slideOutHorizontally(pagePredictiveSpec()) { width -> width }
 
+    // 不走 NavHost 的整页二级页面（会话的资源管理器等）自行跟手时，按下面的映射与导航页保持一致。
+
+    /** 跟手返回中被弹出的页的位移：随进度从原位移到整页宽度，与 [pagePredictiveExit] 相同。 */
+    fun pagePredictiveTopOffset(progress: Float, width: Float): Float = width * progress.coerceIn(0f, 1f)
+
+    /** 跟手返回中下层页的位移：从 -25% 随进度回到原位，与 [pagePredictiveEnter] 相同。 */
+    fun pagePredictiveUnderOffset(progress: Float, width: Float): Float =
+        width / PAGE_UNDER_SHIFT_DIVISOR * (progress.coerceIn(0f, 1f) - 1f)
+
+    /** 跟手返回中下层页的压暗占完全盖住时的比例：随进度从 1 线性退到 0。 */
+    fun pagePredictiveUnderDim(progress: Float): Float = 1f - progress.coerceIn(0f, 1f)
+
+    /** 松手后从当前进度走完：与 [pagePredictiveSpec] 同为线性，时长按剩余进度折算，与导航库松手后的走完一致。 */
+    fun pagePredictiveSettleSpec(progress: Float): FiniteAnimationSpec<Float> =
+        tween((DurationMedium * (1f - progress.coerceIn(0f, 1f))).toInt(), easing = LinearEasing)
+
+    /** 取消后回弹到原位：时长按已拖动的进度折算，标准曲线，与导航库取消时回到起点一致。 */
+    fun pagePredictiveCancelSpec(progress: Float): FiniteAnimationSpec<Float> =
+        tween((DurationMedium * progress.coerceIn(0f, 1f)).toInt(), easing = Standard)
+
     /** 栏内同级替换（换设置根页面、换会话）：新页盖在旧页上 150ms 淡入，旧页原地保留到淡入结束再移除。 */
     val paneRootEnter: EnterTransition get() = fadeIn(tween(DurationShort, easing = LinearOutSlowInEasing))
     // 旧页不变透明，只借一段同长的“淡出到 1”把它保留到新页淡入结束，中间不留空白帧。
