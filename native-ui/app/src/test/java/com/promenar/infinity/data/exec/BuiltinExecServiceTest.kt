@@ -1,6 +1,12 @@
 package com.promenar.infinity.data.exec
 
 import com.google.common.truth.Truth.assertThat
+import com.promenar.infinity.data.secret.SessionSecretVault
+import com.promenar.infinity.data.secret.SecretOutputRedactor
+import com.promenar.infinity.data.secret.SecretCapture
+import com.promenar.infinity.domain.secret.SecretSource
+import com.promenar.infinity.domain.tool.ToolLiveOutputSink
+import com.promenar.infinity.domain.tool.ToolOutputStream
 import com.promenar.infinity.data.git.remote.GitCredentialProxy
 import com.promenar.infinity.data.git.remote.GitNonceRegistry
 import com.promenar.infinity.data.git.remote.GitRemoteBroker
@@ -83,6 +89,7 @@ class BuiltinExecServiceTest {
         sessionWorkspace: suspend (String?) -> SessionWorkspace = { SessionWorkspace.Private },
         gitRemote: GitRemoteSessions = GitRemoteSessions.None,
         monitor: RuntimeDataMonitor? = null,
+        vault: SessionSecretVault? = null,
     ) = BuiltinExecService(
         workspace = host,
         runner = BuiltinCommandRunner(
@@ -106,7 +113,53 @@ class BuiltinExecServiceTest {
         sessionWorkspace = sessionWorkspace,
         gitRemote = gitRemote,
         runtimeDataMonitor = monitor,
+        vault = vault,
+        redactor = vault?.let(::SecretOutputRedactor),
     )
+
+    @Test
+    fun `捕获完整stdout不进入实时面板且失败不返回原文`() = runBlocking<Unit> {
+        val vault = SessionSecretVault()
+        val exec = service(vault = vault)
+        val shown = mutableListOf<String>()
+        val live = object : ToolLiveOutputSink by ToolLiveOutputSink.None {
+            override fun emit(stream: ToolOutputStream, text: String) { shown += text }
+        }
+        val capture = SecretCapture("PASSWORD", "初始密码", "stdout")
+        val result = exec.runShell("root", "session", "printf '%040000d' 0", null, 10, live, capture = capture)
+        assertThat(result.succeeded).isTrue()
+        assertThat(result.stdout).isEqualTo("‹已捕获为 PASSWORD · 40000 字节›")
+        assertThat(vault.revealBytes("session", "PASSWORD")?.size).isEqualTo(40_000)
+        assertThat(shown).isEmpty()
+        val failed = exec.runShell("root", "session", "printf fixture-failed-password; exit 7", null, 10, live, capture = capture)
+        assertThat(failed.errorCode).isEqualTo("SECRET_CAPTURE_COMMAND_FAILED")
+        assertThat(failed.toJson().toString()).doesNotContain("fixture-failed-password")
+        assertThat(shown).isEmpty()
+    }
+
+    @Test
+    fun `文件捕获及引用注入返回值均遮蔽`() = runBlocking<Unit> {
+        val vault = SessionSecretVault()
+        val exec = service(vault = vault)
+        val captured = exec.runShell("root", "session", "printf fixture-file-secret > value.txt", null, 10,
+            capture = SecretCapture("TOKEN", "文件令牌", "file", "value.txt"))
+        assertThat(captured.succeeded).isTrue()
+        assertThat(captured.stdout).contains("已捕获为 TOKEN")
+        assertThat(File(workspace, "value.txt").exists()).isTrue()
+        val output = exec.runShell("root", "session", "printf '%s' \"\$TOKEN\"", null, 10)
+        assertThat(output.stdout).isEqualTo("‹保密:TOKEN›")
+        vault.destroy("session", "TOKEN")
+        val missing = exec.runShell("root", "session", "printf '%s' \"\$TOKEN\"", null, 10)
+        assertThat(missing.errorCode).isEqualTo("SECRET_SLOT_UNAVAILABLE")
+    }
+
+    @Test
+    fun `捕获与显式后台互斥且不启动命令`() = runBlocking<Unit> {
+        val args = Json.parseToJsonElement("""{"command":"touch must-not-run","background":true,"capture_secret":{"name":"TOKEN","label":"令牌","from":"stdout"}}""").jsonObject
+        val result = json(ShellExecSkill(service(vault = SessionSecretVault())).execute(args, context).content)
+        assertThat(result["error_code"]?.jsonPrimitive?.content).isEqualTo("SECRET_CAPTURE_BACKGROUND_UNSUPPORTED")
+        assertThat(File(workspace, "must-not-run").exists()).isFalse()
+    }
 
     /** 记录保活请求；[stopOnStart] 模拟用户立即点击通知的停止按钮。 */
     private class RecordingKeepAlive(

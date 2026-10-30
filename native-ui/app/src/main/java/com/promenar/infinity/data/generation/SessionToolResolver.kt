@@ -57,7 +57,7 @@ class DefaultSessionToolResolver(
     }
 
     companion object {
-        val LINUX_HIDDEN_TOOLS = setOf("python_exec", "python_sandbox", "exec_js", "run_script", "termux_exec")
+        val LINUX_HIDDEN_TOOLS = setOf("python_sandbox", "exec_js", "run_script", "termux_exec")
     }
 }
 

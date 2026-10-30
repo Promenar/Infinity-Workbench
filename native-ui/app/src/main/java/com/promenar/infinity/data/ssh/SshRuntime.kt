@@ -1,5 +1,7 @@
 package com.promenar.infinity.data.ssh
 
+import com.promenar.infinity.data.exec.redacted
+import com.promenar.infinity.data.exec.retainSecretEnvironment
 import com.jcraft.jsch.Channel
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
@@ -71,6 +73,15 @@ data class SshDirectoryPage(val entries: List<SshRemoteEntry>, val truncated: Bo
 data class SshSessionInfo(val sessionId: String, val host: String)
 data class SshSessionOutput(val output: String, val closed: Boolean, val truncated: Boolean)
 
+internal fun secretSshCommand(source: String, environment: Map<String, String>): String =
+    environment.entries.joinToString("") { (name, value) ->
+        require(com.promenar.infinity.domain.secret.SecretIoLimits.SLOT_NAME.matches(name))
+        "export $name='${value.replace("'", "'\\''") }'; "
+    } + source
+
+internal fun sshCaptureResult(stdout: String, stderr: String, credentialFilter: (String) -> String): Pair<String, String> =
+    stdout to credentialFilter(stderr)
+
 class SshRuntime(
     private val store: SshHostStore,
     private val idleTimeoutMs: Long = 600_000,
@@ -78,7 +89,10 @@ class SshRuntime(
     private val uiIdleTimeoutMs: () -> Long? = { null },
     private val liveOutput: ToolLiveOutputStore? = null,
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val vault: com.promenar.infinity.data.secret.SessionSecretVault? = null,
+    redactor: com.promenar.infinity.data.secret.SecretOutputRedactor? = null,
 ) : AutoCloseable {
+    private val redactor = redactor ?: vault?.let { com.promenar.infinity.data.secret.SecretOutputRedactor(it) }
     internal val hostStore: SshHostStore get() = store
     private class HostSnapshot(val host: SshHost) : AbstractCoroutineContextElement(Key) {
         companion object Key : CoroutineContext.Key<HostSnapshot>
@@ -190,8 +204,16 @@ class SshRuntime(
         maxOutputChars: Int = 32_000,
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
         control: SshExecControl? = null,
+        secretSessionId: String? = null,
+        captureRaw: Boolean = false,
     ): SshExecOutput {
         SshPolicy.timeout(timeoutSeconds); SshPolicy.outputLimit(maxOutputChars)
+        val sessionId = secretSessionId ?: secretSession(owner)
+        val environment = try { sessionId?.let { vault?.environment(it, command) }.orEmpty() }
+        catch (_: IllegalStateException) { throw SshFailure("SECRET_SLOT_UNAVAILABLE") }
+        val releaseSecrets = retainSecretEnvironment(sessionId, environment, redactor)
+        try {
+        val safeLive = if (captureRaw) ToolLiveOutputSink.None else sessionId?.let { redactor?.sink(it, live) } ?: live
         if (command.isBlank() || command.length > 65_536 || '\u0000' in command) throw SshFailure("INVALID_COMMAND")
         val stdout = ByteCapture(maxOutputChars * 4)
         val stderr = ByteCapture(maxOutputChars * 4)
@@ -200,7 +222,7 @@ class SshRuntime(
         // 停止只置位，由轮询线程断开通道，界面线程不做网络 IO。
         val stopRequested = control?.stopRequested ?: AtomicBoolean(false)
         val stoppedByUser = AtomicBoolean(false)
-        live.onStop { if (control == null) stopRequested.set(true) else control.requestStop() }
+        safeLive.onStop { if (control == null) stopRequested.set(true) else control.requestStop() }
         if (stopRequested.get()) return SshExecOutput(-1, "", "", false, false, stoppedByUser = true)
         val tees = mutableListOf<LiveTee>()
         val exit = try {
@@ -214,11 +236,15 @@ class SshRuntime(
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
                         try {
-                            channel.setCommand(command)
+                            channel.setCommand(secretSshCommand(command, environment))
                             channel.setInputStream(null)
                             fun sink(capture: ByteCapture, stream: ToolOutputStream): OutputStream =
-                                if (live === ToolLiveOutputSink.None) capture
-                                else LiveTee(capture, connection.filter.stream(), stream, live).also(tees::add)
+                                if (captureRaw) capture
+                                else {
+                                    val filter = sessionId?.let { redactor?.stream(it) }
+                                    LiveTee(capture, connection.filter.stream(), stream, safeLive, captureClean = true,
+                                        secretFilter = { text, end -> filter?.let { it.accept(text) + if (end) it.finish() else "" } ?: text }).also(tees::add)
+                                }
                             channel.setOutputStream(sink(stdout, ToolOutputStream.STDOUT), true)
                             channel.setErrStream(sink(stderr, ToolOutputStream.STDERR), true)
                             channel.connect(CONNECT_TIMEOUT)
@@ -243,14 +269,18 @@ class SshRuntime(
         } catch (failure: Throwable) { stdout.wipe(); stderr.wipe(); throw failure
         } finally {
             control?.finished?.set(true)
+            redactor?.finish(safeLive)
             withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
         }
         return io {
             try {
                 val rawOut = stdout.text()
                 val rawErr = stderr.text()
-                val cleanOut = usedConnection.get()?.filter?.whole(rawOut) ?: ""
-                val cleanErr = usedConnection.get()?.filter?.whole(rawErr) ?: ""
+                val (filteredOut, filteredErr) = if (captureRaw) sshCaptureResult(rawOut, rawErr) {
+                    usedConnection.get()?.filter?.whole(it) ?: ""
+                } else rawOut to rawErr
+                val cleanOut = if (captureRaw) filteredOut else sessionId?.let { redactor?.redact(it, filteredOut) } ?: filteredOut
+                val cleanErr = sessionId?.let { redactor?.redact(it, filteredErr) } ?: filteredErr
                 // 遮蔽依赖完整前文识别凭据与私钥块，因此截断在遮蔽之后进行，并保留开头。
                 val (outKeep, errKeep) = splitOutputBudget(cleanOut.length, cleanErr.length, maxOutputChars)
                 val out = cleanOut.take(outKeep)
@@ -265,6 +295,7 @@ class SshRuntime(
                 )
             } finally { stdout.wipe(); stderr.wipe() }
         }
+        } finally { releaseSecrets() }
     }
 
     /**
@@ -316,6 +347,46 @@ class SshRuntime(
         } finally {
             errors.wipe()
             withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
+        }
+    }
+
+    internal fun redactOutput(sessionId: String, value: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonObject =
+        redactor?.let { com.promenar.infinity.data.exec.redactCommandJson(sessionId, value, it) } ?: value
+
+    private fun secretSession(owner: String): String? = when {
+        owner.startsWith("agent:") -> owner.removePrefix("agent:")
+        owner.startsWith("job:") -> remoteJobs[owner]?.sessionId
+        else -> null
+    }
+
+    suspend fun capture(
+        owner: String, alias: String, command: String, timeoutSeconds: Int,
+        sessionId: String, capture: com.promenar.infinity.data.secret.SecretCapture,
+    ): com.promenar.infinity.domain.tool.CommandToolResult {
+        val secrets = vault ?: return com.promenar.infinity.domain.tool.CommandToolResult(errorCode = "SECRET_VAULT_UNAVAILABLE", guidance = "本会话保密库不可用，命令未执行。")
+        val result = exec(owner, alias, command, timeoutSeconds,
+            com.promenar.infinity.domain.secret.SecretIoLimits.MAX_SECRET_BYTES + 1, secretSessionId = sessionId, captureRaw = true).commandResult(timeoutSeconds)
+        return capture.complete(sessionId, secrets, result) { path ->
+            readSecretFile(owner, alias, path)
+        }.redacted(sessionId, redactor)
+    }
+
+    suspend fun readSecretFile(owner: String, alias: String, path: String): ByteArray = sftp(owner, alias, path) { channel, _ ->
+        val attributes = channel.lstat(path)
+        val limit = com.promenar.infinity.domain.secret.SecretIoLimits.MAX_SECRET_BYTES
+        if (!attributes.isReg || attributes.size > limit) throw SshFailure("SECRET_CAPTURE_FILE_INVALID")
+        channel.get(path).use { input ->
+            val buffer = ByteArray(limit + 1)
+            try {
+                var count = 0
+                while (count < buffer.size) {
+                    val read = input.read(buffer, count, buffer.size - count)
+                    if (read < 0) break
+                    count += read
+                }
+                if (count > limit) throw SshFailure("SECRET_TOO_LARGE")
+                buffer.copyOf(count)
+            } finally { buffer.fill(0) }
         }
     }
 
@@ -678,6 +749,7 @@ class SshRuntime(
                             Pty(id, owner, connection, channel, input, now(), mirror).also { pty ->
                                 created = pty
                                 val filter = connection.filter.stream()
+                                val secretFilter = secretSession(owner)?.let { redactor?.stream(it) }
                                 pty.reader = scope.launch {
                                     try {
                                         InputStreamReader(output, Charsets.UTF_8).use { reader ->
@@ -686,7 +758,8 @@ class SshRuntime(
                                                 while (isActive) {
                                                     val count = reader.read(chars)
                                                     if (count < 0) break
-                                                    val clean = filter.feed(String(chars, 0, count))
+                                                    val filtered = filter.feed(String(chars, 0, count))
+                                                    val clean = secretFilter?.accept(filtered) ?: filtered
                                                     pty.buffer.append(clean)
                                                     pty.mirror?.emit(ToolOutputStream.STDOUT, clean)
                                                     pty.used = now()
@@ -695,7 +768,8 @@ class SshRuntime(
                                             } finally { chars.fill('\u0000') }
                                         }
                                     } catch (_: Exception) { } finally {
-                                        val tail = filter.feed("", end = true)
+                                        val filtered = filter.feed("", end = true)
+                                        val tail = secretFilter?.let { it.accept(filtered) + it.finish() } ?: filtered
                                         pty.buffer.append(tail)
                                         pty.mirror?.emit(ToolOutputStream.STDOUT, tail)
                                         pty.buffer.closed = true
@@ -745,7 +819,8 @@ class SshRuntime(
         val pty = terminal(owner, id)
         val start = now()
         while (!pty.buffer.hasData() && !pty.buffer.closed && now() - start < waitMs) delay(minOf(25L, (waitMs - (now() - start)).coerceAtLeast(1)))
-        return pty.buffer.drain()
+        val output = pty.buffer.drain()
+        return output.copy(output = secretSession(owner)?.let { redactor?.redact(it, output.output) } ?: output.output)
     }
     suspend fun resizeSession(owner: String, id: String, columns: Int, rows: Int) {
         size(columns, rows)
@@ -1146,6 +1221,8 @@ private class LiveTee(
     private val filter: SshOutputFilter.Stream,
     private val stream: ToolOutputStream,
     private val sink: ToolLiveOutputSink,
+    private val captureClean: Boolean = false,
+    private val secretFilter: (String, Boolean) -> String = { text, _ -> text },
 ) : OutputStream() {
     private val decoder = Charsets.UTF_8.newDecoder()
         .onMalformedInput(CodingErrorAction.REPLACE).onUnmappableCharacter(CodingErrorAction.REPLACE)
@@ -1155,7 +1232,7 @@ private class LiveTee(
     override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
 
     @Synchronized override fun write(value: ByteArray, offset: Int, length: Int) {
-        capture.write(value, offset, length)
+        if (!captureClean) capture.write(value, offset, length)
         if (finished) return
         val input = java.nio.ByteBuffer.wrap(pending + value.copyOfRange(offset, offset + length))
         val chars = java.nio.CharBuffer.allocate(input.remaining() + 1)
@@ -1164,18 +1241,24 @@ private class LiveTee(
         pending = ByteArray(input.remaining()).also(input::get)
         input.array().fill(0)
         chars.flip()
-        publish(filter.feed(chars.toString()))
+        publish(secretFilter(filter.feed(chars.toString()), false))
     }
 
     @Synchronized fun finish() {
         if (finished) return
         finished = true
-        publish(filter.feed("", end = true))
+        publish(secretFilter(filter.feed("", end = true), true))
         pending.fill(0)
     }
 
     private fun publish(text: String) {
-        if (text.isNotEmpty()) runCatching { sink.emit(stream, text) }
+        if (text.isNotEmpty()) {
+            if (captureClean) {
+                val bytes = text.toByteArray(Charsets.UTF_8)
+                try { capture.write(bytes) } finally { bytes.fill(0) }
+            }
+            runCatching { sink.emit(stream, text) }
+        }
     }
 }
 

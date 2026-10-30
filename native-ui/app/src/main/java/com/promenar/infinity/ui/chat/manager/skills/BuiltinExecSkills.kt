@@ -1,5 +1,6 @@
 package com.promenar.infinity.ui.chat.manager.skills
 
+import com.promenar.infinity.data.secret.SecretCapture
 import com.promenar.infinity.data.exec.BuiltinCommandRunner
 import com.promenar.infinity.data.exec.BuiltinExecService
 import com.promenar.infinity.data.model.ToolResult
@@ -39,26 +40,28 @@ class ShellExecSkill(private val service: BuiltinExecService, private val jobs: 
         "（可改用 python3 -m infinity_git" + (if (service.pipAvailable) " / python3 -m infinity_pip" else "") + "，或用 . 脚本 在当前 shell 执行）。" + workspaceNote() +
         "需要 apt 包、编译工具链、SSH 远端 git 或原生 Python 扩展时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
-    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入；Linux 交互命令请省略"},"yield_after_seconds":{"type":"integer","description":"Linux 前台让出阈值，0 不让出；默认 min(15,timeout_seconds)，不得超过 timeout_seconds"},${BACKGROUND_EXEC_SCHEMA}},"required":["command"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"command":{"type":"string","description":"在 sh -c 中执行的命令"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入；Linux 交互命令请省略"},"yield_after_seconds":{"type":"integer","description":"Linux 前台让出阈值，0 不让出；默认 min(15,timeout_seconds)，不得超过 timeout_seconds"},${BACKGROUND_EXEC_SCHEMA},${SecretCapture.schema}},"required":["command"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
         val normalized = ExecToolArguments.normalize(args)
         val values = normalized.arguments
+        if (values.backgroundRequested() && "capture_secret" in values) return secretCaptureBackgroundFailure(id)
         if (values.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.infinity.domain.jobs.BackgroundJobRunner.SHELL, "command")
         val result = runBuiltin(id, validator, parametersSchema, values, ::invalid) { timeout, stdin ->
+            val capture = SecretCapture.parse(values)
             val command = (values.getValue("command") as JsonPrimitive).content
             if (command.isBlank()) return@runBuiltin invalid("command 不能为空")
             if (command.length > MAX_COMMAND_CHARS) return@runBuiltin invalid("command 超过 $MAX_COMMAND_CHARS 字符，请把脚本写入工作区文件后执行")
             val mode = context.runMode ?: service.runModeForSession(context.sessionId)
             val threshold = ExecToolArguments.integer(values, "yield_after_seconds", minOf(15, timeout), 0..timeout)
-            if (mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX && jobs != null && threshold > 0) {
+            if (capture == null && mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX && jobs != null && threshold > 0) {
                 val minutes = ExecToolArguments.integer(values, "max_runtime_minutes", 120, 1..1440)
                 val action = com.promenar.infinity.domain.jobs.BackgroundJobExitAction.fromWire((values["on_exit"] as? JsonPrimitive)?.content ?: "notify")!!
                 jobs.runLinuxForeground(context.sessionId, context.workspaceRootUuid, command, threshold, minutes, action, context.liveOutput) { attachment, live ->
                     service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, live, expectedMode = mode, attachment = attachment)
                 }
-            } else service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput, expectedMode = mode)
+            } else service.runShell(context.workspaceRootUuid, context.sessionId, command, stdin, timeout, context.liveOutput, expectedMode = mode, capture = capture)
         }
         return result.copy(content = normalized.result(kotlinx.serialization.json.Json.parseToJsonElement(result.content) as JsonObject).toString())
     }
@@ -84,19 +87,21 @@ class PythonExecSkill(private val service: BuiltinExecService, private val jobs:
         "sys.path 包含工作区根，可导入工作区中的模块。" + workspaceNote() +
         "需要原生扩展包时改用 termux_exec 或 ssh_exec。"
     override val mcpServerId: String? = null
-    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"Python 源码"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA}},"required":["code"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"code":{"type":"string","description":"Python 源码"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"stdin":{"type":"string","description":"可选标准输入"},${BACKGROUND_EXEC_SCHEMA},${SecretCapture.schema}},"required":["code"],"additionalProperties":false}"""
     private val validator = ToolSchemaValidator()
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult {
+        if (args.backgroundRequested() && "capture_secret" in args) return secretCaptureBackgroundFailure(id)
         if (args.backgroundRequested()) return runBackgroundExec(id, parametersSchema, args, context, jobs, com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON, "code")
         return runBuiltin(id, validator, parametersSchema, args, ::invalid) { timeout, stdin ->
+            val capture = SecretCapture.parse(args)
             val code = (args.getValue("code") as JsonPrimitive).content
             when {
                 code.isBlank() -> invalid("code 不能为空")
                 code.length > MAX_CODE_CHARS -> invalid("code 超过 $MAX_CODE_CHARS 字符，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
                 // 单个 execve 参数上限 128 KiB。
                 code.toByteArray(Charsets.UTF_8).size > MAX_CODE_BYTES -> invalid("code 的 UTF-8 编码超过 $MAX_CODE_BYTES 字节，请把代码写入工作区文件后用 shell_exec 运行 python3 文件")
-                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput, expectedMode = context.runMode)
+                else -> service.runPython(context.workspaceRootUuid, context.sessionId, code, stdin, timeout, context.liveOutput, expectedMode = context.runMode, capture = capture)
             }
         }
 
@@ -142,3 +147,8 @@ private suspend fun runBuiltin(
 }
 
 private const val DEFAULT_TIMEOUT_SECONDS = 60
+
+private fun secretCaptureBackgroundFailure(id: String): ToolResult {
+    val result = CommandToolResult(errorCode = "SECRET_CAPTURE_BACKGROUND_UNSUPPORTED", guidance = "capture_secret 仅支持前台执行；请移除 background=true。捕获期间忽略让出阈值。")
+    return ToolResult("${id}_${UUID.randomUUID()}", result.toJson().toString(), "error")
+}

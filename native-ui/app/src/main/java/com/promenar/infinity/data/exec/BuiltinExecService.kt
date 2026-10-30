@@ -1,5 +1,9 @@
 package com.promenar.infinity.data.exec
 
+import com.promenar.infinity.data.secret.SessionSecretVault
+import com.promenar.infinity.data.secret.SecretOutputRedactor
+import com.promenar.infinity.data.secret.SecretCapture
+import com.promenar.infinity.domain.secret.SecretIoLimits
 import com.promenar.infinity.data.git.remote.GitRemoteSessions
 import com.promenar.infinity.data.git.remote.LinuxGitEnvironment
 import com.promenar.infinity.data.repository.WorkspaceChangeReport
@@ -61,7 +65,10 @@ class BuiltinExecService(
     /** 分支保留创建 worktree 时的父挂载；解析失败须抛出异常，null 只表示普通会话。 */
     private val linuxLaunchBinding: suspend (sessionId: String) -> com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace? = { null },
     private val wakeInbox: suspend (String) -> File? = { null },
+    private val vault: SessionSecretVault? = null,
+    redactor: SecretOutputRedactor? = null,
 ) {
+    private val redactor = redactor ?: vault?.let(::SecretOutputRedactor)
     suspend fun runModeForSession(sessionId: String?): SessionRunMode? = sessionMode(sessionId)
 
     val pipAvailable: Boolean get() = environment.pipAvailable
@@ -99,10 +106,11 @@ class BuiltinExecService(
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
         expectedMode: SessionRunMode? = null,
         attachment: LinuxExecAttachment? = null,
+        capture: SecretCapture? = null,
     ): CommandToolResult {
         val mode = sessionMode(sessionId) ?: return modeRequired()
         if (expectedMode != null && mode != expectedMode) return modeChanged()
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds, if (mode == SessionRunMode.LINUX) ExecRunKind.LINUX else ExecRunKind.SHELL, command, live, stdin, attachment) { root, kind ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, if (mode == SessionRunMode.LINUX) ExecRunKind.LINUX else ExecRunKind.SHELL, command, live, stdin, attachment, capture) { root, kind ->
             BuiltinCommandRequest(
                 argv = listOf(shell, "-c", environment.shellPrelude() + "\n__infinity_command=\"\$1\"; shift; eval \"\$__infinity_command\"", "sh", command),
                 workingDirectory = root,
@@ -121,12 +129,16 @@ class BuiltinExecService(
         timeoutSeconds: Int,
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
         expectedMode: SessionRunMode? = null,
+        capture: SecretCapture? = null,
     ): CommandToolResult {
         val mode = sessionMode(sessionId)
         if (expectedMode != null && mode != expectedMode) return modeChanged()
         when (mode) {
             null -> return modeRequired()
-            SessionRunMode.LINUX -> return CommandToolResult(errorCode = "EXEC_MODE_TOOL_UNAVAILABLE", guidance = messages(RunModeMessage.BUILTIN_TOOL_BLOCKED))
+            SessionRunMode.LINUX -> return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.LINUX,
+                code, live, stdin = stdin, capture = capture, linuxSource = linuxPythonCommand(code)) { _, _ ->
+                error("Linux Python 使用 guest 启动路径")
+            }
             SessionRunMode.BUILTIN -> Unit
         }
         if (!environment.pythonAvailable) {
@@ -136,7 +148,7 @@ class BuiltinExecService(
                     "请改用 termux_exec 或 ssh_exec。shell_exec 仍可使用系统命令。",
             )
         }
-        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code, live) { root, kind ->
+        return execute(workspaceRootUuid, sessionId, timeoutSeconds, ExecRunKind.PYTHON, code, live, capture = capture) { root, kind ->
             BuiltinCommandRequest(
                 argv = listOf(environment.pythonLauncher.path, "-c", code),
                 workingDirectory = root,
@@ -156,25 +168,29 @@ class BuiltinExecService(
         minutes: Int,
         sessionId: String? = null,
     ): com.promenar.infinity.data.jobs.PreparedBackgroundCommand {
-        if (kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON && !environment.pythonAvailable) {
+        val resolvedSessionId = sessionId ?: location.sessionId
+        val linux = kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.LINUX ||
+            kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON && sessionMode(resolvedSessionId) == SessionRunMode.LINUX
+        if (kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON && !linux && !environment.pythonAvailable) {
             throw IllegalArgumentException("当前设备没有内置 Python，请改用 termux_exec 或 ssh_exec。")
         }
-        val resolvedSessionId = sessionId ?: location.sessionId
         com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = resolvedSessionId, path = location.commandDirectory.canonicalPath)
         val root = location.commandDirectory
         val workspaceKind = location.workspaceKind
+        val secrets = resolvedSessionId?.let { vault?.environment(it, source) }.orEmpty()
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
         return try {
-            if (kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.LINUX) {
+            if (linux) {
                 val runtime = linuxRuntime
                 if (runtime == null || runtime.state.value !is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready) {
                     throw LinuxUnavailableException(runtime?.state?.value ?: com.promenar.infinity.domain.linux.LinuxRuntimeState.NotInstalled(0))
                 }
-                val request = linuxRequest(root, workspaceKind, resolvedSessionId, source, stdin, minutes * 60)
+                val launchSource = if (kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON || location.pythonSource) linuxPythonCommand(source) else source
+                val request = linuxRequest(root, workspaceKind, resolvedSessionId, launchSource, stdin, minutes * 60)
                 val title = titleOrNull(resolvedSessionId)
                 val before = packageProvenance.before()
                 return com.promenar.infinity.data.jobs.PreparedBackgroundCommand(
-                    request.copy(environment = request.environment + lease.environment + LinuxGitEnvironment.from(lease.environment)), lease::close,
+                    request.copy(environment = request.environment + lease.environment + LinuxGitEnvironment.from(lease.environment) + secrets), lease::close,
                     afterRun = { packageProvenance.after(before, resolvedSessionId, title) },
                 )
             }
@@ -182,7 +198,7 @@ class BuiltinExecService(
             val argv = if (python) listOf(environment.pythonLauncher.path, "-c", source)
                 else listOf(shell, "-c", environment.shellPrelude() + "\n__infinity_command=\"\$1\"; shift; eval \"\$__infinity_command\"", "sh", source)
             com.promenar.infinity.data.jobs.PreparedBackgroundCommand(
-                BuiltinCommandRequest(argv, root, (if (python) environment.forPython(root, workspaceKind) else environment.forWorkspace(root, workspaceKind)) + lease.environment, stdin, minutes * 60),
+                BuiltinCommandRequest(argv, root, (if (python) environment.forPython(root, workspaceKind) else environment.forWorkspace(root, workspaceKind)) + lease.environment + secrets, stdin, minutes * 60),
                 lease::close,
             )
         } catch (failure: Throwable) { lease.close(); throw failure }
@@ -203,10 +219,18 @@ class BuiltinExecService(
         live: ToolLiveOutputSink,
         stdin: String? = null,
         attachment: LinuxExecAttachment? = null,
+        capture: SecretCapture? = null,
+        linuxSource: String? = null,
         request: (File, String) -> BuiltinCommandRequest,
     ): CommandToolResult {
+        if (capture != null && (vault == null || sessionId == null)) return CommandToolResult(errorCode = "SECRET_VAULT_UNAVAILABLE", guidance = "本会话保密库不可用，命令未执行。")
         val runtime = if (kind == ExecRunKind.LINUX) "linux" else "system"
-        fun executionFields() = buildJsonObject { put("runtime", runtime); if (kind == ExecRunKind.LINUX) put("stderr_merged", true) }
+        val secrets = try { sessionId?.let { vault?.environment(it, source) }.orEmpty() }
+        catch (_: IllegalStateException) { return CommandToolResult(errorCode = "SECRET_SLOT_UNAVAILABLE", guidance = "引用的保密槽位已销毁或不能作为环境变量，命令未执行。") }
+        val releaseSecrets = retainSecretEnvironment(sessionId, secrets, redactor)
+        try {
+        val safeLive = if (capture != null) ToolLiveOutputSink.None else live
+        fun executionFields() = buildJsonObject { put("runtime", runtime); if (kind == ExecRunKind.LINUX) put("stderr_merged", capture == null) }
         if (kind == ExecRunKind.LINUX && linuxRuntime?.state?.value !is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready) {
             return linuxUnavailable()
         }
@@ -224,7 +248,7 @@ class BuiltinExecService(
         val workspaceKind = SessionWorkspaceResolver.kindOf(target)
         var physicalRoot: File? = null
         val control = attachment?.control ?: BuiltinCommandControl()
-        live.onStop(control::requestStop)
+        safeLive.onStop(control::requestStop)
         val run = ExecRunInfo(UUID.randomUUID().toString(), kind, ExecRunInfo.summarize(source), timeoutSeconds, wallClockMillis())
         // 代理不可用时命令照常执行，内置 git 退回直连。
         val lease = try { gitRemote.open() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { GitRemoteSessions.None.open() }
@@ -232,21 +256,24 @@ class BuiltinExecService(
         suspend fun runCommand(root: File): BuiltinCommandOutput {
             attachment?.onDirectory?.invoke(root)
             val base = if (kind == ExecRunKind.LINUX) {
-                linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds, target)
+                linuxRequest(root, workspaceKind, sessionId, linuxSource ?: source, stdin, timeoutSeconds, target)
             } else request(root, workspaceKind)
             val commandRequest = base.copy(environment = base.environment + lease.environment +
-                if (kind == ExecRunKind.LINUX) LinuxGitEnvironment.from(lease.environment) else emptyMap())
+                (if (kind == ExecRunKind.LINUX) LinuxGitEnvironment.from(lease.environment) else emptyMap()) + secrets,
+                terminal = base.terminal && capture == null,
+                outputLimitOverride = if (capture != null) SecretIoLimits.MAX_SECRET_BYTES + 1 else null,
+                outputTransform = if (capture == null && sessionId != null && redactor != null) secretCommandOutput(sessionId, redactor) else null)
             val linux = runtime == "linux"
             val title = if (linux) titleOrNull(sessionId) else null
             val packagesBefore = if (linux) packageProvenance.before() else null
             var before: RuntimeDataMonitor.Snapshot? = null
             try {
                 before = runtimeDataMonitor?.capture()
-                if (linux) return runner.runTerminal(commandRequest, control,
-                    onTerminalOutput = { live.replace(ToolOutputStream.STDOUT, virtualize(it, root)) },
+                if (linux && commandRequest.terminal) return runner.runTerminal(commandRequest, control,
+                    onTerminalOutput = { safeLive.replace(ToolOutputStream.STDOUT, virtualize(it, root)) },
                     processGroupFile = attachment?.processGroupFile, terminalLog = attachment?.logFile)
-                if (live === ToolLiveOutputSink.None) return runner.run(commandRequest, control)
-                val tee = LiveWorkspaceOutput(root, live::emit)
+                if (safeLive === ToolLiveOutputSink.None) return runner.run(commandRequest, control)
+                val tee = LiveWorkspaceOutput(root, safeLive::emit)
                 return try { runner.run(commandRequest, control, tee::accept) } finally { tee.finish() }
             } finally {
                 if (linux) {
@@ -313,12 +340,12 @@ class BuiltinExecService(
                 "命令已执行，但工作区索引未能更新（${outcome.reconcileError}）；文件工具可能看到旧状态，可再运行一次 shell_exec（如 true）重新对账。"
             else -> null to warningGuidance(outcome.changes)
         }
-        return CommandToolResult(
+        val result = CommandToolResult(
             errorCode = errorCode,
             guidance = listOfNotNull(guidance, if (kind == ExecRunKind.LINUX) LinuxMissingCommandGuidance.hint(output.exitCode, output.stdout + "\n" + output.stderr, messages) else null, pauseGuidance(output.pausedMillis, held.foreground)).joinToString("").ifEmpty { null },
             exitCode = output.exitCode,
             timedOut = output.timedOut,
-            stdout = virtualize(output.stdout, root),
+            stdout = if (capture == null) virtualize(output.stdout, root) else output.stdout,
             stderr = virtualize(output.stderr, root),
             stdoutOriginalLength = output.stdoutOriginalLength,
             stderrOriginalLength = output.stderrOriginalLength,
@@ -330,6 +357,39 @@ class BuiltinExecService(
                     (if (output.pausedMillis >= PAUSE_REPORT_MILLIS) mapOf("paused_ms" to JsonPrimitive(output.pausedMillis)) else emptyMap()),
             ),
         )
+        val captured = if (capture == null) result else capture.complete(checkNotNull(sessionId), checkNotNull(vault), result) { path ->
+            withContext(Dispatchers.IO) {
+                if (kind == ExecRunKind.LINUX) {
+                    require(path.isNotBlank() && '\u0000' !in path) { "SECRET_CAPTURE_FILE_INVALID" }
+                    val quoted = "'${path.replace("'", "'\\''")}'"
+                    val read = linuxRequest(root, workspaceKind, sessionId,
+                        "test -f $quoted && head -c ${SecretIoLimits.MAX_SECRET_BYTES + 1} $quoted | base64", null, minOf(timeoutSeconds, 60), target)
+                    val encoded = runner.run(read.copy(terminal = false, outputLimitOverride = (SecretIoLimits.MAX_SECRET_BYTES + 1) * 2), BuiltinCommandControl())
+                    require(encoded.exitCode == 0 && !encoded.timedOut && !encoded.stdoutTruncated) { "SECRET_CAPTURE_READ_FAILED" }
+                    java.util.Base64.getMimeDecoder().decode(encoded.stdout).also { bytes ->
+                        if (bytes.size > SecretIoLimits.MAX_SECRET_BYTES) { bytes.fill(0); throw IllegalArgumentException("SECRET_TOO_LARGE") }
+                    }
+                } else {
+                    val file = (if (File(path).isAbsolute) File(path) else File(root, path)).canonicalFile
+                    require(file.isFile && file.length() <= SecretIoLimits.MAX_SECRET_BYTES) { "SECRET_CAPTURE_FILE_INVALID" }
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(SecretIoLimits.MAX_SECRET_BYTES + 1)
+                        try {
+                            var count = 0
+                            while (count < buffer.size) {
+                                val read = input.read(buffer, count, buffer.size - count)
+                                if (read < 0) break
+                                count += read
+                            }
+                            require(count <= SecretIoLimits.MAX_SECRET_BYTES) { "SECRET_TOO_LARGE" }
+                            buffer.copyOf(count)
+                        } finally { buffer.fill(0) }
+                    }
+                }
+            }
+        }
+        return captured.redacted(sessionId, redactor)
+        } finally { releaseSecrets() }
     }
 
     private fun modeChanged() = CommandToolResult(errorCode = "EXEC_MODE_CHANGED", guidance = messages(RunModeMessage.MODE_CHANGED))

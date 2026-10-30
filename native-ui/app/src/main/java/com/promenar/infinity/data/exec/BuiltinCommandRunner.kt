@@ -21,6 +21,8 @@ data class BuiltinCommandRequest(
     val stdin: String? = null,
     val timeoutSeconds: Int,
     val terminal: Boolean = false,
+    val outputLimitOverride: Int? = null,
+    val outputTransform: CommandOutputTransform? = null,
 )
 
 data class BuiltinCommandOutput(
@@ -41,6 +43,16 @@ data class BuiltinCommandOutput(
     val pausedMillis: Long = 0L,
 )
 
+/** 在进入日志、实时输出和有界收集器之前处理完整分块。 */
+class CommandOutputTransform(
+    val accept: (ToolOutputStream, String) -> String,
+    val finish: (ToolOutputStream) -> String,
+    val snapshot: (String) -> String,
+    /** 终端规范化可能重新拼出秘密，因此日志使用独立流状态。 */
+    val normalized: (() -> CommandOutputTransform)? = null,
+    val normalizationTailChars: Int = 0,
+)
+
 /** 运行中命令的外部控制；可在任意线程调用。 */
 class BuiltinCommandControl {
     @Volatile
@@ -54,7 +66,14 @@ class BuiltinCommandControl {
     val yielded = kotlinx.coroutines.CompletableDeferred<Unit>()
     @Volatile internal var terminalText: com.promenar.infinity.data.linux.LinuxExecTerminalText? = null
     @Volatile internal var input: ((String, Boolean) -> Unit)? = null
-    val outputSnapshot: BuiltinCommandOutput? get() = terminalText?.snapshot()
+    @Volatile internal var inputBytes: ((ByteArray, Boolean) -> Unit)? = null
+    @Volatile internal var outputSanitizer: ((String) -> String)? = null
+    val outputSnapshot: BuiltinCommandOutput? get() = terminalText?.snapshot()?.let { value ->
+        outputSanitizer?.let { value.copy(stdout = it(value.stdout), stderr = it(value.stderr)) } ?: value
+    }
+    internal fun writeInput(bytes: ByteArray, eof: Boolean) {
+        (inputBytes ?: throw java.io.IOException("任务没有可写的交互输入"))(bytes, eof)
+    }
     internal fun writeInput(text: String, eof: Boolean) {
         (input ?: throw java.io.IOException("任务没有可写的交互输入"))(text, eof)
     }
@@ -199,10 +218,23 @@ class BuiltinCommandRunner(
                     } }
                 }
             }
-            val stdout = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDOUT, text) } })
-            val stderr = TailTextCollector(outputLimit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDERR, text) } })
+            val limit = request.outputLimitOverride ?: outputLimit
+            val normalized = request.outputTransform?.normalized?.invoke()
+            fun clean(stream: ToolOutputStream, text: String) = request.outputTransform?.accept?.invoke(stream, text) ?: text
+            fun tail(stream: ToolOutputStream) = request.outputTransform?.finish?.invoke(stream).orEmpty()
+            fun normalizedText(text: String) = normalized?.accept?.invoke(ToolOutputStream.STDOUT, text) ?: text
+            fun terminalSnapshot(text: String): String =
+                (normalized?.snapshot?.invoke(text) ?: request.outputTransform?.snapshot?.invoke(text) ?: text)
+                    .takeLast(limit).dropWhile { Character.isLowSurrogate(it) }
+            val stdout = TailTextCollector(limit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDOUT, text) } },
+                { clean(ToolOutputStream.STDOUT, it) }, { tail(ToolOutputStream.STDOUT) })
+            val stderr = TailTextCollector(limit, onOutput?.let { emit -> { text -> emit(ToolOutputStream.STDERR, text) } },
+                { clean(ToolOutputStream.STDERR, it) }, { tail(ToolOutputStream.STDERR) })
+            control.outputSanitizer = if (request.terminal) ::terminalSnapshot else request.outputTransform?.snapshot
             val logFailure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
-            val terminalText = if (request.terminal) com.promenar.infinity.data.linux.LinuxExecTerminalText(outputLimit).also { control.terminalText = it } else null
+            // 为规范化后的匹配保留前文，遮蔽之后才裁成公开输出预算。
+            val terminalLimit = (limit.toLong() + (request.outputTransform?.normalizationTailChars ?: 0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val terminalText = if (request.terminal) com.promenar.infinity.data.linux.LinuxExecTerminalText(terminalLimit).also { control.terminalText = it } else null
             val readers = if (terminalText != null) listOf(daemon("infinity-pty-output") {
                 val log = logFile?.let { com.promenar.infinity.data.jobs.RotatingJobLog(it) }
                 try {
@@ -214,18 +246,20 @@ class BuiltinCommandRunner(
                                 if (failure.message?.contains("EIO") == true || failure.message?.contains("I/O error", ignoreCase = true) == true || !process.isAlive) -1 else throw failure
                             }
                             if (count < 0) break
-                            val committed = terminalText.accept(String(chunk, 0, count))
+                            val committed = terminalText.accept(clean(ToolOutputStream.STDOUT, String(chunk, 0, count)))
                             answerTerminalQueries(process, terminalText)
-                            log?.write(committed.toByteArray(Charsets.UTF_8))
-                            val snapshot = terminalText.snapshot().stdout
+                            val cleanCommitted = normalizedText(committed)
+                            log?.write(cleanCommitted.toByteArray(Charsets.UTF_8))
+                            val snapshot = terminalSnapshot(terminalText.snapshot().stdout)
                             if (onTerminalOutput != null) onTerminalOutput(snapshot)
-                            else if (committed.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, committed)
+                            else if (cleanCommitted.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, cleanCommitted)
                         }
                     }
-                    val rest = terminalText.finish()
-                    log?.write(rest.toByteArray(Charsets.UTF_8))
-                    if (onTerminalOutput != null) onTerminalOutput(terminalText.snapshot().stdout)
-                    else if (rest.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, rest)
+                    val rest = terminalText.accept(tail(ToolOutputStream.STDOUT)) + terminalText.finish()
+                    val cleanRest = normalizedText(rest) + normalized?.finish?.invoke(ToolOutputStream.STDOUT).orEmpty()
+                    log?.write(cleanRest.toByteArray(Charsets.UTF_8))
+                    if (onTerminalOutput != null) onTerminalOutput(terminalSnapshot(terminalText.snapshot().stdout))
+                    else if (cleanRest.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, cleanRest)
                 } catch (failure: Throwable) { logFailure.set(failure); control.requestStop() }
                 finally { log?.close() }
             }) else if (logFile != null) listOf(daemon("infinity-job-output") {
@@ -236,10 +270,13 @@ class BuiltinCommandRunner(
                         while (true) {
                             val count = reader.read(chunk)
                             if (count < 0) break
-                            val text = String(chunk, 0, count)
+                            val text = clean(ToolOutputStream.STDOUT, String(chunk, 0, count))
                             log.write(text.toByteArray(Charsets.UTF_8))
                             onOutput?.invoke(ToolOutputStream.STDOUT, text)
                         }
+                        val rest = tail(ToolOutputStream.STDOUT)
+                        log.write(rest.toByteArray(Charsets.UTF_8))
+                        if (rest.isNotEmpty()) onOutput?.invoke(ToolOutputStream.STDOUT, rest)
                     }
                 }
                 } catch (failure: Throwable) {
@@ -251,6 +288,14 @@ class BuiltinCommandRunner(
                 daemon("infinity-exec-stderr") { stderr.consume(process.errorStream) },
             )
             if (request.terminal && request.stdin == null) {
+                control.inputBytes = { bytes, eof ->
+                    synchronized(process.outputStream) {
+                        if (!process.isAlive) throw java.io.IOException("任务已经结束")
+                        process.outputStream.write(bytes)
+                        if (eof) process.outputStream.write(byteArrayOf(4, 4))
+                        process.outputStream.flush()
+                    }
+                }
                 control.input = { text, eof ->
                     synchronized(process.outputStream) {
                         if (!process.isAlive) throw java.io.IOException("任务已经结束")
@@ -283,14 +328,17 @@ class BuiltinCommandRunner(
             }
             settled=true
             readers.forEach { it.join(drainTimeoutMillis) }
-            if (logFile != null && readers.any { it.isAlive }) {
+            if (readers.any { it.isAlive }) {
                 process.inputStream.close()
+                process.errorStream.close()
                 readers.forEach { it.join(drainTimeoutMillis) }
-                throw java.io.IOException("后台任务日志未能完整写入")
+                throw java.io.IOException("命令输出未能完整读取")
             }
             logFailure.get()?.let { throw java.io.IOException("后台任务日志写入失败", it) }
             val exit = if (signalled) null else process.exitValue()
-            val terminalSnapshot = terminalText?.snapshot()
+            val terminalSnapshot = terminalText?.snapshot()?.let { value ->
+                value.copy(stdout = terminalSnapshot(value.stdout), stderr = terminalSnapshot(value.stderr))
+            }
             BuiltinCommandOutput(
                 exitCode = exit,
                 timedOut = wait.outcome == WaitOutcome.TIMED_OUT,
@@ -309,6 +357,7 @@ class BuiltinCommandRunner(
                 throw failure
             } finally {
                 control.input = null
+                control.inputBytes = null
                 (process as? AutoCloseable)?.close()
             }
         } finally {
@@ -435,7 +484,12 @@ class BuiltinCommandRunner(
 }
 
 /** 按 UTF-16 计数并只保留尾部；解码在读取线程完成，多字节字符不会在块边界被拆开。 */
-internal class TailTextCollector(private val limit: Int, private val listener: ((String) -> Unit)? = null) {
+internal class TailTextCollector(
+    private val limit: Int,
+    private val listener: ((String) -> Unit)? = null,
+    private val transform: (String) -> String = { it },
+    private val finishTransform: () -> String = { "" },
+) {
     private val buffer = StringBuilder()
     @Volatile var totalChars: Long = 0L
         private set
@@ -448,9 +502,13 @@ internal class TailTextCollector(private val limit: Int, private val listener: (
             while (true) {
                 val count = reader.read(chunk)
                 if (count < 0) break
-                append(chunk, count)
-                listener?.let { notify -> runCatching { notify(String(chunk, 0, count)) } }
+                val text = transform(String(chunk, 0, count))
+                append(text.toCharArray(), text.length)
+                listener?.let { notify -> runCatching { notify(text) } }
             }
+            val rest = finishTransform()
+            append(rest.toCharArray(), rest.length)
+            if (rest.isNotEmpty()) listener?.invoke(rest)
         }
     }
 

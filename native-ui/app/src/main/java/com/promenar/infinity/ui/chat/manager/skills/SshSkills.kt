@@ -1,5 +1,6 @@
 package com.promenar.infinity.ui.chat.manager.skills
 
+import com.promenar.infinity.data.secret.SecretCapture
 import com.promenar.infinity.data.model.ToolResult
 import com.promenar.infinity.data.ssh.SshFailure
 import com.promenar.infinity.data.ssh.SshPolicy
@@ -33,7 +34,7 @@ fun sshTools(runtime: SshRuntime, jobs: BackgroundJobManager? = null, transferAc
 // 数值边界由运行时强制校验；工具定义仅使用公共 schema 门禁支持的关键字。
 private enum class SshOperation(val tool: String, val risk: ToolRisk, val summary: String, val fields: String, val required: String) {
     EXEC("ssh_exec", ToolRisk.PROCESS, "远程运维首选：每条命令独立执行，可让出到后台；默认60秒，最多600秒，输出有上限。background=true 立即返回任务号，后台按 max_runtime_minutes 限时，不使用 timeout_seconds；on_exit 为 none/notify/wake，默认 notify。停止只断开通道，远端进程可能仍在运行。",
-        """"host":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"max_output_chars":{"type":"integer","description":"1–256000 个字符，默认 32000"},"yield_after_seconds":{"type":"integer","description":"前台让出阈值；默认 min(15,timeout_seconds)，0 不让出，不得超过 timeout_seconds"},${BACKGROUND_EXEC_SCHEMA}""", "\"host\",\"command\""),
+        """"host":{"type":"string"},"command":{"type":"string"},"timeout_seconds":{"type":"integer","description":"1–600 秒，默认 60"},"max_output_chars":{"type":"integer","description":"1–256000 个字符，默认 32000"},"yield_after_seconds":{"type":"integer","description":"前台让出阈值；默认 min(15,timeout_seconds)，0 不让出，不得超过 timeout_seconds"},${BACKGROUND_EXEC_SCHEMA},${SecretCapture.schema}""", "\"host\",\"command\""),
     LIST("sftp_list", ToolRisk.SAFE_READ, "列出远端目录，最多512项，返回截断标记。",
         """"host":{"type":"string"},"path":{"type":"string"}""", "\"host\",\"path\""),
     READ("sftp_read", ToolRisk.SAFE_READ, "分段读取UTF-8文本；offset和limit使用UTF-16单元，二进制及超过16MiB的文件拒绝。",
@@ -81,6 +82,8 @@ private class SshSkill(private val runtime: SshRuntime, private val jobs: Backgr
             // 协程局部快照贯穿连接获取与实际操作，禁止按别名换源或跨等待窗口复用旧连接。
             val result = runtime.withHostSnapshot(snapshot) { when (operation) {
                 SshOperation.EXEC -> {
+                    val capture = SecretCapture.parse(args)
+                    if (capture != null && args.backgroundRequested()) throw JobAccessException("SECRET_CAPTURE_BACKGROUND_UNSUPPORTED", "capture_secret 仅支持前台执行，请移除 background=true；捕获期间忽略让出阈值。")
                     val timeout = args.integer("timeout_seconds", 60)
                     SshPolicy.timeout(timeout)
                     val threshold = ExecToolArguments.integer(args, "yield_after_seconds", minOf(15, timeout), 0..timeout)
@@ -88,7 +91,9 @@ private class SshSkill(private val runtime: SshRuntime, private val jobs: Backgr
                     val action = BackgroundJobExitAction.fromWire((args["on_exit"] as? JsonPrimitive)?.content ?: "notify")
                         ?: throw SshFailure("INVALID_ARGUMENTS")
                     val command: CommandToolResult
-                    if (jobs != null && (args.backgroundRequested() || threshold > 0)) {
+                    if (capture != null) {
+                        command = runtime.capture(owner, args.text("host"), args.text("command"), timeout, context.sessionId, capture)
+                    } else if (jobs != null && (args.backgroundRequested() || threshold > 0)) {
                         val run = jobs.runSsh(runtime, requireNotNull(snapshot), context.sessionId, context.workspaceRootUuid,
                             args.text("command"), timeout, args.integer("max_output_chars", 32_000), threshold,
                             args.backgroundRequested(), minutes, action, context.liveOutput)
@@ -139,7 +144,7 @@ private class SshSkill(private val runtime: SshRuntime, private val jobs: Backgr
                 }
                 SshOperation.CLOSE -> { runtime.closeSession(owner, args.text("session_id")); buildJsonObject { put("closed", true) } }
             } }
-            ToolResult(id = "ssh_${UUID.randomUUID()}", content = result.toString(), status = status)
+            ToolResult(id = "ssh_${UUID.randomUUID()}", content = runtime.redactOutput(context.sessionId, result).toString(), status = status)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (failure: SshFailure) { failure(failure.code)
         } catch (failure: JobAccessException) {
@@ -189,6 +194,7 @@ internal fun sshGuidance(code: String): String = when (code.removePrefix("SSH_")
     "AUTH_OR_CONNECTION_FAILED", "CONNECTION_FAILED", "HOST_UNAVAILABLE" ->
         "连接或认证失败，请确认主机在线后再重试一次；仍失败时请用户检查设置中的主机配置。"
     "SESSION_NOT_FOUND" -> "会话不存在或已关闭，请先用 ssh_session_open 打开新会话。"
+    "SECRET_SLOT_UNAVAILABLE" -> "引用的本会话保密槽位已销毁或不能作为环境变量，命令未执行；请重新提供保密信息。"
     "SESSION_LIMIT", "CONNECTION_LIMIT", "CLEANUP_BACKLOG_LIMIT" -> "已达到并发上限，请先用 ssh_session_close 关闭不再使用的会话。"
     "PROTECTED_LOCAL_PATH" -> "传输工具不写入技能目录，请使用现有带技能审批的文件工具。"
     "ATOMIC_PUBLISH_UNSUPPORTED" -> "服务器未提供安全的不覆盖发布扩展，无法创建新目标；请管理员启用 SFTP hardlink 扩展后重试。"

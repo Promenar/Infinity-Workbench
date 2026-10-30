@@ -42,6 +42,8 @@ data class BackgroundJobRecord(
     /** SSH 任务的主机 ID；本地任务与旧记录为 null。 */
     val remoteHost: String? = null,
     val transfer: SftpTransferRecord? = null,
+    /** 仅记录执行时引用的槽位名，供进程恢复时明确报告缺失。 */
+    val secretNames: List<String> = emptyList(),
 ) {
     /** 未知执行器按 SHELL 展示，持久化原值保留，不据此启动新命令。 */
     val runnerKind: BackgroundJobRunner get() = BackgroundJobRunner.entries.firstOrNull { it.name == runner } ?: BackgroundJobRunner.SHELL

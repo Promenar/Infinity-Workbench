@@ -184,6 +184,7 @@ internal class DefaultChatGenerationRuntime(
     private val runModeCheck: (suspend (String) -> GenerationFailure?)? = null,
     private val linuxFiles: com.promenar.infinity.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess? = null,
     private val askUserLedger: com.promenar.infinity.data.repository.AskUserLedgerRepository? = null,
+    private val secretInputLedger: com.promenar.infinity.data.secret.SecretInputLedgerRepository? = null,
     private val subagentCompletions: com.promenar.infinity.data.trigger.SubagentCompletionSteering? = null,
     private val branchService: (() -> com.promenar.infinity.data.branch.BranchSessionService)? = null,
     private val branchPlans: com.promenar.infinity.data.branch.BranchPlanLedger? = null,
@@ -219,7 +220,7 @@ internal class DefaultChatGenerationRuntime(
         kotlinx.coroutines.withContext(toolBuildDispatcher) {
             contentStrategy.buildTools(if (modelId == null) session else session.copy(modelId = modelId)).filterNot {
                 interactionMode == com.promenar.infinity.domain.generation.GenerationInteractionMode.HEADLESS &&
-                    it.function.name in setOf(com.promenar.infinity.domain.ask.AskUserLimits.TOOL_NAME, "session_branch")
+                    it.function.name in setOf(com.promenar.infinity.domain.ask.AskUserLimits.TOOL_NAME, com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME, "session_branch")
             }
         }
 
@@ -941,6 +942,35 @@ internal class DefaultChatGenerationRuntime(
                 // 创建已提交但尚未镜像至界面时停止，也必须关闭账本中的提问。
                 withContext(kotlinx.coroutines.NonCancellable) {
                     repository.cancel(request.sessionId).forEach { messageManager.mirrorPersistedMessage(request.sessionId, it) }
+                }
+                throw cancelled
+            }
+            return GenerationToolDecision.CONTINUE
+        }
+        if (calls.any { it.name == com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME }) {
+            toolRounds++
+            val repository = secretInputLedger
+            if (repository == null || com.promenar.infinity.startup.StartupWriteBarrier.isSubsystemIsolated(com.promenar.infinity.startup.StartupSubsystem.TOOL_LEDGER)) {
+                for (call in calls) toolExecutor.rejectTools(request.sessionId, assistantMessageId(request), listOf(call),
+                    com.promenar.infinity.ui.chat.manager.skills.SecretRequestProtocol.failure("SECRET_INPUT_UNAVAILABLE"))
+                return GenerationToolDecision.CONTINUE
+            }
+            val advertised = preparedTools.singleOrNull { it.function.name == com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME }
+            val current = if (request.interactionMode == com.promenar.infinity.domain.generation.GenerationInteractionMode.INTERACTIVE)
+                buildToolsOffMain(session).singleOrNull { it.function.name == com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME } else null
+            try {
+                val result = repository.createBatch(request.sessionId, assistantMessageId(request), calls, current?.takeIf { it == advertised })
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                result.messages.forEach { messageManager.mirrorPersistedMessage(request.sessionId, it) }
+                if (result.pending != null) {
+                    store.updateSession(request.sessionId) { it.copy(approvalRequest = null, loopStatus = com.promenar.infinity.data.model.LoopStatus.WAITING_FOR_INPUT) }
+                    commitReplacement(request)
+                    ui.setGenerating(false)
+                    return GenerationToolDecision.WAIT_FOR_INPUT
+                }
+            } catch (cancelled: CancellationException) {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    askUserLedger?.cancel(request.sessionId)?.forEach { messageManager.mirrorPersistedMessage(request.sessionId, it) }
                 }
                 throw cancelled
             }

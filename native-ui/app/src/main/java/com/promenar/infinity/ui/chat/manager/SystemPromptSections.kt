@@ -96,6 +96,13 @@ object SystemPromptSections {
         appendLine("- Before starting a group of tool calls or changing direction, tell the user what you are doing in one sentence. One sentence covers a batch of parallel calls; avoid filler and repeating tool results.")
         appendLine("- Every tool result comes back to you. If a call fails, read the error, fix the arguments or choose another tool, and retry; after repeated failures, explain the problem to the user.")
         appendLine("- Some tools need user approval before they run. If a call is rejected, do not repeat it; continue without it or ask the user.")
+        if (com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME in toolNames ||
+            com.promenar.infinity.domain.secret.SecretIoLimits.SHOW_TOOL_NAME in toolNames) {
+            appendLine("### 保密信息输入与输出")
+            appendLine("- 需要用户提供密码、令牌或密钥时调用 request_secret，不要用 ask_user 或普通消息索取，不要让用户粘贴到聊天里。")
+            appendLine("- 命令会产生保密信息时用 capture_secret 捕获到本会话保密库，后续用同名环境变量 \$NAME 引用，需要交给用户时调用 show_secret。")
+            appendLine("- 不要用 echo、cat、base64 等方式输出保密值，不要写进文件、提交信息或日志。session_env 只做逻辑隔离，能写入 Git、SSH 或服务商凭据时优先使用这些去向。")
+        }
         if (com.promenar.infinity.domain.ask.AskUserLimits.TOOL_NAME in toolNames) {
             appendLine("- 只有用户才能决定的分歧使用 ask_user 集中提问；能从上下文或合理默认推断的事项不要询问。ask_user 必须单独调用，同批其它调用全部不执行；回答或跳过后按需重新调用。")
         }

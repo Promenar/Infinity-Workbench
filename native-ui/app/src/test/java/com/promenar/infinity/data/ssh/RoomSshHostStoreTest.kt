@@ -11,6 +11,7 @@ import com.promenar.infinity.data.security.SecretCatalog
 import com.promenar.infinity.data.security.SecretId
 import com.promenar.infinity.data.security.SecretStore
 import com.promenar.infinity.data.security.SshCredential
+import com.promenar.infinity.domain.secret.SshSecretField
 import java.util.UUID
 import javax.crypto.KeyGenerator
 import kotlinx.coroutines.async
@@ -44,6 +45,25 @@ class RoomSshHostStoreTest {
 
     @After
     fun tearDown() { database.close() }
+
+    @Test
+    fun `按稳定id替换单个秘密字段保留最新配置和其它凭据`() = runBlocking {
+        val original = host("secret-field")
+        store.save(original, SshCredential(privateKey = "fixture-private-key".toByteArray(),
+            password = "fixture-old-password".toByteArray(), passphrase = "fixture-passphrase".toByteArray()))
+        val latest = original.copy(alias = "secret-renamed", port = 8022, keepTerminal = true)
+        store.save(latest)
+        val password = "fixture-new-password".toByteArray()
+        store.replaceSecret(original.id, SshSecretField.PASSWORD, password)
+        assertThat(password.all { it == 0.toByte() }).isTrue()
+        assertThat(store.find("secret-field")).isNull()
+        assertThat(store.find("secret-renamed")).isEqualTo(latest)
+        store.credential(latest)!!.use {
+            assertThat(it.password).isEqualTo("fixture-new-password".toByteArray())
+            assertThat(it.privateKey).isEqualTo("fixture-private-key".toByteArray())
+            assertThat(it.passphrase).isEqualTo("fixture-passphrase".toByteArray())
+        }
+    }
 
     @Test
     fun `稳定id重命名保留凭据且别名冲突不能覆盖已有主机`() = runBlocking {

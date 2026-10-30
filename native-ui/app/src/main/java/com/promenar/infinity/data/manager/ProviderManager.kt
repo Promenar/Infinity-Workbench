@@ -250,6 +250,17 @@ class ProviderManager private constructor(
         return null
     }
 
+    /** 保密输入直接写入加密存储，调用方负责清零字节数组。 */
+    @Synchronized
+    fun replaceApiKey(providerId: String, value: ByteArray) {
+        val summary = getProviderSummary(providerId) ?: throw IllegalArgumentException("服务商不存在")
+        require(summary.protocolType !is ProtocolType.Google_VertexAI) { "该服务商不使用 API Key" }
+        require(value.isNotEmpty()) { "API Key 不能为空" }
+        secretStore.put(SecretCatalog.providerApiKey(providerId), value)
+        _configurationChanges.tryEmit(Unit)
+        loadProviders()
+    }
+
     /** 仅供当前可见配置页临时显示；调用方取得数组所有权并负责及时清零。 */
     fun revealCredential(providerId: String, vertex: Boolean): CharArray? {
         val id = if (vertex) {

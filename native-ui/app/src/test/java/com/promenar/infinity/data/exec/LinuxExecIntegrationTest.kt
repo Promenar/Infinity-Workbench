@@ -2,6 +2,9 @@ package com.promenar.infinity.data.exec
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.jobs.*
+import com.promenar.infinity.data.secret.SessionSecretVault
+import com.promenar.infinity.data.secret.SecretOutputRedactor
+import com.promenar.infinity.data.secret.SecretCapture
 import com.promenar.infinity.data.git.remote.GitRemoteBroker
 import com.promenar.infinity.data.git.remote.GitRemoteLease
 import com.promenar.infinity.data.git.remote.GitRemoteSessions
@@ -92,6 +95,60 @@ class LinuxExecIntegrationTest {
         assertThat(runtime.specs.last().wakeInbox).isEqualTo(box)
         prepared.close()
     }
+    @Test fun `Linux捕获关闭PTY保持stdout与stderr独立并忽略让出阈值`() = runBlocking<Unit> {
+        val vault = SessionSecretVault()
+        val exec = service(vault = vault)
+        val skill = ShellExecSkill(exec, manager(exec))
+        val args = Json.parseToJsonElement("""{"command":"printf fixture-linux-secret; printf diagnostic >&2","yield_after_seconds":1,"capture_secret":{"name":"TOKEN","label":"令牌","from":"stdout"}}""").jsonObject
+        val result = Json.parseToJsonElement(skill.execute(args, object : SkillExecutionContext {
+            override val sessionId = "s"
+            override val agentId = "a"
+            override val workspacePath: String? = null
+            override val workspaceRootUuid = "root"
+        }).content).jsonObject
+        assertThat(result["stdout"]?.jsonPrimitive?.content).isEqualTo("‹已捕获为 TOKEN · 20 字节›")
+        assertThat(result["stderr"]?.jsonPrimitive?.content).isEqualTo("diagnostic")
+        assertThat(result["stderr_merged"]?.jsonPrimitive?.boolean).isFalse()
+        assertThat(vault.revealBytes("s", "TOKEN")?.toString(Charsets.UTF_8)).isEqualTo("fixture-linux-secret")
+        assertThat(File(root, "store/records.json").exists()).isFalse()
+    }
+
+    @Test fun `Linux文件捕获沿用guest工作目录且保留文件`() = runBlocking<Unit> {
+        val vault = SessionSecretVault()
+        val result = service(vault = vault).runShell("root", "s", "printf fixture-linux-file > value.txt", null, 10,
+            capture = SecretCapture("TOKEN", "令牌", "file", "value.txt"))
+        assertThat(result.succeeded).isTrue()
+        assertThat(vault.revealBytes("s", "TOKEN")?.toString(Charsets.UTF_8)).isEqualTo("fixture-linux-file")
+        assertThat(File(workspace, "value.txt").exists()).isTrue()
+    }
+
+    @Test fun `Linux Python捕获和引用注入使用guest解释器保留原代码`() = runBlocking<Unit> {
+        org.junit.Assume.assumeTrue(File("/usr/bin/python3").canExecute())
+        val vault = SessionSecretVault()
+        val exec = service(vault = vault)
+        val code = "print(\"fixture-python's-secret\")"
+        val capture = exec.runPython("root", "s", code, null, 10,
+            capture = SecretCapture("TOKEN", "令牌", "stdout"))
+        assertThat(capture.succeeded).isTrue()
+        assertThat(capture.stdout).contains("已捕获为 TOKEN")
+        val output = exec.runPython("root", "s", "import os; print(os.environ['TOKEN']) # \$TOKEN", null, 10)
+        assertThat(output.stdout.trim().lineSequence().last()).isEqualTo("‹保密:TOKEN›")
+        assertThat(output.stdout).doesNotContain("fixture-python\'s-secret")
+        val prepared = exec.prepareBackgroundCommand(BackgroundJobRunner.PYTHON, code, null,
+            BackgroundJobLocation(workspace, workspace, true, false, sessionId = "s"), 1, "s")
+        try {
+            assertThat(prepared.request.argv.last()).startsWith("python3 -c ")
+            assertThat(runner.run(prepared.request.copy(terminal = false)).stdout.trim()).isEqualTo("fixture-python's-secret")
+        } finally { prepared.close() }
+        val backgroundCode = "import os; print(os.environ['TOKEN']) # \$TOKEN"
+        val jobs = manager(exec, vault = vault)
+        val job = jobs.startBuiltin("s", "root", BackgroundJobRunner.PYTHON, backgroundCode, null, 1, BackgroundJobExitAction.NONE)
+        val result = jobs.waitFor("s", job.id, 5)
+        assertThat(result.record.runnerKind).isEqualTo(BackgroundJobRunner.LINUX)
+        assertThat(result.record.summary).isEqualTo(backgroundCode)
+        assertThat(result.tail.text.trim().lineSequence().last()).isEqualTo("‹保密:TOKEN›")
+    }
+
     private lateinit var root: File
     private lateinit var workspace: File
     private lateinit var runtime: FakeLinuxRuntime
@@ -149,7 +206,7 @@ class LinuxExecIntegrationTest {
 
     private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null, selected: com.promenar.infinity.data.workspace.SessionWorkspace = com.promenar.infinity.data.workspace.SessionWorkspace.Private,
         resolveSelected: suspend () -> com.promenar.infinity.data.workspace.SessionWorkspace = { selected },
-        wakeInbox: suspend (String) -> File? = { null }, gitRemote: GitRemoteSessions = GitRemoteSessions.None) = BuiltinExecService(
+        wakeInbox: suspend (String) -> File? = { null }, gitRemote: GitRemoteSessions = GitRemoteSessions.None, vault: SessionSecretVault? = null) = BuiltinExecService(
         workspace = host ?: object : WorkspaceCommandHost {
             override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
                 val result = block(workspace)
@@ -161,7 +218,7 @@ class LinuxExecIntegrationTest {
         environment = BuiltinExecEnvironment(PackagedPython(File(root, "absent")), File(root, "home"), File(root, "tmp"), { null }, inherited = mapOf("PATH" to "/usr/bin:/bin")),
         shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance, sessionWorkspace = { resolveSelected() },
         visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" }, sessionMode = { mode }, sessionHome = { homeResolutions++; workspace },
-        wakeInbox = wakeInbox, gitRemote = gitRemote,
+        wakeInbox = wakeInbox, gitRemote = gitRemote, vault = vault, redactor = vault?.let(::SecretOutputRedactor),
     )
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =
@@ -431,12 +488,12 @@ class LinuxExecIntegrationTest {
         assertThat(runtime.specs).isEmpty()
     }
 
-    @Test fun `未确定模式和 Linux 会话的内置 Python 均不可调用`() = runBlocking<Unit> {
+    @Test fun `未确定模式拒绝Python而Linux会话使用guest解释器`() = runBlocking<Unit> {
         mode = null
         assertThat(shell(service(), "touch forbidden").errorCode).isEqualTo("EXEC_RUN_MODE_REQUIRED")
         assertThat(service().runPython("root", "s", "print(1)", null, 1).errorCode).isEqualTo("EXEC_RUN_MODE_REQUIRED")
         mode = SessionRunMode.LINUX
-        assertThat(service().runPython("root", "s", "print(1)", null, 1).errorCode).isEqualTo("EXEC_MODE_TOOL_UNAVAILABLE")
+        assertThat(service().runPython("root", "s", "print(1)", null, 10).stdout.trim().lineSequence().last()).isEqualTo("1")
         assertThat(File(workspace, "forbidden").exists()).isFalse()
     }
 
@@ -538,7 +595,7 @@ class LinuxExecIntegrationTest {
         val tool = ProtocolTool(function = ProtocolToolFunction("shell_exec", "", "{}"), risk = ToolRisk.PROCESS, sourceId = "builtin")
         for (linux in listOf(true, false)) {
             assertThat(CommandToolClassification.backendFor("shell_exec", linux)).isEqualTo(if(linux) CommandToolBackend.LINUX else CommandToolBackend.BUILTIN_SHELL)
-            assertThat(CommandToolClassification.backendFor("python_exec", linux)).isEqualTo(CommandToolBackend.BUILTIN_PYTHON)
+            assertThat(CommandToolClassification.backendFor("python_exec", linux)).isEqualTo(if (linux) CommandToolBackend.LINUX else CommandToolBackend.BUILTIN_PYTHON)
             assertThat(ToolExecutionTargets.extract(tool, """{"command":"echo ok"}""", usesLinux = linux)).isEqualTo("""["process","${if(linux) "linux" else "builtin"}","echo ok"]""")
             assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.WORKSPACE, "shell_exec", ToolRisk.PROCESS, usesLinux = linux)).isTrue()
             assertThat(ToolExecutionPolicy.requiresApproval(ExecutionMode.FULL_ACCESS, "shell_exec", ToolRisk.PROCESS, usesLinux = linux)).isFalse()
@@ -570,12 +627,13 @@ class LinuxExecIntegrationTest {
         assertThat(linuxReachStatus(readyState(), false)).isEqualTo(ReachBackendStatus.DISABLED)
     }
 
-    private fun manager(exec: BuiltinExecService, jobNow: () -> Long = System::currentTimeMillis, beforePrepare: suspend () -> Unit = {}): BackgroundJobManager {
+    private fun manager(exec: BuiltinExecService, jobNow: () -> Long = System::currentTimeMillis, vault: SessionSecretVault? = null, beforePrepare: suspend () -> Unit = {}): BackgroundJobManager {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { scopes += it }
         return BackgroundJobManager(scope, BackgroundJobStore(File(root,"store")), File(root,"runs"), runner,
             prepareWorkspace = { BackgroundJobLocation(workspace, workspace, false, false) },
             prepareCommand = { kind, source, stdin, location, minutes -> beforePrepare(); exec.prepareBackgroundCommand(kind, source, stdin, location, minutes, location.sessionId) },
             keepAlive = keepAlive, linuxRuntime = runtime, sessionMode = { mode }, now = jobNow,
+            vault = vault, redactor = vault?.let(::SecretOutputRedactor),
         )
     }
 
