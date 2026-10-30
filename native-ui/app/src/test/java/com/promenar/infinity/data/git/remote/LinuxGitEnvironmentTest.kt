@@ -4,6 +4,20 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class LinuxGitEnvironmentTest {
+    @Test fun `GitHub代理就绪时gh使用命令nonce和独立配置目录`() {
+        val environment = LinuxGitEnvironment.from(lease() + ("INFINITY_GH_SOCKET" to "/run/infinity/gh/gh.sock"))
+        assertThat(environment["GH_TOKEN"]).isEqualTo("synthetic-command")
+        assertThat(environment["GH_CONFIG_DIR"]).isEqualTo("/run/infinity/gh/config")
+        assertThat(environment["GH_PROMPT_DISABLED"]).isEqualTo("1")
+        assertThat(environment["GH_NO_UPDATE_NOTIFIER"]).isEqualTo("1")
+    }
+
+    @Test fun `非GitHub凭据或代理未就绪时不改变gh环境`() {
+        listOf(lease(), lease(hosts = "git.example.com") + ("INFINITY_GH_SOCKET" to "/run/infinity/gh/gh.sock")).forEach {
+            assertThat(LinuxGitEnvironment.from(it).keys.none { key -> key.startsWith("GH_") }).isTrue()
+        }
+    }
+
     private fun lease(proxy: String = "127.0.0.1:43123", nonce: String = "synthetic-command", hosts: String = "github.com") = mapOf(
         GitRemoteBroker.ENV_HTTP_PROXY to proxy,
         GitRemoteBroker.ENV_NONCE to nonce,
