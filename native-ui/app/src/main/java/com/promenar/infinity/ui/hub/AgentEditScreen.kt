@@ -37,10 +37,8 @@ import com.promenar.infinity.data.model.catalog.ModelCatalogRuntime
 import com.promenar.infinity.ui.avatar.rememberAvatarCropLauncher
 import com.promenar.infinity.ui.common.*
 import com.promenar.infinity.ui.settings.SettingsViewModel
-import com.promenar.infinity.ui.common.AgentIconOption
-import com.promenar.infinity.ui.common.AgentPresetIcons
-import com.promenar.infinity.ui.common.agentAvatarColor
-import com.promenar.infinity.ui.common.agentIconVector
+import com.promenar.infinity.domain.avatar.AgentAvatarCodec
+import com.promenar.infinity.ui.testing.UiTags
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.forInput
 
@@ -155,9 +153,8 @@ fun AgentEditScreen(
     }
 
     val defaultPrimary = MaterialTheme.colorScheme.primary
-    val parsedColor = remember(selectedColor, defaultPrimary) { agentAvatarColor(selectedColor, defaultPrimary) }
-
-    val currentIconVector = agentIconVector(selectedIcon)
+    val parsedColor = remember(selectedColor, defaultPrimary) { parseAgentColor(selectedColor) ?: defaultPrimary }
+    val avatarSpec = remember(selectedIcon) { AgentAvatarCodec.decode(selectedIcon) }
     val avatarCropLauncher = rememberAvatarCropLauncher(
         onCropped = viewModel::importAvatar,
         onFailure = viewModel::reportAvatarImportFailure,
@@ -233,33 +230,25 @@ fun AgentEditScreen(
         privateTitle = stringResource(R.string.workspace_agent_default_none),
     )
 
-    InfinityBottomSheet(
+    AgentAvatarPickerSheet(
         show = showIconPicker,
+        agentId = agentId,
+        agentName = name,
+        initialIcon = selectedIcon,
+        initialColor = selectedColor,
+        photoUri = avatarPath,
         onDismiss = { showIconPicker = false },
-        title = stringResource(R.string.agent_edit_label_icon),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AgentPresetIcons.chunked(4).forEach { rowIcons ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    rowIcons.forEach { option ->
-                        IconSelectionItem(
-                            option = option,
-                            isSelected = selectedIcon == option.id && avatarPath == null,
-                            activeColor = parsedColor,
-                            onClick = {
-                                viewModel.setIcon(option.id)
-                                showIconPicker = false
-                            },
-                        )
-                    }
-                    repeat(4 - rowIcons.size) { Spacer(modifier = Modifier.weight(1f)) }
-                }
-            }
-        }
-    }
+        onConfirm = { icon, color ->
+            showIconPicker = false
+            // 先改颜色再提交图标：setIcon 会立即持久化，并清掉照片头像。
+            viewModel.setColor(color)
+            viewModel.setIcon(icon)
+        },
+        onPickPhoto = {
+            showIconPicker = false
+            avatarCropLauncher.launch()
+        },
+    )
 
     InfinitySettingsPageLayout(
         title = stringResource(R.string.agent_edit_title),
@@ -311,7 +300,7 @@ fun AgentEditScreen(
                         // Ambient Radial Glow
                         Box(
                             modifier = Modifier
-                                .size(96.dp)
+                                .size(108.dp)
                                 .clip(CircleShape)
                                 .background(
                                     Brush.radialGradient(
@@ -324,37 +313,33 @@ fun AgentEditScreen(
                                 )
                         )
 
-                        // Main Circular Avatar
+                        // 主头像：点击打开头像选择器，照片也从选择器里选。
                         AgentAvatar(
-                            icon = if (avatarPath == null) currentIconVector else null,
-                            customImageUri = avatarPath,
-                            backgroundColor = parsedColor,
-                            size = 72.dp,
-                            onClick = avatarCropLauncher::launch,
+                            spec = avatarSpec,
+                            color = selectedColor,
+                            seed = agentId,
+                            name = name,
+                            photoUri = avatarPath,
+                            size = 80.dp,
+                            onClick = { showIconPicker = true },
                         )
 
-                        IconButton(
-                            onClick = avatarCropLauncher::launch,
+                        Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .offset(x = 2.dp, y = 2.dp)
-                                .size(48.dp),
+                                .offset(x = (-4).dp, y = (-4).dp)
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .border(1.5.dp, MaterialTheme.colorScheme.background, CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AddAPhoto,
-                                    contentDescription = stringResource(R.string.agent_edit_icon_upload),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(13.dp),
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp),
+                            )
                         }
                     }
 
@@ -383,7 +368,7 @@ fun AgentEditScreen(
                 }
             }
 
-            // 基本信息与外观：名称、描述、图标、颜色四行，颜色用色点就地选择。
+            // 基本信息与外观：名称、描述与头像三行，头像的图标、生成样式、照片与颜色都在选择器里改。
             item {
                 InfinitySettingsSection(title = stringResource(R.string.agent_edit_section_basic)) {
                     Column(
@@ -411,37 +396,24 @@ fun AgentEditScreen(
                             maxLines = 3,
                         )
                     }
-                    // 行首直接展示当前图标，与下方其它设置行的图标列对齐。
+                    // 头像、图标与颜色合并为一个入口，行首直接展示当前头像。
                     InfinitySettingsItem(
-                        title = stringResource(R.string.agent_edit_label_icon),
-                        subtitle = if (avatarPath != null) stringResource(R.string.agent_edit_icon_custom)
-                        else stringResource(AgentPresetIcons.find { it.id == selectedIcon }?.labelRes ?: R.string.settings_retrieval_icon_sparkles),
+                        title = stringResource(R.string.agent_avatar_row_title),
+                        subtitle = agentAvatarSummary(avatarSpec, hasPhoto = avatarPath != null),
                         onClick = { showIconPicker = true },
                         showChevron = true,
+                        modifier = Modifier.testTag(UiTags.AGENT_EDIT_AVATAR_ROW),
                         leadingContent = {
-                            Icon(
-                                imageVector = if (avatarPath != null) Icons.Rounded.Image else currentIconVector,
-                                contentDescription = null,
-                                tint = parsedColor,
-                                modifier = Modifier.size(InfinitySpacing.RowIconSize),
+                            AgentAvatar(
+                                spec = avatarSpec,
+                                color = selectedColor,
+                                seed = agentId,
+                                name = name,
+                                photoUri = avatarPath,
+                                size = 24.dp,
                             )
                         },
                     )
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Text(
-                            text = stringResource(R.string.agent_edit_label_color),
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        ColorPickerPanel(
-                            selectedColor = parsedColor,
-                            onColorSelected = { color ->
-                                val hex = String.format("#%02X%02X%02X", (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
-                                viewModel.setColor(hex)
-                            },
-                        )
-                    }
                 }
             }
 
@@ -592,44 +564,6 @@ private fun InCardInputField(
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
-private fun RowScope.IconSelectionItem(
-    option: AgentIconOption,
-    isSelected: Boolean,
-    activeColor: Color,
-    onClick: () -> Unit
-) {
-    val animatedScale by animateFloatAsState(
-        targetValue = if (isSelected) 1.05f else 1f,
-        label = "iconScale"
-    )
-    Box(
-        modifier = Modifier
-            .weight(1f)
-            .aspectRatio(1f)
-            .graphicsLayer(scaleX = animatedScale, scaleY = animatedScale)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isSelected) activeColor.copy(alpha = 0.15f)
-                else MaterialTheme.colorScheme.surfaceContainer
-            )
-            .border(
-                width = if (isSelected) 2.dp else 0.5.dp,
-                color = if (isSelected) activeColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = option.icon,
-            contentDescription = stringResource(option.labelRes),
-            tint = if (isSelected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp)
         )
     }
 }

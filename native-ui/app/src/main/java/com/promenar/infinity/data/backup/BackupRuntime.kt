@@ -146,6 +146,7 @@ class BackupRuntime internal constructor(
                     appVersion = BuildConfig.VERSION_NAME,
                     journalAuthenticator = AndroidRestoreJournalAuthenticator(),
                     userSkillsRoot = userSkillsRoot,
+                    avatarRoot = appContext.filesDir.resolve("avatars").toPath(),
                 )
             return BackupRuntime(
                 dataSource = dataSource,

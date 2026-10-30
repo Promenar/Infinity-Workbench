@@ -246,6 +246,7 @@ class BackupRepository internal constructor(
                 configurationRevision = ProviderConfigurationRevision::current,
                 journalAuthenticator = AndroidRestoreJournalAuthenticator(),
                 userSkillsRoot = app.filesDir.resolve("agent_skills").toPath(),
+                avatarRoot = app.filesDir.resolve("avatars").toPath(),
             )
         }
     }

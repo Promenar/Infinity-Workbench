@@ -9,18 +9,20 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 
-/** 技能目录的 before/after 身份由主恢复 journal 认证，不建立独立提交账本。 */
+/** 技能与头像目录共用原子替换；before/after 身份由主恢复 journal 认证，不建立独立提交账本。 */
 internal class SkillRestoreTransaction(
     root: Path,
     private val operations: RestoreFileOperations,
     private val crashHook: RestoreCrashHook,
+    private val partitionName: String = "skills",
 ) {
+    init { require(partitionName == "skills" || partitionName == "avatars") }
     private val parent = FileRestoreJournal.requireTrustedDirectory(root.toAbsolutePath().normalize().parent)
     private val root = parent.resolve(root.fileName)
 
     fun plan(txId: String): SkillRestoreJournalRecord {
         SkillBackupPaths.parts(root.fileName.toString())
-        if (exists(container(txId)) || exists(parent.resolve(".nexara-skills-restore-$txId"))) throw BackupValidationException("技能恢复暂存目录已存在")
+        if (exists(container(txId))) throw BackupValidationException("分区恢复暂存目录已存在")
         return SkillRestoreJournalRecord(root.fileName.toString(), keyOrNull(root))
     }
 
@@ -54,9 +56,9 @@ internal class SkillRestoreTransaction(
             record.newRootFileKey == null
         ) throw BackupValidationException("技能恢复提交前目录身份已变化")
         if (record.oldRootFileKey != null) move(parent, root.fileName.toString(), staging, OLD)
-        crashHook.hit(RestoreCrashPoint.SKILLS_OLD_MOVED)
+        crashHook.hit(if (partitionName == "avatars") RestoreCrashPoint.AVATARS_OLD_MOVED else RestoreCrashPoint.SKILLS_OLD_MOVED)
         move(staging, NEW, parent, root.fileName.toString())
-        crashHook.hit(RestoreCrashPoint.SKILLS_COMMITTED)
+        crashHook.hit(if (partitionName == "avatars") RestoreCrashPoint.AVATARS_COMMITTED else RestoreCrashPoint.SKILLS_COMMITTED)
     }
 
     fun rollback(txId: String, record: SkillRestoreJournalRecord) {
@@ -143,7 +145,7 @@ internal class SkillRestoreTransaction(
 
     private fun createOwnedContainer(staging: Path, txId: String, preparingParent: Path) {
         // 未发布的临时目录留在主事务所有者树内，标记写入前中断也能由主 journal 清理。
-        val temporary = preparingParent.resolve(".skills-preparing-${java.util.UUID.randomUUID()}")
+        val temporary = preparingParent.resolve(".$partitionName-preparing-${java.util.UUID.randomUUID()}")
         operations.createTransactionRoot(preparingParent, temporary.fileName.toString())
         try {
             operations.writeNew(temporary, listOf(OWNER), txId.toByteArray())
@@ -181,7 +183,8 @@ internal class SkillRestoreTransaction(
 
     private fun exists(path: Path) = Files.exists(path, NOFOLLOW_LINKS)
     private fun container(txId: String): Path {
-        val current = parent.resolve(".infinity-skills-restore-$txId")
+        val current = parent.resolve(".infinity-$partitionName-restore-$txId")
+        if (partitionName != "skills") return current
         val legacy = parent.resolve(".nexara-skills-restore-$txId")
         if (exists(current) && exists(legacy)) throw BackupValidationException("新旧技能恢复暂存目录同时存在")
         return if (exists(legacy)) legacy else current

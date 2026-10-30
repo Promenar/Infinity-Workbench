@@ -903,9 +903,11 @@ internal fun HubNewChatMenu(
             InfinityMenuItem(
                 leadingIcon = {
                     AgentAvatar(
-                        icon = agentIconVector(item.agent.icon),
-                        customImageUri = item.agent.avatarPath,
-                        backgroundColor = agentAvatarColor(item.agent.color),
+                        icon = item.agent.icon,
+                        color = item.agent.color,
+                        seed = item.agent.id,
+                        name = item.title,
+                        photoUri = item.agent.avatarPath,
                         size = 28.dp,
                     )
                 },
@@ -1125,9 +1127,11 @@ private fun HubAgentRow(
                     contentAlignment = Alignment.Center,
                 ) {
                     AgentAvatar(
-                        icon = agentIconVector(agent.icon),
-                        customImageUri = agent.avatarPath,
-                        backgroundColor = agentAvatarColor(agent.color),
+                        icon = agent.icon,
+                        color = agent.color,
+                        seed = agent.id,
+                        name = entry.item.title,
+                        photoUri = agent.avatarPath,
                         size = 40.dp,
                     )
                 }

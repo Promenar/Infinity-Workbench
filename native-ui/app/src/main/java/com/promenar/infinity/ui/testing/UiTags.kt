@@ -648,4 +648,14 @@ object UiTags {
     const val LINUX_FILES_PICKER_CONFIRM = "linux_files_picker_confirm"
     // SFTP 传输审批块
     const val CHAT_APPROVAL_SFTP_TRANSFER = "chat_approval_sftp_transfer"
+    // 智能体头像选择器
+    const val AGENT_EDIT_AVATAR_ROW = "agent_edit_avatar_row"
+    const val AGENT_AVATAR_PICKER = "agent_avatar_picker"
+    const val AGENT_AVATAR_PICKER_DONE = "agent_avatar_picker_done"
+    const val AGENT_AVATAR_PICKER_SEARCH = "agent_avatar_picker_search"
+    const val AGENT_AVATAR_PICKER_SHUFFLE = "agent_avatar_picker_shuffle"
+    const val AGENT_AVATAR_PICKER_PHOTO = "agent_avatar_picker_photo"
+    fun agentAvatarPickerTab(tab: String) = "agent_avatar_picker_tab_$tab"
+    fun agentAvatarSymbol(name: String) = "agent_avatar_symbol_$name"
+    fun agentAvatarColor(key: String) = "agent_avatar_color_$key"
 }

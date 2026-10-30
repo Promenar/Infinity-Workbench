@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.MotionDurationScale
@@ -114,8 +113,10 @@ class UserSettingsAccessibilityTest {
                         )
                     }
                     AgentAvatar(
-                        icon = Icons.Rounded.Person,
-                        backgroundColor = androidx.compose.ui.graphics.Color.Gray,
+                        icon = "sym:smart_toy",
+                        color = "#64748B",
+                        seed = "agent",
+                        name = "Agent",
                         size = 32.dp,
                         onClick = {},
                         contentDescription = "Edit agent avatar",

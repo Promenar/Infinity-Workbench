@@ -12,8 +12,8 @@ data class Agent(
     val description: String = "",
     val systemPrompt: String = "",
     val modelId: String = "",
-    val icon: String = "✨",
-    val color: String = "#C0C1FF",
+    val icon: String = com.promenar.infinity.domain.avatar.AgentAvatarCodec.NEW_AGENT_DEFAULT,
+    val color: String = com.promenar.infinity.domain.avatar.AgentAvatarPalette.forSeed(id).hex,
     val avatarPath: String? = null,
     val isPinned: Boolean = false,
     /** 以下采样参数与推理强度是该助手会话的默认值；为空表示按模型默认、不发送。 */

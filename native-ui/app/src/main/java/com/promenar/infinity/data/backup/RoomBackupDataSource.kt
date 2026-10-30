@@ -65,6 +65,7 @@ class RoomBackupDataSource(
     journalAuthenticator: RestoreJournalAuthenticator,
     private val restoreFileOperations: RestoreFileOperations = SecureBackupFileOps,
     userSkillsRoot: Path? = null,
+    private val avatarRoot: Path? = null,
 ) : BackupDataSource {
     private val trustedSourceBases = trustedSourceBases.map(FileRestoreJournal::requireTrustedDirectory)
     private val restoreParent = FileRestoreJournal.requireTrustedDirectory(trustedRestoreBase)
@@ -77,6 +78,7 @@ class RoomBackupDataSource(
     private val restoreMutex = Mutex()
     private val skillSnapshotter = userSkillsRoot?.let(::SkillBackupSnapshotter)
     private val skillRestore = userSkillsRoot?.let { SkillRestoreTransaction(it, restoreFileOperations, crashHook) }
+    private val avatarRestore = avatarRoot?.let { SkillRestoreTransaction(it, restoreFileOperations, crashHook, "avatars") }
 
     override suspend fun snapshot(content: Set<BackupContent>): BackupSnapshot = withContext(Dispatchers.IO) {
         repeat(MAX_CONFIGURATION_SNAPSHOT_ATTEMPTS) {
@@ -94,11 +96,12 @@ class RoomBackupDataSource(
         requireCanonicalSnapshotContent(content)
         requireWorkspaceMutationJournalRecovered()
         val safePreferences = sanitizePreferences(preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES))
-        val preferenceBytes = json.encodeToString(safePreferences).toByteArray(Charsets.UTF_8)
+        var preferenceBytes = json.encodeToString(safePreferences).toByteArray(Charsets.UTF_8)
         if (preferenceBytes.size.toLong() > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
             throw BackupValidationException("偏好数据超过内存安全限制")
         }
         var files: Map<String, ByteArray> = emptyMap()
+        var avatars: Map<String, ByteArray> = emptyMap()
         var secretSnapshot: Map<SecretId, ByteArray> = emptyMap()
         var skillSnapshot: SkillBackupPartition? = null
         var databaseBytes = ByteArray(0)
@@ -113,7 +116,7 @@ class RoomBackupDataSource(
             val databaseAndFiles =
             database.withTransaction {
                 requireWorkspaceMutationJournalRecovered()
-                val payload = stripDeviceLocalAvatarPaths(readDatabasePayload())
+                val payload = readDatabasePayload()
                 val preliminaryDatabase = json.encodeToString(payload).toByteArray(Charsets.UTF_8)
                 val nonDirectoryCount = payload.rows(FILE_TABLE).count { !it.requiredBoolean("is_directory") }
                 val remaining = BackupPackageLimits.MAX_IN_MEMORY_BYTES - preferenceBytes.size - secretBytes -
@@ -125,13 +128,28 @@ class RoomBackupDataSource(
             }
             files = databaseAndFiles.second
             databaseBytes = json.encodeToString(databaseAndFiles.first).toByteArray(Charsets.UTF_8)
-            val existingTotal = databaseBytes.size.toLong() + preferenceBytes.size +
-                files.values.sumOf { it.size.toLong() } + secretSnapshot.values.sumOf { it.size.toLong() }
+            val coreTotal = databaseBytes.size.toLong() + preferenceBytes.size + secretBytes +
+                files.values.sumOf { it.size.toLong() }
             skillSnapshot = skillSnapshotter?.snapshot(
-                BackupPackageLimits.MAX_IN_MEMORY_BYTES - existingTotal,
+                BackupPackageLimits.MAX_IN_MEMORY_BYTES - coreTotal,
                 BackupPackageLimits.MAX_ENTRIES - files.size - 2 - (if (BackupContent.SECRETS in content) 1 else 0),
             )
-            validateSnapshotLimits(databaseBytes, preferenceBytes, files, secretSnapshot, skillSnapshot)
+            // 工作区与技能先占预算，照片仅使用余量，避免可选照片挤占既有备份内容。
+            val skillBytes = skillSnapshot?.files.orEmpty().values.sumOf { it.size.toLong() }
+            val skillEntries = skillSnapshot?.let { it.files.size + it.metadata.directories.size } ?: 0
+            val avatarReferenceBudget = (databaseAndFiles.first.rows("agents").size + 1) * 512L
+            val avatarSnapshot = AvatarBackupFiles.snapshot(
+                databaseAndFiles.first, safePreferences, avatarRoot,
+                BackupPackageLimits.MAX_IN_MEMORY_BYTES - coreTotal - skillBytes - avatarReferenceBudget,
+                BackupPackageLimits.MAX_ENTRIES - files.size - skillEntries - 2 - (if (BackupContent.SECRETS in content) 1 else 0),
+                ::readStableFile,
+            )
+            avatars = avatarSnapshot.files
+            databaseBytes.fill(0)
+            databaseBytes = json.encodeToString(avatarSnapshot.payload).toByteArray(Charsets.UTF_8)
+            preferenceBytes.fill(0)
+            preferenceBytes = json.encodeToString(avatarSnapshot.preferences).toByteArray(Charsets.UTF_8)
+            validateSnapshotLimits(databaseBytes, preferenceBytes, files, secretSnapshot, skillSnapshot, avatars)
             BackupSnapshot(
                 database = databaseBytes,
                 preferences = preferenceBytes,
@@ -140,9 +158,11 @@ class RoomBackupDataSource(
                 databaseSchemaVersion = DATABASE_SCHEMA_VERSION,
                 appVersion = appVersion,
                 skills = skillSnapshot,
+                avatars = avatars,
             )
         } catch (error: Throwable) {
             files.values.forEach { it.fill(0) }
+            avatars.values.forEach { it.fill(0) }
             secretSnapshot.values.forEach { it.fill(0) }
             skillSnapshot?.wipe()
             preferenceBytes.fill(0)
@@ -166,8 +186,13 @@ class RoomBackupDataSource(
         requireWorkspaceMutationJournalRecovered()
         requireCanonicalRestoreContent(validated)
         if (journal.read() != null) throw BackupValidationException("存在未恢复的 restore journal，请先执行 recoverInterruptedRestore")
-        val parsedPayload = stripDeviceLocalAvatarPaths(parseDatabase(validated.database))
-        val preferenceSnapshot = parsePreferences(validated.preferences)
+        validateAvatarPartition(validated)
+        val avatarPlan = AvatarBackupFiles.planRestore(
+            parseDatabase(validated.database), parsePreferences(validated.preferences), validated.avatars,
+            avatarRoot, validated.manifest.formatVersion >= 3,
+        )
+        val parsedPayload = avatarPlan.payload
+        val preferenceSnapshot = avatarPlan.preferences
         validatePayload(parsedPayload, validated.files)
         validateSecrets(validated.secrets, preferenceSnapshot.providerIds)
         val payload = normalizeBranchSessions(parsedPayload)
@@ -180,6 +205,9 @@ class RoomBackupDataSource(
         var expectedFingerprint = fingerprint(transformed)
         val plannedSkills = validated.skills?.let {
             (skillRestore ?: throw BackupValidationException("技能恢复根目录未配置")).plan(restoreId)
+        }
+        val plannedAvatars = avatarPlan.files.takeIf { it.isNotEmpty() }?.let {
+            requireAvatarRestore().plan(restoreId)
         }
         val beforePreferences = preferences.snapshot(BackupPackageLimits.MAX_IN_MEMORY_BYTES)
         preferences.preflightRestore(restoreId, beforePreferences, preferenceSnapshot)
@@ -194,6 +222,7 @@ class RoomBackupDataSource(
             newRootFileKey = null,
             phase = RestoreJournalPhase.PREPARED,
             skills = plannedSkills,
+            avatars = plannedAvatars,
         )
 
         try {
@@ -219,6 +248,14 @@ class RoomBackupDataSource(
                 crashHook.hit(RestoreCrashPoint.SKILLS_STAGED)
             }
 
+            record.avatars?.let { planned ->
+                record = record.copy(avatars = requireAvatarRestore().stage(
+                    restoreId, SkillBackupPartition(avatarPlan.files, SkillBackupMetadata()), planned, finalRoot,
+                ))
+                journal.write(record)
+                crashHook.hit(RestoreCrashPoint.AVATARS_STAGED)
+            }
+
             // Task 8 仍须在应用层冻结其它 DB/文件 writer；本地 mutex 只串行化 restore/recovery。
             restoreFileOperations.verifyAndSync(finalRoot, expectedTree)
             if (currentOldRootIdentity() != record.oldRootIdentity) {
@@ -228,6 +265,7 @@ class RoomBackupDataSource(
                 clearAllRestorableTables()
                 insertPayload(transformed)
                 record.skills?.let { skillRestore!!.commit(restoreId, it) }
+                record.avatars?.let { requireAvatarRestore().commit(restoreId, it) }
                 preferences.commitPrepared(restoreId)
                 secrets.commitPrepared(restoreId)
                 crashHook.hit(RestoreCrashPoint.EXTERNAL_COMMITTED)
@@ -280,6 +318,13 @@ class RoomBackupDataSource(
                 journal.write(record)
             }
         }
+        record.avatars?.let { avatars ->
+            val recovered = requireAvatarRestore().recoverRecord(record.txId, avatars)
+            if (recovered != avatars) {
+                record = record.copy(avatars = recovered)
+                journal.write(record)
+            }
+        }
         val failures = mutableListOf<Throwable>()
         val databaseCommitted = when (record.phase) {
             RestoreJournalPhase.COMMITTED -> true
@@ -300,6 +345,9 @@ class RoomBackupDataSource(
             runCatching { secrets.rollbackPrepared(record.txId) }.onFailure(failures::add)
             record.skills?.let { skills ->
                 runCatching { requireSkillRestore().rollback(record.txId, skills) }.onFailure(failures::add)
+            }
+            record.avatars?.let { avatars ->
+                runCatching { requireAvatarRestore().rollback(record.txId, avatars) }.onFailure(failures::add)
             }
             runCatching { deleteOwnedRestoreRoots(record) }.onFailure(failures::add)
             if (failures.isEmpty()) {
@@ -589,22 +637,6 @@ class RoomBackupDataSource(
                 JsonObject(row + mapOf("parent_session_id" to JsonNull, "parent_session_deleted" to JsonPrimitive(1)))
             } else row
         }))
-    }
-
-    /**
-     * 头像文件位于当前安装私有目录，现行备份包没有携带这些文件。
-     * 导出和读取历史包时都清除绝对路径，避免跨设备恢复出指向旧沙箱的伪成功引用。
-     */
-    private fun stripDeviceLocalAvatarPaths(payload: DatabaseBackupPayload): DatabaseBackupPayload {
-        val agents = payload.tables["agents"] ?: return payload
-        return payload.copy(
-            tables = payload.tables + (
-                "agents" to agents.map { row ->
-                    if (row["avatar_path"] == null || row["avatar_path"] == JsonNull) row
-                    else JsonObject(row + ("avatar_path" to JsonNull))
-                }
-            ),
-        )
     }
 
     private fun upgradeV1Payload(payload: DatabaseBackupPayload): DatabaseBackupPayload {
@@ -1243,14 +1275,15 @@ class RoomBackupDataSource(
         files: Map<String, ByteArray>,
         secretValues: Map<SecretId, ByteArray>,
         skills: SkillBackupPartition? = null,
+        avatars: Map<String, ByteArray> = emptyMap(),
     ) {
         if (databaseBytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES ||
             preferenceBytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES ||
-            files.size + 2 + (if (secretValues.isEmpty()) 0 else 1) +
+            files.size + avatars.size + 2 + (if (secretValues.isEmpty()) 0 else 1) +
                 (skills?.let { it.files.size + it.metadata.directories.size } ?: 0) > BackupPackageLimits.MAX_ENTRIES
         ) throw BackupValidationException("snapshot 超过备份 entry 限制")
         var total = databaseBytes.size.toLong() + preferenceBytes.size.toLong()
-        (files.values + secretValues.values + skills?.files.orEmpty().values).forEach { bytes ->
+        (files.values + secretValues.values + skills?.files.orEmpty().values + avatars.values).forEach { bytes ->
             if (bytes.size.toLong() > BackupPackageLimits.MAX_ENTRY_BYTES) {
                 throw BackupValidationException("snapshot 内容项超过大小限制")
             }
@@ -1264,7 +1297,8 @@ class RoomBackupDataSource(
 
     private fun requireCanonicalRestoreContent(validated: ValidatedBackup) {
         val paths = validated.manifest.entries.map { it.path }.toSet()
-        if ("database.json" !in paths || "preferences.json" !in paths ||
+        if (validated.manifest.formatVersion !in 1..DefaultBackupPackageCodec.FORMAT_VERSION ||
+            "database.json" !in paths || "preferences.json" !in paths ||
             validated.database.isEmpty() || validated.preferences.isEmpty() ||
             validated.files.keys.any { "files/$it" !in paths } ||
             paths.filter { it.startsWith("files/") }.map { it.removePrefix("files/") }.toSet() != validated.files.keys ||
@@ -1280,7 +1314,7 @@ class RoomBackupDataSource(
         skills?.let { SkillBackupPaths.validate(it.metadata, it.files.keys, it.files.values.sumOf { bytes -> bytes.size.toLong() }) }
         val materializedTotal = validated.database.size.toLong() + validated.preferences.size +
             validated.files.values.sumOf { it.size.toLong() } + validated.secrets.values.sumOf { it.size.toLong() } +
-            skills?.files.orEmpty().values.sumOf { it.size.toLong() }
+            skills?.files.orEmpty().values.sumOf { it.size.toLong() } + validated.avatars.values.sumOf { it.size.toLong() }
         if (materializedTotal > BackupPackageLimits.MAX_IN_MEMORY_BYTES) {
             throw BackupValidationException("恢复包超过 Android 内存安全限制")
         }
@@ -1357,6 +1391,7 @@ class RoomBackupDataSource(
     private suspend fun finishCommitted(record: RestoreJournalRecord) {
         requireOwnedRestoreRoot(restoreParent.resolve(record.newRootIdentity), record)
         record.skills?.let { requireSkillRestore().finish(record.txId, it) }
+        record.avatars?.let { requireAvatarRestore().finish(record.txId, it) }
         preferences.finalizePrepared(record.txId)
         secrets.finalizePrepared(record.txId)
         deleteOldRoots(record)
@@ -1364,6 +1399,23 @@ class RoomBackupDataSource(
         crashHook.hit(RestoreCrashPoint.RECEIPT_PERSISTED)
         journal.delete()
     }
+
+    private fun validateAvatarPartition(validated: ValidatedBackup) {
+        val entries = validated.manifest.entries.filter { it.path.startsWith(AvatarBackupFiles.PREFIX) }
+        if (entries.map { it.path.removePrefix(AvatarBackupFiles.PREFIX) }.toSet() != validated.avatars.keys ||
+            entries.size != validated.avatars.size || validated.manifest.formatVersion < 3 && entries.isNotEmpty()
+        ) throw BackupValidationException("头像分区与清单不一致")
+        AvatarBackupFiles.validateSizes(validated.avatars.mapValues { it.value.size.toLong() })
+        entries.forEach { entry ->
+            val bytes = validated.avatars.getValue(entry.path.removePrefix(AvatarBackupFiles.PREFIX))
+            if (entry.sizeBytes != bytes.size.toLong() || entry.sha256 != sha256(bytes)) {
+                throw BackupValidationException("头像文件大小或摘要不一致")
+            }
+        }
+    }
+
+    private fun requireAvatarRestore(): SkillRestoreTransaction = avatarRestore
+        ?: throw BackupValidationException("头像恢复 journal 存在，但头像根目录未配置")
 
     private fun requireSkillRestore(): SkillRestoreTransaction = skillRestore
         ?: throw BackupValidationException("技能恢复 journal 存在，但技能根目录未配置")

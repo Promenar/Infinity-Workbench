@@ -99,8 +99,23 @@ class CreateAgentUseCaseTest {
         val useCase = createUseCase(repository)
         useCase(name = "Test", description = "", modelId = "", systemPrompt = "")
 
-        assertEquals("✨", agentSlot.captured.icon)
-        assertEquals("#C0C1FF", agentSlot.captured.color)
+        assertEquals("gen:", agentSlot.captured.icon)
+        assertEquals(com.promenar.infinity.domain.avatar.AgentAvatarPalette.forSeed(agentSlot.captured.id).hex, agentSlot.captured.color)
+    }
+
+    @Test
+    fun `只传图标时颜色按新id播种且领域实体默认一致`() = runTest {
+        val result = createUseCase()("Test", "", "", "", icon = "sym:terminal")
+        assertEquals("sym:terminal", result.icon)
+        assertEquals(com.promenar.infinity.domain.avatar.AgentAvatarPalette.forSeed(result.id).hex, result.color)
+        val domain = Agent(id = "new-id", name = "新建")
+        val entity = com.promenar.infinity.data.local.db.entity.AgentEntity(id = "new-id", name = "新建", createdAt = 1)
+        assertEquals("gen:", domain.icon)
+        assertEquals(domain.icon, entity.icon)
+        assertEquals(domain.color, entity.color)
+        val colorOnly = createUseCase()("Test", "", "", "", color = "#123456")
+        assertEquals("gen:", colorOnly.icon)
+        assertEquals("#123456", colorOnly.color)
     }
 
     @Test
