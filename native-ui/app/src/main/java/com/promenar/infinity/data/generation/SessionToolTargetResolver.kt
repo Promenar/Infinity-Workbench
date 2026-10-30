@@ -21,11 +21,36 @@ suspend fun resolveSessionToolTarget(
     sshHostStore: com.promenar.infinity.data.ssh.SshHostStore? = null,
     sshSessionHost: ((String, String) -> String?)? = null,
     linuxFiles: LinuxSessionExternalWorkspaceAccess? = null,
+    sftpWorkspaceFiles: com.promenar.infinity.data.workspace.SftpWorkspaceFiles? = null,
+    sftpRuntime: com.promenar.infinity.data.ssh.SshRuntime? = null,
+    sftpLinuxFiles: com.promenar.infinity.domain.linux.LinuxFileSystem? = null,
 ): String? {
     val args = (ToolArgumentsValidator().validate(arguments) as? ToolArgumentsValidation.Valid)?.arguments ?: return null
+    val installedSftp = com.promenar.infinity.ui.chat.manager.skills.InstalledSftpTransferAccess.get(sshHostStore)
+    val transferWorkspace = sftpWorkspaceFiles ?: installedSftp?.access?.workspaceFiles
+    val transferRuntime = sftpRuntime ?: installedSftp?.runtime
+    val transferLinux = sftpLinuxFiles ?: installedSftp?.access?.linux
     val paths = mutableMapOf<String, String>()
+    var sftpLocal: com.promenar.infinity.data.ssh.SftpLocalFile? = null
     try {
         val usesLinux = session.runMode == SessionRunMode.LINUX
+        if (tool.function.name in setOf("sftp_upload", "sftp_download") && tool.mcpServerId == null && tool.sourceId == "builtin") {
+            val scope = (args["local_scope"] as? JsonPrimitive)?.content ?: "workspace"
+            if (scope == "linux") {
+                if (!usesLinux) return null
+                paths["sftp:local-identity"] = "linux:${session.workspaceRootUuid}"
+                val path = (args["local_path"] as? JsonPrimitive)?.content ?: return null
+                val files = transferLinux ?: return null
+                sftpLocal = com.promenar.infinity.data.workspace.SftpLinuxFile(
+                    (files as? com.promenar.infinity.data.linux.LinuxFileSystemImpl)?.forAgentTools() ?: files, path)
+            } else {
+                val path = (args["local_path"] as? JsonPrimitive)?.content ?: return null
+                val root = session.workspaceRootUuid ?: return null
+                val bound = (transferWorkspace ?: return null).resolve(session.id, root, path, tool.function.name == "sftp_download")
+                paths["sftp:local-identity"] = bound.identity
+                sftpLocal = bound.file
+            }
+        }
         if (tool.sourceId == "builtin" && tool.mcpServerId == null && tool.function.name == "copy_knowledge_to_linux")
             return knowledgeLinuxCopyTarget(session, args, repository, mounts)
         if (usesLinux && tool.mcpServerId == null && tool.sourceId == "builtin" &&
@@ -52,7 +77,7 @@ suspend fun resolveSessionToolTarget(
             }
         }
         val sshIdentities = if (tool.mcpServerId == null && tool.sourceId != "mcp" && !tool.runtimeToolId.startsWith("mcp:") &&
-            tool.function.name in setOf("ssh_exec", "ssh_session_open", "ssh_session_send", "sftp_list", "sftp_read", "sftp_write")
+            tool.function.name in setOf("ssh_exec", "ssh_session_open", "ssh_session_send", "sftp_list", "sftp_read", "sftp_write", "sftp_upload", "sftp_download")
         ) {
             val alias = if (tool.function.name == "ssh_session_send") {
                 val id = (args["session_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
@@ -62,7 +87,20 @@ suspend fun resolveSessionToolTarget(
             val host = sshHostStore?.find(alias) ?: return null
             mapOf(alias to host.executionIdentity())
         } else emptyMap()
-        val target = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities, usesLinux = usesLinux) ?: return null
+        val baseTarget = ToolExecutionTargets.extract(tool, arguments, paths, sshIdentities, usesLinux = usesLinux) ?: return null
+        val target = if (sftpLocal != null) {
+            val runtime = transferRuntime ?: return null
+            val host = (args["host"] as? JsonPrimitive)?.content ?: return null
+            val snapshot = runtime.hostSnapshot(host)
+            if (snapshot.executionIdentity() != sshIdentities[host]) return null
+            val remote = (args["remote_path"] as? JsonPrimitive)?.content ?: return null
+            val overwrite = (args["overwrite"] as? JsonPrimitive)?.content == "true"
+            val preview = runtime.withHostSnapshot(snapshot) {
+                com.promenar.infinity.ui.chat.manager.skills.sftpApprovalSnapshot(runtime, session.id, host, remote, requireNotNull(sftpLocal),
+                    tool.function.name == "sftp_upload", overwrite)
+            }
+            ToolExecutionTargets.withSftpPreview(baseTarget, preview.fields)
+        } else baseTarget
         val defaultMediaPath = tool.function.name == "media_fetch" &&
             com.promenar.infinity.domain.media.MediaFetchPaths.targetPath((args["path"] as? JsonPrimitive)?.takeIf { it.isString }?.content) == null
         if (mounts == null && !defaultMediaPath) return target

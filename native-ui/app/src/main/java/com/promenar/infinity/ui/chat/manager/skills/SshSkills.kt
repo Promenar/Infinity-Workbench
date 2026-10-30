@@ -27,7 +27,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
-fun sshTools(runtime: SshRuntime, jobs: BackgroundJobManager? = null): List<SkillDefinition> = SshOperation.entries.map { SshSkill(runtime, jobs, it) }
+fun sshTools(runtime: SshRuntime, jobs: BackgroundJobManager? = null, transferAccess: SftpTransferAccess = SftpTransferAccess()): List<SkillDefinition> =
+    SshOperation.entries.map { SshSkill(runtime, jobs, it) } + sftpTransferTools(runtime, jobs, transferAccess)
 
 // 数值边界由运行时强制校验；工具定义仅使用公共 schema 门禁支持的关键字。
 private enum class SshOperation(val tool: String, val risk: ToolRisk, val summary: String, val fields: String, val required: String) {
@@ -189,6 +190,25 @@ internal fun sshGuidance(code: String): String = when (code.removePrefix("SSH_")
         "连接或认证失败，请确认主机在线后再重试一次；仍失败时请用户检查设置中的主机配置。"
     "SESSION_NOT_FOUND" -> "会话不存在或已关闭，请先用 ssh_session_open 打开新会话。"
     "SESSION_LIMIT", "CONNECTION_LIMIT", "CLEANUP_BACKLOG_LIMIT" -> "已达到并发上限，请先用 ssh_session_close 关闭不再使用的会话。"
+    "PROTECTED_LOCAL_PATH" -> "传输工具不写入技能目录，请使用现有带技能审批的文件工具。"
+    "ATOMIC_PUBLISH_UNSUPPORTED" -> "服务器未提供安全的不覆盖发布扩展，无法创建新目标；请管理员启用 SFTP hardlink 扩展后重试。"
+    "TRANSFER_TOO_LARGE" -> "文件超过单文件 4 GiB 上限，请拆分文件后再传输。"
+    "CHECKSUM_MISMATCH" -> "SHA-256 校验不一致，目标未替换；请检查源文件和存储后重新传输。"
+    "TARGET_CONFLICT", "SOURCE_CHANGED" -> "源文件或目标已变化，或目标存在而未允许覆盖；请检查文件，确认后再传输，覆盖需显式 overwrite=true。"
+    "LOCAL_READ_ONLY" -> "该本地位置只读，请选择可写工作区目录。"
+    "LOCAL_AUTHORIZATION_CHANGED" -> "会话工作区身份发生变化，请刷新工作区并重新审批后再传输。"
+    "SERVICE_TIME_LIMIT" -> "系统后台服务时限已到，传输已停止；请回到前台确认网络与临时文件状态后重新传输。"
+    "NO_SPACE" -> "存储空间不足，请清理目标存储空间后重试。"
+    "INVALID_LOCAL_PATH" -> "本地路径无效或越出允许范围，请使用工作区内路径或 Linux 内绝对路径，避开保留目录和符号链接。"
+    "LINUX_SCOPE_REQUIRES_LINUX_SESSION" -> "linux 范围只适用于 Linux 会话；请切换会话运行模式，或使用 workspace 范围。"
+    "LINUX_SCOPE_UNAVAILABLE" -> "Linux 环境不可用，Play 版不支持 linux 范围；请使用 workspace 范围。"
+    "REMOTE_PARENT_MISSING", "LOCAL_PARENT_MISSING" -> "目标父目录不存在；请先创建父目录再传输。"
+    "REMOTE_NOT_FOUND", "LOCAL_NOT_FOUND" -> "源文件不存在，请检查路径后重试。"
+    "UNSUPPORTED_TRANSFER_TARGET" -> "只允许普通文件，目录和符号链接不可作为传输目标；请选择普通文件路径。"
+    "WORKSPACE_UNAVAILABLE" -> "会话工作区不可用，请重新选择工作区后重试。"
+    "WORKSPACE_INDEX_FAILED" -> "文件已保存，但工作区索引对账失败；请刷新文件列表确认文件，避免重复覆盖。"
+    "LOCAL_IO_FAILED" -> "本地读写失败，请检查文件权限、剩余空间和工作区状态。"
+    "STOPPED" -> "传输已停止，目标未替换；请确认后再启动新传输。"
     "FILE_TOO_LARGE_OR_DIRECTORY" -> "目标是目录或超过 16MiB，目录请用 sftp_list，大文件请用 ssh_exec 处理。"
     "BINARY_FILE" -> "目标不是 UTF-8 文本，sftp_read 只读取文本文件。"
     "SHA256_CONFLICT" -> "远端文件已变化，请先重新读取并计算 sha256，再决定是否写入。"

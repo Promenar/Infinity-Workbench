@@ -10,11 +10,13 @@ class SshExecControl(val maxRuntimeSeconds: Int, background: Boolean = false) {
     init { require(maxRuntimeSeconds in 1..86_400) }
     val started = CompletableDeferred<Unit>()
     internal val stopRequested = AtomicBoolean(false)
+    internal val stopCause = java.util.concurrent.atomic.AtomicReference<String?>(null)
     internal val finished = AtomicBoolean(false)
     @Volatile internal var background = background
     internal var promote: (suspend (String, String) -> Boolean)? = null
     @Volatile internal var cancelPending: (() -> Unit)? = null
-    fun requestStop() { stopRequested.set(true); cancelPending?.invoke() }
+    fun requestStop() { stopCause.compareAndSet(null, "STOPPED"); stopRequested.set(true); cancelPending?.invoke() }
+    fun requestTimeLimit() { stopCause.compareAndSet(null, "SERVICE_TIME_LIMIT"); requestStop() }
 }
 
 internal const val SSH_DISCONNECTED_GUIDANCE = "已断开通道；远端进程可能仍在运行。"

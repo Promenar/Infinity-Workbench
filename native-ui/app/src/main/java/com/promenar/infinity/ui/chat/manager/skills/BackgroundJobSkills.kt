@@ -81,6 +81,7 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
         put("log_reference",BackgroundJobLogs.reference(record.id));put("keep_alive",if(record.runnerKind==BackgroundJobRunner.SSH) "service" else jobs.keepAliveMode)
         if (record.runnerKind == BackgroundJobRunner.LINUX) put("stderr_merged", true)
         if (record.directWorkspace && record.runnerKind != BackgroundJobRunner.SSH) put("workspace_mode", "direct_reconcile_on_exit")
+        record.transfer?.let { put("transfer", transferJson(it)) }
         record.guidance?.let{put("guidance",it)}
         } + runtime + buildJsonObject {
             if (record.runnerKind == BackgroundJobRunner.SSH) {

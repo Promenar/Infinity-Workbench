@@ -122,6 +122,9 @@ object SystemPromptSections {
             appendLine("- " + shellRuntimeGuidance(linuxState, runMode))
             if (!usesLinux) appendLine("- python_exec 与 python_sandbox 使用打包 Python。")
         }
+        if (toolNames.any { it == "sftp_upload" || it == "sftp_download" }) {
+            appendLine("- 二进制或大文件用 sftp_upload/sftp_download（最多 4 GiB），文本小改动用 sftp_read/sftp_write；local_scope 默认 workspace，Play 版及非 Linux 会话不可用 linux 范围。")
+        }
         if ("artifact_publish" in toolNames) appendLine("- 交付文件完成后调用 artifact_publish 声明。" + if ("canvas_create" in toolNames) "页面与原型使用画布工具。" else "")
         if (toolNames.any { it.startsWith("canvas_") }) {
             appendLine()

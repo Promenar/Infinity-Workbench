@@ -39,6 +39,26 @@ object ToolExecutionTargets {
             val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
             return sshTarget("process", host, "[PTY]", sshIdentities)
         }
+        if (tool.function.name in setOf("sftp_upload", "sftp_download")) {
+            val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
+            val remote = args.string("remote_path")?.takeIf { it.isNotBlank() && it.length <= 4096 && it.none(Character::isISOControl) } ?: return null
+            val scope = args.string("local_scope") ?: "workspace"
+            val local = if (scope == "workspace") normalizePath(args.string("local_path") ?: return null) else
+                args.string("local_path")?.takeIf { it.startsWith('/') && '\u0000' !in it && it.split('/').none { part -> part == "." || part == ".." } }
+            if (local == null || scope !in setOf("workspace", "linux")) return null
+            if (tool.function.name == "sftp_download" && com.promenar.infinity.data.ssh.isSftpProtectedLocalPath(local)) return null
+            val overwrite = (args["overwrite"] as? JsonPrimitive)?.booleanOrNull ?: false
+            val target = Json.parseToJsonElement(sshTarget("remote_path", host, remote, sshIdentities) ?: return null) as JsonArray
+            val metadata = target.last() as JsonObject
+            return JsonArray(target.dropLast(1) + JsonObject(metadata + mapOf(
+                "oneShot" to JsonPrimitive(true),
+                "direction" to JsonPrimitive(if (tool.function.name == "sftp_upload") "upload" else "download"),
+                "local_scope" to JsonPrimitive(scope), "local_path" to JsonPrimitive(local),
+                "remote_path" to JsonPrimitive(remote), "host" to JsonPrimitive(host),
+                "overwrite" to JsonPrimitive(overwrite),
+                "local_identity" to JsonPrimitive(resolvedPaths["sftp:local-identity"] ?: "unresolved"),
+            ))).toString()
+        }
         if (tool.function.name in setOf("sftp_list", "sftp_read", "sftp_write")) {
             val host = args.string("host")?.takeIf { SSH_ALIAS.matches(it) } ?: return null
             val path = args.string("path")?.takeIf { it.isNotBlank() && it.length <= 4096 && it.none(Character::isISOControl) } ?: return null
@@ -103,6 +123,20 @@ object ToolExecutionTargets {
                 tool.function.name == "delete_file" && (args["irreversible"] as? JsonPrimitive)?.booleanOrNull == true)) {
             JsonArray((Json.parseToJsonElement(target) as JsonArray) + JsonObject(mapOf("oneShot" to JsonPrimitive(true)))).toString()
         } else target
+    }
+
+    private val SFTP_PREVIEW_FIELDS = setOf("bytes_total", "target_exists", "will_overwrite", "source_revision", "target_revision")
+
+    fun withSftpPreview(target: String, preview: JsonObject): String {
+        val parts = Json.parseToJsonElement(target) as JsonArray
+        val metadata = parts.last() as JsonObject
+        return JsonArray(parts.dropLast(1) + JsonObject(metadata + preview.filterKeys { it in SFTP_PREVIEW_FIELDS })).toString()
+    }
+
+    fun withoutSftpPreview(target: String): String {
+        val parts = Json.parseToJsonElement(target) as JsonArray
+        val metadata = parts.last() as JsonObject
+        return JsonArray(parts.dropLast(1) + JsonObject(metadata.filterKeys { it !in SFTP_PREVIEW_FIELDS })).toString()
     }
 
     fun canRemember(target: String): Boolean = runCatching {
@@ -257,5 +291,5 @@ object ToolExecutionTargets {
         )))).toString()
     }
     private val SSH_ALIAS = Regex("[a-z][a-z0-9_-]{0,47}")
-    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file", "media_fetch", "copy_knowledge_to_linux")
+    private val SKILL_MUTATIONS = setOf("write_file", "patch_file", "create_file", "create_directory", "move_file", "delete_file", "media_fetch", "copy_knowledge_to_linux", "sftp_download")
 }

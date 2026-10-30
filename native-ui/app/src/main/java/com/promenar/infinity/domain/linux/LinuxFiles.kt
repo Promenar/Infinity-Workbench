@@ -18,6 +18,16 @@ interface LinuxFileSystem {
 
     suspend fun readBytes(path: String, offset: Long, length: Int): ByteArray
 
+    suspend fun availableBytes(parent: String): Long = throw UnsupportedOperationException("空间查询不可用")
+
+    /** 有界流式读取，回调结束前保持文件描述符与版本校验。 */
+    suspend fun <T> readStreaming(path: String, maxBytes: Long, reader: (java.io.InputStream) -> T): T =
+        throw UnsupportedOperationException("流式读取不可用")
+
+    /** 流式写入临时文件，重新读取 SHA-256 核对 writer 返回的源摘要后原子发布，再同步调用 onCommitted。 */
+    suspend fun writeStreaming(path: String, size: Long, expected: LinuxFileEntry?, check: () -> Unit = {}, beforeCommit: () -> Unit = {}, onCommitted: () -> Unit = {}, writer: (java.io.OutputStream) -> String): LinuxFileEntry =
+        throw UnsupportedOperationException("流式写入不可用")
+
     /** 覆盖写入；[expectedModifiedMs] 非 null 且与当前修改时间不同时以 [LinuxFileErrorCode.CHANGED] 失败。保留权限位。 */
     suspend fun writeText(path: String, text: String, expectedModifiedMs: Long? = null): LinuxFileEntry
 
@@ -86,4 +96,7 @@ enum class LinuxLineEnding { LF, CRLF, CR, MIXED }
 
 enum class LinuxFileErrorCode { NAME_INVALID, NAME_EXISTS, NOT_FOUND, OUTSIDE_ROOTFS, TARGET_INSIDE_SOURCE, CHANGED, NOT_READY, IO }
 
-class LinuxFileException(val code: LinuxFileErrorCode, cause: Throwable? = null) : Exception(code.name, cause)
+open class LinuxFileException(val code: LinuxFileErrorCode, cause: Throwable? = null) : Exception(code.name, cause)
+
+/** 流式传输的稳定失败原因，不扩展界面使用的文件错误枚举。 */
+class LinuxStreamingException(val failureCode: String) : LinuxFileException(LinuxFileErrorCode.IO)

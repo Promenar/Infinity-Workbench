@@ -35,12 +35,16 @@ class LinuxFileSystemImpl internal constructor(
     private val directoryRoot: String? = null,
     private val rejectGuestLinks: Boolean = false,
     private val trustedMutationRoot: String? = directoryRoot,
+    private val workspaceNames: Boolean = false,
 ) : LinuxFileSystem {
     constructor(runtime: LinuxRuntime) : this(runtime.paths.rootfs, { runtime.state.value is LinuxRuntimeState.Ready }, LinuxFileAndroidMetadata)
 
     private val access = metadata.access
-    internal val paths by lazy { LinuxFilePaths(rootfs, access, rejectGuestLinks) }
+    internal val paths by lazy { LinuxFilePaths(rootfs, access, rejectGuestLinks, workspaceNames) }
     private val mutex by lazy { locks.getOrPut(paths.root.toString()) { Mutex() } }
+
+    internal fun asWorkspaceDirectory() = LinuxFileSystemImpl(rootfs, isReady, metadata, io,
+        rejectGuestLinks = true, workspaceNames = true)
 
     internal fun forHome(available: () -> Boolean = { true }) = forDirectory("/root", available)
 
@@ -53,11 +57,11 @@ class LinuxFileSystemImpl internal constructor(
     internal fun forAgentTools() = forAgentTools(trustedMutationRoot)
     internal fun forAgentTools(trustedDirectory: String?): LinuxFileSystemImpl {
         trustedDirectory?.let(com.promenar.infinity.data.workspace.LinuxWorkspaceLocation::requireDirectory)
-        return LinuxFileSystemImpl(rootfs, isReady, metadata, io, directoryRoot, rejectGuestLinks = true, trustedMutationRoot = trustedDirectory)
+        return LinuxFileSystemImpl(rootfs, isReady, metadata, io, directoryRoot, rejectGuestLinks = true, trustedMutationRoot = trustedDirectory, workspaceNames = workspaceNames)
     }
 
     override suspend fun list(path: String): List<LinuxFileEntry> = operation {
-        val normalized = LinuxFilePaths.normalize(path)
+        val normalized = normalize(path)
         val directory = resolvePath(normalized)
         requireDirectory(directory)
         run {
@@ -69,7 +73,7 @@ class LinuxFileSystemImpl internal constructor(
     }
 
     override suspend fun stat(path: String): LinuxFileEntry? = operation {
-        val normalized = LinuxFilePaths.normalize(path)
+        val normalized = normalize(path)
         try { entry(normalized, resolvePath(normalized, followFinal = false)) }
         catch (_: NoSuchFileException) { null }
     }
@@ -88,6 +92,62 @@ class LinuxFileSystemImpl internal constructor(
         val source = resolvePath(path)
         regularAttributes(source)
         read(source, offset, length)
+    }
+
+    override suspend fun availableBytes(parent: String): Long = operation {
+        val directory = resolvePath(parent)
+        requireDirectory(directory)
+        access.directory(directory) { it.toFile().usableSpace }
+    }
+
+    override suspend fun <T> readStreaming(path: String, maxBytes: Long, reader: (java.io.InputStream) -> T): T = operation {
+        val source = resolvePath(path)
+        val original = regularAttributes(source)
+        if (original.size() > maxBytes) fail(LinuxFileErrorCode.IO)
+        access.openRead(source).use { opened ->
+            val revision = opened.revision()
+            val value = reader(java.nio.channels.Channels.newInputStream(opened.channel))
+            if (opened.revision() != revision) fail(LinuxFileErrorCode.CHANGED)
+            value
+        }
+    }
+
+    override suspend fun writeStreaming(path: String, size: Long, expected: LinuxFileEntry?, check: () -> Unit, beforeCommit: () -> Unit, onCommitted: () -> Unit, writer: (java.io.OutputStream) -> String): LinuxFileEntry = operation {
+        require(size >= 0)
+        val normalized = mutationPath(path)
+        val destination = resolvePath(normalized, followFinal = false)
+        requireDirectory(destination.parent)
+        val before = entry(normalized, destination)
+        if (before != expected) fail(LinuxFileErrorCode.CHANGED)
+        val original = if (before != null) regularAttributes(destination) else null
+        val originalHash = original?.let { hash(destination, check) }
+        val space = access.directory(destination.parent) { it.toFile().usableSpace }
+        if (space < size) throw LinuxStreamingException("NO_SPACE")
+        val temporary = access.temporaryFile(destination.parent, ".infinity-sftp-", ".tmp")
+        try {
+            val checksum = access.file(temporary) { Files.newByteChannel(it, setOf(java.nio.file.StandardOpenOption.WRITE, NOFOLLOW_LINKS)) }.use { channel ->
+                val output = java.nio.channels.Channels.newOutputStream(channel)
+                val hash = writer(output)
+                output.flush()
+                if (channel is java.nio.channels.FileChannel) channel.force(true)
+                hash
+            }
+            if (access.attributes(temporary).size() != size || hash(temporary, check) != checksum) throw LinuxStreamingException("CHECKSUM_MISMATCH")
+            val current = if (access.exists(destination)) regularAttributes(destination) else null
+            if (current?.fileKey() != original?.fileKey() || current?.lastModifiedTime() != original?.lastModifiedTime() ||
+                current?.size() != original?.size() || original != null && hash(destination, check) != originalHash) fail(LinuxFileErrorCode.CHANGED)
+            if (resolvePath(normalized, followFinal = false) != destination) fail(LinuxFileErrorCode.CHANGED)
+            currentCoroutineContext().ensureActive()
+            before?.let { access.chmod(temporary, it.mode, metadata) }
+            check()
+            beforeCommit()
+            check()
+            currentCoroutineContext().ensureActive()
+            if (original == null) access.move(temporary, destination)
+            else access.move(temporary, destination, ATOMIC_MOVE, REPLACE_EXISTING)
+            onCommitted()
+            entry(normalized, destination) ?: fail(LinuxFileErrorCode.IO)
+        } finally { access.delete(temporary) }
     }
 
     override suspend fun writeText(path: String, text: String, expectedModifiedMs: Long?): LinuxFileEntry = writeContent(path, text.toByteArray(Charsets.UTF_8), expectedModifiedMs)
@@ -139,7 +199,7 @@ class LinuxFileSystemImpl internal constructor(
     override suspend fun createDirectory(parent: String, name: String): LinuxFileEntry = create(parent, name, directory = true)
 
     private suspend fun create(parent: String, name: String, directory: Boolean): LinuxFileEntry = operation {
-        val path = join(LinuxFilePaths.normalize(parent), LinuxFilePaths.validateName(name))
+        val path = join(normalize(parent), LinuxFilePaths.validateName(name))
         val target = resolvePath(path, followFinal = false)
         requireDirectory(target.parent)
         if (directory) access.createDirectory(target) else access.createFile(target)
@@ -270,7 +330,7 @@ class LinuxFileSystemImpl internal constructor(
         val target = resolvePath(path)
         requireExists(target)
         access.chmod(target, mode, metadata)
-        entry(LinuxFilePaths.normalize(path), resolvePath(path, followFinal = false)) ?: fail(LinuxFileErrorCode.IO)
+        entry(normalize(path), resolvePath(path, followFinal = false)) ?: fail(LinuxFileErrorCode.IO)
     }
 
     override fun hostFile(path: String): File? = runBlocking(io) {
@@ -378,7 +438,9 @@ class LinuxFileSystemImpl internal constructor(
     private fun regularAttributes(path: Path): BasicFileAttributes = access.attributes(path).also {
         if (!it.isRegularFile) fail(LinuxFileErrorCode.IO)
     }
-    private fun mutationPath(raw: String): String = LinuxFilePaths.normalize(raw).also {
+    private fun normalize(raw: String): String = LinuxFilePaths.normalize(raw, workspaceNames)
+
+    private fun mutationPath(raw: String): String = normalize(raw).also {
         if (it == "/") fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         val root = trustedMutationRoot?.takeIf { root -> it == root || it.startsWith("$root/") }
         val relative = if (root == null) it else it.removePrefix(root)
@@ -386,19 +448,19 @@ class LinuxFileSystemImpl internal constructor(
     }
     private fun join(parent: String, name: String) = parent.trimEnd('/') + "/" + name
 
-    private fun hash(path: Path): String {
+    private fun hash(path: Path, check: () -> Unit = {}): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         access.openRead(path).use { opened ->
             val revision = opened.revision()
             val buffer = ByteBuffer.allocate(64 * 1024)
-            while (opened.channel.read(buffer) >= 0) { digest.update(buffer.array(), 0, buffer.position()); buffer.clear() }
+            while (opened.channel.read(buffer) >= 0) { check(); digest.update(buffer.array(), 0, buffer.position()); buffer.clear() }
             if (revision != opened.revision()) fail(LinuxFileErrorCode.CHANGED)
         }
         return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
     }
 
     internal fun resolvePath(raw: String, followFinal: Boolean = true): Path {
-        val normalized = LinuxFilePaths.normalize(raw)
+        val normalized = normalize(raw)
         if (directoryRoot != null && normalized != directoryRoot && !normalized.startsWith("$directoryRoot/")) fail(LinuxFileErrorCode.OUTSIDE_ROOTFS)
         val resolved = paths.resolve(normalized, followFinal)
         if (directoryRoot != null && !resolved.startsWith(paths.root.resolve(directoryRoot.removePrefix("/")))) {
