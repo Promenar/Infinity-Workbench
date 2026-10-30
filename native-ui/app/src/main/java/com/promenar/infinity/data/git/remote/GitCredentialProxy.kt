@@ -39,7 +39,7 @@ interface GitUpstream {
  * - 请求与响应体都流式转发，响应以 chunked 编码返回，每个连接只处理一个请求；
  * - 重定向到已配置主机时改写为代理地址，指向其它主机时拒绝，避免 nonce 随重定向发给第三方。
  *
- * 代理自身拒绝的请求带 [ERROR_HEADER] 响应头与中文说明，由 infinity_git 转成错误信息；任何响应、日志与异常都不含令牌。
+ * 代理自身拒绝的请求与上游认证失败带 [ERROR_HEADER] 响应头与中文说明，由 infinity_git 转成错误信息；任何响应、日志与异常都不含令牌。
  */
 class GitCredentialProxy(
     private val credentials: GitCredentialStore,
@@ -168,6 +168,7 @@ class GitCredentialProxy(
                 return writeError(output, 502, "UPSTREAM_FAILED", "连接 ${route.hostKey} 失败（${failure.javaClass.simpleName}）。")
             }
             response.use {
+                authFailure(route.hostKey, response.code)?.let { (status, code, message) -> return reject(output, status, code, message) }
                 var location: String? = null
                 if (response.isRedirect) {
                     val target = response.header("Location")?.let { response.request.url.resolve(it) }
@@ -210,6 +211,32 @@ class GitCredentialProxy(
         }
     }
 
+    /**
+     * 上游认证失败改由代理给出说明，告诉智能体该让用户去哪里处理，而不是反复重试：
+     * 401 表示令牌已被拒绝（撤销、过期或长期未用被回收），同时标记该凭据，设置页据此提示重新登录或更换令牌；
+     * GitHub 登录的凭据遇到 403 时多半是仓库权限或组织的 OAuth 应用访问限制，令牌本身仍有效，不做标记。
+     */
+    private fun authFailure(hostKey: String, status: Int): Triple<Int, String, String>? {
+        val credential = credentials.credential(hostKey)
+        return when {
+            status == 401 -> {
+                // 标记写入 Keystore 失败不影响把说明返回给智能体。
+                runCatching { credentials.markRejected(hostKey) }
+                Triple(401, "CREDENTIAL_REJECTED", if (credential?.fromGitHubLogin == true) {
+                    "GitHub 授权已失效（HTTP 401），令牌可能已被撤销、超过一年未使用或被 GitHub 自动回收。" +
+                        "请让用户在 $CREDENTIAL_SETTINGS 中重新登录 GitHub，不要重试这条命令。"
+                } else {
+                    "$hostKey 拒绝了已保存的令牌（HTTP 401），令牌可能已过期或被撤销。" +
+                        "请让用户在 $CREDENTIAL_SETTINGS 中更换该主机的令牌，不要重试这条命令。"
+                })
+            }
+            status == 403 && credential?.fromGitHubLogin == true -> Triple(403, "ACCESS_DENIED",
+                "GitHub 拒绝访问该仓库（HTTP 403）：登录的账号可能没有这个仓库的读写权限，" +
+                    "或仓库所属组织启用了 OAuth 应用访问限制，需要组织管理员批准 Infinity Workbench。GitHub 授权本身仍然有效。")
+            else -> null
+        }
+    }
+
     private class StreamingBody(private val stream: InputStream, private val type: MediaType?, private val length: Long) : RequestBody() {
         override fun contentType(): MediaType? = type
         override fun contentLength(): Long = length
@@ -224,6 +251,7 @@ class GitCredentialProxy(
     companion object {
         const val NONCE_HEADER = "X-Infinity-Git-Nonce"
         const val ERROR_HEADER = "X-Infinity-Git-Error"
+        private const val CREDENTIAL_SETTINGS = "设置 → 工具 → Git 凭据"
         private const val INFO_REFS = "/info/refs"
         private val SMART_SERVICES = listOf("git-upload-pack", "git-receive-pack")
         private val SMART_QUERIES = SMART_SERVICES.map { "service=$it" }.toSet()

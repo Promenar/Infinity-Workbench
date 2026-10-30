@@ -29,6 +29,36 @@ class GitCredentialStoreTest {
         assertThat(GitCredentialHost.of("git.example.com", 8443)).isEqualTo("git.example.com:8443")
     }
 
+    @Test fun `GitHub登录凭据记来源，401标记持久化，重新保存后清除`() {
+        val secrets = MemorySecrets()
+        var now = 1_000L
+        val store = SecretGitCredentialStore(secrets) { now }
+        store.saveGitHubLogin("octocat", token.toByteArray())
+        assertThat(store.credential("github.com")).isEqualTo(GitCredential("github.com", "octocat", GitCredential.SOURCE_GITHUB_LOGIN))
+        assertThat(store.credential("github.com")!!.fromGitHubLogin).isTrue()
+
+        store.markRejected("github.com")
+        now = 2_000L
+        store.markRejected("github.com")
+        store.markRejected("missing.example")
+        // 只记第一次被拒绝的时间，未保存的主机不受影响；重新加载后标记仍在。
+        assertThat(SecretGitCredentialStore(secrets).credential("github.com")!!.rejectedAtMillis).isEqualTo(1_000L)
+        assertThat(store.hosts()).containsExactly("github.com")
+
+        store.saveGitHubLogin("octocat", "gho_new".toByteArray())
+        assertThat(store.credential("github.com")!!.rejectedAtMillis).isNull()
+        store.markRejected("github.com")
+        store.save("github.com", "octocat", "ghp_manual".toByteArray())
+        assertThat(store.credential("github.com")).isEqualTo(GitCredential("github.com", "octocat"))
+    }
+
+    @Test fun `旧版主机列表没有来源字段时按手动令牌读取`() {
+        val secrets = MemorySecrets()
+        secrets.put(SecretGitCredentialStore.INDEX_ID, """[{"host":"github.com","username":"octocat"}]""".toByteArray())
+        assertThat(SecretGitCredentialStore(secrets).credential("github.com"))
+            .isEqualTo(GitCredential("github.com", "octocat", GitCredential.SOURCE_TOKEN, rejectedAtMillis = null))
+    }
+
     @Test fun `保存列出删除且令牌只在按主机摘要命名的密钥中`() {
         val secrets = MemorySecrets()
         val store = SecretGitCredentialStore(secrets)

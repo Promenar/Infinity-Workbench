@@ -31,4 +31,6 @@
     <string name="git_credentials_ssh_section">SSH 远端</string>
     <string name="git_credentials_ssh_description">git@ 和 ssh:// 地址使用已配置的 SSH 主机（如 github.com、用户 git）。</string>
     <string name="git_credentials_add">添加凭据</string>
+    <string name="git_credentials_rejected_relogin">授权已失效，需重新登录 GitHub</string>
+    <string name="git_credentials_rejected_token">令牌已被拒绝，需更换</string>
 </resources>

@@ -106,7 +106,7 @@ data class BackgroundRunPreview(
 )
 
 /** sftp_upload / sftp_download 的审批摘要：方向、本地范围与路径、远端路径与是否允许覆盖；主机由执行目标给出。 */
-internal data class SftpTransferApprovalPreview(
+data class SftpTransferApprovalPreview(
     val direction: SftpTransferDirection,
     val localScope: String,
     val localPath: String,

@@ -35,8 +35,13 @@ fun gitCredentialsLargeTextPreview() =
 @Composable
 fun gitCredentialsEmptyPreview() = GitCredentialsPreview(dark = false, operation = GitCredentialOperation.Idle, empty = true)
 
+@PreviewTest
+@Preview(name = "Git 凭据 浅色中文 授权失效", widthDp = 360, heightDp = 1200, locale = "zh-rCN")
 @Composable
-private fun GitCredentialsPreview(dark: Boolean, operation: GitCredentialOperation, empty: Boolean = false) {
+fun gitCredentialsRejectedPreview() = GitCredentialsPreview(dark = false, operation = GitCredentialOperation.Idle, rejected = true)
+
+@Composable
+private fun GitCredentialsPreview(dark: Boolean, operation: GitCredentialOperation, empty: Boolean = false, rejected: Boolean = false) {
     InfinityTheme(
         preferences = InfinityThemePreferences(
             mode = if (dark) InfinityThemeMode.DARK else InfinityThemeMode.LIGHT,
@@ -46,11 +51,20 @@ private fun GitCredentialsPreview(dark: Boolean, operation: GitCredentialOperati
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             GitCredentialSettingsContent(
                 state = GitCredentialUiState(
-                    credentials = if (empty) emptyList() else listOf(
-                        GitCredential("git.example.com:8443", "ci-bot"),
-                        GitCredential("github.com", "octocat"),
-                    ),
+                    credentials = when {
+                        empty -> emptyList()
+                        // 一条 GitHub 登录凭据与一条手动令牌都被远端拒绝。
+                        rejected -> listOf(
+                            GitCredential("git.example.com:8443", "ci-bot", rejectedAtMillis = 1L),
+                            GitCredential("github.com", "octocat", GitCredential.SOURCE_GITHUB_LOGIN, rejectedAtMillis = 1L),
+                        )
+                        else -> listOf(
+                            GitCredential("git.example.com:8443", "ci-bot"),
+                            GitCredential("github.com", "octocat"),
+                        )
+                    },
                     operation = operation,
+                    githubLoginAvailable = rejected,
                 ),
                 actions = GitCredentialSettingsActions(),
             )

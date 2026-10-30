@@ -190,6 +190,9 @@ class _CredentialProxy:
         return url
 
 
+_UPSTREAM_AUTH_CODES = ("CREDENTIAL_REJECTED", "ACCESS_DENIED")
+
+
 def _proxy_failure(resp, url, key):
     """把代理或远端的失败状态转成说明；返回 None 表示按 dulwich 原有方式处理。"""
     code = resp.headers.get(PROXY_ERROR_HEADER)
@@ -198,6 +201,9 @@ def _proxy_failure(resp, url, key):
             detail = resp.read(4096).decode("utf-8", "replace").strip()
         except Exception:
             detail = ""
+        if code in _UPSTREAM_AUTH_CODES and detail:
+            # 上游认证失败由代理按凭据来源写好处理办法，原样转给用户。
+            return _RemoteAuthError(code, detail)
         return _RemoteAuthError(code, "Git 凭据代理拒绝请求：%s" % (detail or "无说明"))
     if resp.status == 401:
         return _RemoteAuthError(

@@ -20,7 +20,9 @@ All notable changes to this project will be documented in this file.
 - 用户自己的 SSH 终端一直保持连接，直到手动断开、从最近任务划掉应用或应用退出；SSH 设置新增“空闲自动断开”（关闭 / 30 分钟 / 2 小时，默认关闭），只作用于用户终端。添加主机面板去掉“退出时保留终端”。
 - `ssh_exec` 与 `shell_exec` 一样支持让出与后台：默认运行 15 秒后转入后台，或用 `background=true` 直接后台运行；后台命令与本地后台任务进入同一套后台任务列表（运行坞“后台任务”、运行详情“后台”页），运行环境标签显示“SSH · 主机 ID”，可查看输出、停止（停止只断开通道）。
 - 添加 SSH 主机可“从 Tailscale 选择”：内置 Tailscale 已连接时，主机名输入框旁的“Tailscale”列出 tailnet 设备（在线状态、系统、是否已添加、是否在设备白名单），选中后填入设备的 tailnet IP，主机 ID 留空时按设备名生成；未连接时入口灰显并说明原因，不在白名单的设备提示需先加入白名单。“远程 › Tailscale”的设备行新增“SSH”，直接打开预填的添加主机面板。
-- Git 凭据新增“用浏览器登录 GitHub”（OAuth App 设备码流程）：在浏览器打开 github.com/login/device 输入代码授权，令牌以 github.com 主机保存进现有凭据存储，替换已有 github.com 令牌，内置 git 的 HTTPS 推拉直接使用；代码过期、网页上拒绝、网络失败等分别提示并可重试。手动添加令牌保留。构建时以 Gradle 属性 `infinity.githubOAuthClientId` 提供 OAuth App 的 client_id（需在 App 设置中开启 Device Flow）；未提供时不显示该入口。
+- Git 凭据新增“用浏览器登录 GitHub”（OAuth App 设备码流程）：在浏览器打开 github.com/login/device 输入代码授权，令牌以 github.com 主机保存进现有凭据存储，替换已有 github.com 令牌，内置 git 的 HTTPS 推拉直接使用；代码过期、网页上拒绝、网络失败等分别提示并可重试。手动添加令牌保留。OAuth App 的 client_id 由 Gradle 属性 `infinity.githubOAuthClientId` 提供，仓库 `native-ui/gradle.properties` 已写入官方 OAuth App 的公开 client_id；属性为空时不显示该入口。
+- 新增 `sftp_upload` / `sftp_download`：与远程主机互传任意二进制文件，单文件上限 4 GiB，边传边算 SHA-256 并在目标端重读核对，不一致不替换目标；本地一侧可选会话工作区（默认）或 Linux 环境（仅侧载版的 Linux 会话），默认不覆盖已存在的目标。上传需审批（外部写入），下载按本地写入定级；审批卡显示传输方向、源与目标路径，覆盖时另有警示。传输与 `ssh_exec` 一样默认 15 秒后转入后台，并入同一套后台任务列表，运行中显示进度条、已传/总量、速度与剩余时间，失败时标出原因（网络断开、超时、已停止、校验不一致、目标冲突、空间不足）。
+- Git 凭据失效检测：远端以 HTTP 401 拒绝已保存的令牌时，凭据注入代理标记该凭据并告诉智能体请用户处理、不要重试；设置页对应行显示警示，GitHub 登录得到的凭据点按直接重新登录，手动令牌打开更换面板，重新保存后标记清除。GitHub 登录凭据遇到 403 时提示可能缺少仓库权限或需组织管理员批准 OAuth 应用，不标记失效。
 - SSH 前台服务通知改为“SSH 已连接 N 台”，逐行列出主机与连接类型，带“打开远程”“全部断开”；侧载版改用 specialUse 前台服务类型，Play 版保留 dataSync，到达系统后台时限时通知“SSH 已断开”并说明原因。
 
 ### 变更

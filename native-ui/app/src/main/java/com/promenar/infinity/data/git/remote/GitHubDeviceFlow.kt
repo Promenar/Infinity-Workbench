@@ -72,7 +72,7 @@ class OAuthDeviceLogin(
                 val username = requestUsername(token)
                 currentCoroutineContext().ensureActive()
                 try {
-                    credentials.save("github.com", username, token)
+                    credentials.saveGitHubLogin(username, token)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {

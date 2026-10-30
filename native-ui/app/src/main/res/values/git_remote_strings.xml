@@ -32,4 +32,6 @@
     <string name="git_credentials_ssh_section">SSH remotes</string>
     <string name="git_credentials_ssh_description">git@ and ssh:// remotes use a configured SSH host (for example github.com, user git).</string>
     <string name="git_credentials_add">Add credential</string>
+    <string name="git_credentials_rejected_relogin">Authorization expired, sign in to GitHub again</string>
+    <string name="git_credentials_rejected_token">Token rejected, replace it</string>
 </resources>

@@ -74,9 +74,11 @@ Release 构建需要安全注入既有四个 `INFINITY_*` 签名变量，在获�
 
 ## GitHub 浏览器登录
 
-“Git 凭据 › 用浏览器登录 GitHub”使用 GitHub OAuth App 的设备码流程（Device Flow），应用里只放 client_id，不需要 client_secret。client_id 由 Gradle 属性 `infinity.githubOAuthClientId` 在构建时写入 `BuildConfig.GITHUB_OAUTH_CLIENT_ID`，只允许字母、数字、`.`、`_` 与 `-`；仓库不保存该值，可在 `~/.gradle/gradle.properties` 或命令行 `-Pinfinity.githubOAuthClientId=<client_id>` 提供。未提供时界面不显示该入口，只保留手动添加令牌。
+“Git 凭据 › 用浏览器登录 GitHub”使用 GitHub OAuth App 的设备码流程（Device Flow），应用里只放 client_id，不需要 client_secret。client_id 由 Gradle 属性 `infinity.githubOAuthClientId` 在构建时写入 `BuildConfig.GITHUB_OAUTH_CLIENT_ID`，只允许字母、数字、`.`、`_` 与 `-`。client_id 是公开标识，`native-ui/gradle.properties` 写入了 Infinity Workbench 官方 OAuth App 的值；自建分发可在 `~/.gradle/gradle.properties` 或命令行 `-Pinfinity.githubOAuthClientId=<client_id>` 覆盖，置空时界面不显示该入口，只保留手动添加令牌。
 
 OAuth App 需在 GitHub 的 App 设置中勾选 “Enable Device Flow”。应用申请 `repo` 范围；授权得到的令牌以主机 `github.com`、GitHub 登录名为用户名存入 Git 凭据，内置 git 的 HTTPS 凭据注入代理按 `Authorization: Basic` 使用，与手动保存的个人访问令牌走同一路径。
+
+OAuth App 不勾选 “Expire user access tokens”，令牌没有固定有效期，但仍会因用户撤销授权、一年未使用、同一用户同一范围超过 10 个令牌、密钥扫描吊销或删除 OAuth App 而失效。上游返回 401 时代理以 `CREDENTIAL_REJECTED` 拒绝并在凭据上记录 `rejectedAtMillis`，设置页提示重新登录；GitHub 登录凭据的 403 以 `ACCESS_DENIED` 提示仓库权限或组织的 OAuth 应用访问限制，不标记失效。
 
 ## 内置 Linux 环境
 

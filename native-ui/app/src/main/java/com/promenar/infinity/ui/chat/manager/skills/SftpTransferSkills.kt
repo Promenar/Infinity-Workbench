@@ -57,7 +57,7 @@ private class SftpTransferSkill(
         "local_scope 默认 workspace，local_path 是以 / 为根的会话工作区路径；linux 仅限 Linux 会话且环境可用，Play 版不可用，使用 Linux 内绝对路径。" +
         "仅使用用户配置的主机别名；远端父目录必须存在，目录和符号链接不可作为文件。默认 15 秒让出后台，0 不让出；" +
         "background=true 立即返回任务号。用 job_status/job_wait 查看、job_stop 停止。最长运行由 max_runtime_minutes 决定，默认120分钟。"
-    override val parametersSchema = """{"type":"object","properties":{"host":{"type":"string"},"local_path":{"type":"string"},"remote_path":{"type":"string"},"local_scope":{"type":"string","enum":["workspace","linux"]},"overwrite":{"type":"boolean"},"yield_after_seconds":{"type":"integer","description":"0–86400 秒，默认15；0 不让出"},$BACKGROUND_EXEC_SCHEMA},"required":["host","local_path","remote_path"],"additionalProperties":false}"""
+    override val parametersSchema = """{"type":"object","properties":{"host":{"type":"string"},"local_path":{"type":"string"},"remote_path":{"type":"string"},"local_scope":{"type":"string","enum":["workspace","linux"]},"overwrite":{"type":"boolean"},"yield_after_seconds":{"type":"integer","description":"0–86400 秒，默认15；0 不让出"},${BACKGROUND_EXEC_SCHEMA}},"required":["host","local_path","remote_path"],"additionalProperties":false}"""
 
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext): ToolResult = withContext(Dispatchers.IO) {
         try {

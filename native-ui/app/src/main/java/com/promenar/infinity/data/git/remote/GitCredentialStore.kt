@@ -35,9 +35,24 @@ object GitCredentialHost {
     fun of(host: String, port: Int): String? = normalize(if (port == -1 || port == 443) host else "$host:$port")
 }
 
-/** 保存的 Git HTTPS 凭据元数据；令牌不在此对象中。 */
+/**
+ * 保存的 Git HTTPS 凭据元数据；令牌不在此对象中。
+ * [source] 区分手动令牌与 GitHub 登录，[rejectedAtMillis] 是远端最近一次以 401 拒绝该凭据的时间，重新保存后清除。
+ */
 @Serializable
-data class GitCredential(val host: String, val username: String)
+data class GitCredential(
+    val host: String,
+    val username: String,
+    val source: String = SOURCE_TOKEN,
+    val rejectedAtMillis: Long? = null,
+) {
+    val fromGitHubLogin: Boolean get() = source == SOURCE_GITHUB_LOGIN
+
+    companion object {
+        const val SOURCE_TOKEN = "token"
+        const val SOURCE_GITHUB_LOGIN = "github_device"
+    }
+}
 
 /** Git 凭据输入校验失败；消息只描述字段，不含输入内容。 */
 class GitCredentialInputException(val field: Field) : IllegalArgumentException("Git 凭据字段无效：$field") {
@@ -52,10 +67,22 @@ interface GitCredentialStore {
     fun save(host: String, username: String, token: ByteArray)
     fun delete(host: String)
 
+    /** 保存 GitHub 设备码登录得到的 github.com 凭据，并标记来源，失效时可引导重新登录。 */
+    fun saveGitHubLogin(username: String, token: ByteArray) = save(GITHUB_HOST, username, token)
+
+    /** 远端以 401 拒绝该主机的凭据时调用；重新保存凭据前一直保留标记。 */
+    fun markRejected(host: String) {}
+
+    fun credential(host: String): GitCredential? = credentials.value.firstOrNull { it.host == host }
+
     /** 只供凭据注入代理读取；调用方用完立即清零返回的数组。 */
     fun token(host: String): ByteArray?
     fun username(host: String): String? = credentials.value.firstOrNull { it.host == host }?.username
     fun hosts(): Set<String> = credentials.value.mapTo(linkedSetOf()) { it.host }
+
+    companion object {
+        const val GITHUB_HOST = "github.com"
+    }
 }
 
 /**
@@ -67,6 +94,8 @@ class LazyGitCredentialStore(provider: () -> GitCredentialStore) : GitCredential
     override val credentials: StateFlow<List<GitCredential>> get() = store.credentials
     override fun save(host: String, username: String, token: ByteArray) = store.save(host, username, token)
     override fun delete(host: String) = store.delete(host)
+    override fun saveGitHubLogin(username: String, token: ByteArray) = store.saveGitHubLogin(username, token)
+    override fun markRejected(host: String) = store.markRejected(host)
     override fun token(host: String): ByteArray? = store.token(host)
     override fun username(host: String): String? = store.username(host)
     override fun hosts(): Set<String> = store.hosts()
@@ -76,12 +105,27 @@ class LazyGitCredentialStore(provider: () -> GitCredentialStore) : GitCredential
  * 主机列表与令牌都存于 [SecretStore]（Android Keystore 加密）：
  * 应用的备份只收录 `SecretCatalog.backupEligible` 白名单中的密钥，系统备份已关闭，因此 Git 凭据不进入任何备份。
  */
-class SecretGitCredentialStore(private val secrets: SecretStore) : GitCredentialStore {
+class SecretGitCredentialStore(
+    private val secrets: SecretStore,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : GitCredentialStore {
     private val state = MutableStateFlow(load())
     override val credentials: StateFlow<List<GitCredential>> = state.asStateFlow()
 
+    override fun save(host: String, username: String, token: ByteArray) = store(host, username, token, GitCredential.SOURCE_TOKEN)
+
+    override fun saveGitHubLogin(username: String, token: ByteArray) =
+        store(GitCredentialStore.GITHUB_HOST, username, token, GitCredential.SOURCE_GITHUB_LOGIN)
+
     @Synchronized
-    override fun save(host: String, username: String, token: ByteArray) {
+    override fun markRejected(host: String) {
+        val current = state.value.firstOrNull { it.host == host } ?: return
+        if (current.rejectedAtMillis != null) return
+        persist(state.value.map { if (it.host == host) it.copy(rejectedAtMillis = clock()) else it })
+    }
+
+    @Synchronized
+    private fun store(host: String, username: String, token: ByteArray, source: String) {
         val key = GitCredentialHost.normalize(host) ?: throw GitCredentialInputException(GitCredentialInputException.Field.HOST)
         val user = username.trim()
         if (user.isEmpty() || user.length > 256 || ':' in user || user.any { it.isISOControl() || it.isWhitespace() }) {
@@ -89,7 +133,7 @@ class SecretGitCredentialStore(private val secrets: SecretStore) : GitCredential
         }
         if (!validToken(token)) throw GitCredentialInputException(GitCredentialInputException.Field.TOKEN)
         secrets.put(tokenId(key), token)
-        val next = (state.value.filterNot { it.host == key } + GitCredential(key, user)).sortedBy { it.host }
+        val next = (state.value.filterNot { it.host == key } + GitCredential(key, user, source)).sortedBy { it.host }
         persist(next)
     }
 

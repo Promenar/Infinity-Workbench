@@ -203,19 +203,56 @@ class GitCredentialProxyTest {
         scope.close()
     }
 
-    @Test fun `上游401原样返回且不含令牌`() {
+    @Test fun `上游401改为代理说明并标记凭据失效`() {
+        val scope = nonces.issue()
+        upstream.respond { _, out -> out.unauthorized() }
+        val response = send("GET /git.test/o/r.git/info/refs?service=git-receive-pack HTTP/1.1", scope.nonce)
+        assertRejected(response, 401, "CREDENTIAL_REJECTED")
+        assertThat(response.text).contains("更换该主机的令牌")
+        assertThat(response.text).doesNotContain("Bad credentials")
+        assertThat(store.credential("git.test")!!.rejectedAtMillis).isNotNull()
+        assertThat(store.credential("down.test")!!.rejectedAtMillis).isNull()
+        scope.close()
+    }
+
+    @Test fun `GitHub登录凭据401提示重新登录，403提示组织授权且不标记`() {
+        store.saveGitHubLogin("octo", token.toByteArray())
+        mapping.ports["github.com"] = upstream.port
+        val scope = nonces.issue()
+        upstream.respond { _, out -> out.unauthorized() }
+        val rejected = send("GET /github.com/o/r.git/info/refs?service=git-upload-pack HTTP/1.1", scope.nonce)
+        assertRejected(rejected, 401, "CREDENTIAL_REJECTED")
+        assertThat(rejected.text).contains("重新登录 GitHub")
+
+        store.saveGitHubLogin("octo", token.toByteArray())
+        upstream.respond { _, out ->
+            out.raw("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        }
+        val denied = send("GET /github.com/o/r.git/info/refs?service=git-receive-pack HTTP/1.1", scope.nonce)
+        assertRejected(denied, 403, "ACCESS_DENIED")
+        assertThat(denied.text).contains("组织管理员")
+        assertThat(store.credential("github.com")!!.rejectedAtMillis).isNull()
+        scope.close()
+    }
+
+    @Test fun `手动令牌的上游403原样返回`() {
         val scope = nonces.issue()
         upstream.respond { _, out ->
-            val body = "Bad credentials".toByteArray()
-            out.raw("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"GitHub\"\r\nContent-Type: text/plain\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n")
+            val body = "denied".toByteArray()
+            out.raw("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n")
             out.write(body)
         }
         val response = send("GET /git.test/o/r.git/info/refs?service=git-receive-pack HTTP/1.1", scope.nonce)
-        assertThat(response.status).isEqualTo(401)
-        assertThat(response.header("www-authenticate")).isEqualTo("Basic realm=\"GitHub\"")
+        assertThat(response.status).isEqualTo(403)
         assertThat(response.header(GitCredentialProxy.ERROR_HEADER)).isNull()
-        assertThat(response.text).isEqualTo("Bad credentials")
+        assertThat(response.text).isEqualTo("denied")
         scope.close()
+    }
+
+    private fun OutputStream.unauthorized() {
+        val body = "Bad credentials".toByteArray()
+        raw("HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"GitHub\"\r\nContent-Type: text/plain\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n")
+        write(body)
     }
 
     @Test fun `上游不可达返回502且只含异常类名`() {

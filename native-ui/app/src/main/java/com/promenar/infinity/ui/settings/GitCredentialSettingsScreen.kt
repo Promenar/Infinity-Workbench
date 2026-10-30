@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +60,7 @@ import com.promenar.infinity.ui.common.SecretKeyboardOptions
 import com.promenar.infinity.ui.common.SecretTextInput
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.forInput
+import com.promenar.infinity.ui.theme.infinityDomainColors
 
 internal data class GitCredentialSettingsActions(
     val onBack: () -> Unit = {},
@@ -169,14 +172,32 @@ internal fun GitCredentialSettingsContent(
                         )
                     }
                     credentials.orEmpty().forEach { credential ->
+                        val rejected = credential.rejectedAtMillis != null
+                        // GitHub 登录得到的凭据失效后直接重新登录；手动令牌或登录不可用时打开更换令牌面板。
+                        val relogin = rejected && credential.fromGitHubLogin && state.githubLoginAvailable
+                        val saved = stringResource(R.string.git_credentials_saved_subtitle, credential.username)
                         InfinitySettingsItem(
-                            icon = Icons.Rounded.Key,
                             title = credential.host,
-                            subtitle = stringResource(R.string.git_credentials_saved_subtitle, credential.username),
-                            onClick = { openEditor(credential) },
-                            onClickLabel = stringResource(R.string.git_credentials_update_token),
-                            subtitleIsIdentifier = true,
+                            subtitle = saved,
+                            subtitleSegments = if (rejected) {
+                                listOf(saved, stringResource(if (relogin) R.string.git_credentials_rejected_relogin else R.string.git_credentials_rejected_token))
+                            } else null,
+                            subtitleMaxLines = if (rejected) 2 else 1,
+                            onClick = { if (relogin) actions.onStartGitHubLogin() else openEditor(credential) },
+                            onClickLabel = stringResource(if (relogin) R.string.github_login_title else R.string.git_credentials_update_token),
+                            subtitleIsIdentifier = !rejected,
                             modifier = Modifier.testTag("git_credential_${credential.host}"),
+                            icon = Icons.Rounded.Key.takeUnless { rejected },
+                            leadingContent = if (rejected) {
+                                {
+                                    Icon(
+                                        Icons.Rounded.WarningAmber,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.infinityDomainColors.warning,
+                                        modifier = Modifier.size(InfinitySpacing.RowIconSize),
+                                    )
+                                }
+                            } else null,
                             trailingContent = {
                                 IconButton(
                                     onClick = { deleting = credential },

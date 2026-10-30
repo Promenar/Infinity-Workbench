@@ -32,6 +32,22 @@ class RewriteTest(unittest.TestCase):
         for name in (infinity_git.NONCE_HEADER, infinity_git.PROXY_ERROR_HEADER):
             self.assertRegex(name, r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
+    def test_upstream_auth_failure_from_proxy_keeps_its_guidance(self) -> None:
+        class Resp:
+            def __init__(self, code, body):
+                self.status = 401
+                self.headers = {infinity_git.PROXY_ERROR_HEADER: code}
+                self._body = body.encode("utf-8")
+
+            def read(self, size):
+                return self._body[:size]
+
+        guidance = "GitHub 授权已失效（HTTP 401）。请让用户重新登录 GitHub。"
+        failure = infinity_git._proxy_failure(Resp("CREDENTIAL_REJECTED", guidance + "\n"), "https://github.com/o/r.git", "github.com")
+        self.assertEqual((failure.code, failure.message), ("CREDENTIAL_REJECTED", guidance))
+        failure = infinity_git._proxy_failure(Resp("NONCE_REJECTED", "nonce 无效"), "https://github.com/o/r.git", "github.com")
+        self.assertEqual(failure.message, "Git 凭据代理拒绝请求：nonce 无效")
+
     def test_log_count_shorthand_becomes_max_count(self) -> None:
         self.assertEqual(infinity_git._rewrite("log", ["--oneline", "-5", "src"]), (["--oneline", "-n", "5", "src"], None))
         self.assertEqual(infinity_git._rewrite("log", ["-n", "3"]), (["-n", "3"], None))
