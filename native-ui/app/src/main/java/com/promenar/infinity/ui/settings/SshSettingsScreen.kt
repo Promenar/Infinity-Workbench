@@ -104,6 +104,14 @@ import com.promenar.infinity.ui.common.InfinitySnackbarData
 import com.promenar.infinity.ui.common.SettingsToggle
 import com.promenar.infinity.ui.common.SnackbarType
 import com.promenar.infinity.ui.ssh.SshHostDraft
+import androidx.compose.foundation.ScrollState
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.promenar.infinity.data.ssh.SshPolicy
+import com.promenar.infinity.ui.ssh.SshErrorMessages
+import com.promenar.infinity.ui.ssh.sshErrorText
 import com.promenar.infinity.ui.ssh.SshInputException
 import com.promenar.infinity.ui.ssh.SshPrivateKeyInput
 import com.promenar.infinity.ui.ssh.safeSshError
@@ -150,7 +158,7 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
             try {
                 action()
             } catch (error: Exception) {
-                status = safeSshError(error)
+                status = SshErrorMessages.message(context, safeSshError(error))
                 statusIsError = true
             } finally {
                 busy = false
@@ -231,6 +239,7 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     if (showEditor) {
         SshHostEditorSheet(
             existing = editing,
+            takenAliases = hosts.mapTo(mutableSetOf()) { it.alias },
             onDismiss = { showEditor = false; editing = null },
             onSave = { host, credential, generate ->
                 val publicKey = withContext(Dispatchers.IO) {
@@ -661,37 +670,55 @@ private fun SshStatusTag(text: String, icon: ImageVector, color: Color) {
     }
 }
 
+/** 主机编辑表单的字段；密码与口令只在面板存续期间保留在内存。 */
+@Stable
+internal class SshHostEditorFields(existing: SshHost?) {
+    var alias by mutableStateOf(existing?.alias.orEmpty())
+    var hostname by mutableStateOf(existing?.hostname.orEmpty())
+    var port by mutableStateOf((existing?.port ?: 22).toString())
+    var username by mutableStateOf(existing?.username.orEmpty())
+    var authType by mutableStateOf(existing?.authType ?: SshAuthType.KEY)
+    var keepTerminal by mutableStateOf(existing?.keepTerminal ?: false)
+    var forwarding by mutableStateOf(existing?.localForwardPort != null)
+    var localPort by mutableStateOf(existing?.localForwardPort?.toString().orEmpty())
+    var forwardHost by mutableStateOf(existing?.forwardHost ?: "127.0.0.1")
+    var forwardPort by mutableStateOf(existing?.forwardPort?.toString().orEmpty())
+    var password by mutableStateOf("")
+    var passphrase by mutableStateOf("")
+
+    fun draft() = SshHostDraft(
+        alias, hostname, port, username, authType, keepTerminal, forwarding,
+        localPort, forwardHost, forwardPort,
+    )
+}
+
+/** 私钥的载入来源，决定认证分区的说明文案。 */
+internal enum class SshKeySource { FILE, CLIPBOARD }
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SshHostEditorSheet(
     existing: SshHost?,
+    takenAliases: Set<String>,
     onDismiss: () -> Unit,
     onSave: suspend (SshHost, SshCredential?, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var alias by remember { mutableStateOf(existing?.alias.orEmpty()) }
-    var hostname by remember { mutableStateOf(existing?.hostname.orEmpty()) }
-    var port by remember { mutableStateOf((existing?.port ?: 22).toString()) }
-    var username by remember { mutableStateOf(existing?.username.orEmpty()) }
-    var authType by remember { mutableStateOf(existing?.authType ?: SshAuthType.KEY) }
-    var keepTerminal by remember { mutableStateOf(existing?.keepTerminal ?: false) }
-    var forwarding by remember { mutableStateOf(existing?.localForwardPort != null) }
-    var localPort by remember { mutableStateOf(existing?.localForwardPort?.toString().orEmpty()) }
-    var forwardHost by remember { mutableStateOf(existing?.forwardHost ?: "127.0.0.1") }
-    var forwardPort by remember { mutableStateOf(existing?.forwardPort?.toString().orEmpty()) }
-    var password by remember { mutableStateOf("") }
-    var passphrase by remember { mutableStateOf("") }
+    val fields = remember { SshHostEditorFields(existing) }
+    val scrollState = rememberScrollState()
     var privateKey by remember { mutableStateOf<ByteArray?>(null) }
+    var keySource by remember { mutableStateOf<SshKeySource?>(null) }
     var busy by remember { mutableStateOf(false) }
     var errorCode by remember { mutableStateOf<String?>(null) }
 
     fun clearSecrets() {
-        password = ""
-        passphrase = ""
+        fields.password = ""
+        fields.passphrase = ""
         privateKey?.fill(0)
         privateKey = null
+        keySource = null
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -703,41 +730,65 @@ private fun SshHostEditorSheet(
         }
     }
 
-    val importKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            busy = true
-            scope.launch {
-                var loaded: ByteArray? = null
-                try {
-                    loaded = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use(SshPrivateKeyInput::read)
-                            ?: throw SshInputException("SSH_KEY_READ_FAILED")
-                    }
-                    privateKey?.fill(0)
-                    privateKey = loaded
-                    loaded = null
-                    errorCode = null
-                } catch (error: Exception) {
-                    errorCode = safeSshError(error)
-                } finally {
-                    loaded?.fill(0)
-                    busy = false
-                }
+    // 错误固定显示在操作按钮上方；指向顶部字段时同时滚回顶部，让出错字段可见。
+    fun showError(code: String) {
+        errorCode = code
+        if (code in SshErrorMessages.CONNECTION_FIELD_CODES) scope.launch { scrollState.animateScrollTo(0) }
+    }
+
+    /** 读取并校验私钥信封；成功后替换内存中的旧私钥，失败时清零读入的字节。 */
+    fun loadKey(source: SshKeySource, read: () -> ByteArray, afterAccepted: () -> Unit = {}) {
+        busy = true
+        scope.launch {
+            var loaded: ByteArray? = null
+            try {
+                loaded = withContext(Dispatchers.IO) { read().also(SshPolicy::validatePrivateKey) }
+                privateKey?.fill(0)
+                privateKey = loaded
+                keySource = source
+                loaded = null
+                errorCode = null
+                afterAccepted()
+            } catch (error: Exception) {
+                showError(safeSshError(error))
+            } finally {
+                loaded?.fill(0)
+                busy = false
             }
+        }
+    }
+
+    val importKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) loadKey(SshKeySource.FILE, {
+            context.contentResolver.openInputStream(uri)?.use(SshPrivateKeyInput::read)
+                ?: throw SshInputException("SSH_KEY_READ_FAILED")
+        })
+    }
+
+    fun pasteKey() {
+        if (busy) return
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        val text = clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)
+        if (text.isNullOrBlank()) {
+            showError("SSH_KEY_CLIPBOARD_EMPTY")
+            return
+        }
+        // 私钥校验通过后清空剪贴板，避免密钥留在系统剪贴板历史中。
+        loadKey(SshKeySource.CLIPBOARD, { SshPrivateKeyInput.read(text.toString().trim().byteInputStream(Charsets.UTF_8)) }) {
+            clipboard.clearPrimaryClip()
         }
     }
 
     fun save(generate: Boolean) {
         if (busy) return
         val host = try {
-            SshHostDraft(
-                alias, hostname, port, username, authType, keepTerminal, forwarding,
-                localPort, forwardHost, forwardPort,
-            ).toHost(existing, privateKey != null, password.isNotEmpty(), generate)
+            fields.draft().toHost(existing, privateKey != null, fields.password.isNotEmpty(), generate, takenAliases)
         } catch (error: SshInputException) {
-            errorCode = safeSshError(error)
+            showError(safeSshError(error))
             return
         }
+        // 主机 ID 留空时回填自动生成的值，保存失败后用户也能看到将使用的 ID。
+        fields.alias = host.alias
         busy = true
         errorCode = null
         scope.launch {
@@ -745,16 +796,16 @@ private fun SshHostEditorSheet(
             try {
                 credential = when {
                     generate -> null
-                    authType == SshAuthType.PASSWORD && password.isNotEmpty() ->
-                        SshCredential(password = password.toByteArray(Charsets.UTF_8))
-                    authType == SshAuthType.KEY && privateKey != null ->
-                        SshCredential(privateKey = privateKey!!.copyOf(), passphrase = passphrase.toByteArray(Charsets.UTF_8))
+                    fields.authType == SshAuthType.PASSWORD && fields.password.isNotEmpty() ->
+                        SshCredential(password = fields.password.toByteArray(Charsets.UTF_8))
+                    fields.authType == SshAuthType.KEY && privateKey != null ->
+                        SshCredential(privateKey = privateKey!!.copyOf(), passphrase = fields.passphrase.toByteArray(Charsets.UTF_8))
                     else -> null
                 }
                 onSave(host, credential, generate)
                 clearSecrets()
             } catch (error: Exception) {
-                errorCode = safeSshError(error)
+                showError(safeSshError(error))
             } finally {
                 credential?.close()
                 busy = false
@@ -771,130 +822,186 @@ private fun SshHostEditorSheet(
         height = InfinitySheetHeight.Full,
         modifier = Modifier.imePadding(),
     ) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight()) {
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-            ) {
-                InfinitySettingsSection(
-                    title = stringResource(R.string.ssh_visual_connection_section),
-                    footer = stringResource(R.string.ssh_alias_help),
+        SshHostEditorForm(
+            fields = fields,
+            existing = existing,
+            aliasSuggestion = if (existing == null) SshHostDraft.suggestAlias(fields.hostname, takenAliases) else null,
+            busy = busy,
+            keySource = keySource,
+            errorCode = errorCode,
+            scrollState = scrollState,
+            onAuthTypeChange = { fields.authType = it; clearSecrets() },
+            onImportKey = { importKey.launch(arrayOf("*/*")) },
+            onPasteKey = ::pasteKey,
+            onGenerate = { save(true) },
+            onCancel = onDismiss,
+            onSave = { save(false) },
+        )
+    }
+}
+
+/** 编辑面板内容：滚动的表单、固定在按钮上方的错误区与操作按钮。不持有秘密，便于截图测试。 */
+@Composable
+internal fun SshHostEditorForm(
+    fields: SshHostEditorFields,
+    existing: SshHost?,
+    aliasSuggestion: String?,
+    busy: Boolean,
+    keySource: SshKeySource?,
+    errorCode: String?,
+    scrollState: ScrollState,
+    onAuthTypeChange: (SshAuthType) -> Unit,
+    onImportKey: () -> Unit,
+    onPasteKey: () -> Unit,
+    onGenerate: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().fillMaxHeight()) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState),
+        ) {
+            InfinitySettingsSection(title = stringResource(R.string.ssh_visual_connection_section)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
+                    verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
-                        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
-                    ) {
-                        SshEditorField(alias, { alias = it }, R.string.ssh_alias, enabled = !busy && existing == null)
-                        SshEditorField(hostname, { hostname = it }, R.string.ssh_hostname, enabled = !busy)
-                        SshEditorField(port, { port = it }, R.string.ssh_port, keyboardType = KeyboardType.Number, enabled = !busy)
-                        SshEditorField(username, { username = it }, R.string.ssh_username, enabled = !busy)
-                    }
+                    // 规则说明紧贴主机 ID 字段；该字段出错时整段说明随之标红。
+                    SshEditorField(
+                        fields.alias, { fields.alias = SshHostDraft.normalizeAliasInput(it) }, R.string.ssh_alias,
+                        enabled = !busy && existing == null,
+                        supportingText = listOfNotNull(
+                            stringResource(R.string.ssh_alias_help),
+                            aliasSuggestion?.let { stringResource(R.string.ssh_alias_suggestion, it) },
+                        ).joinToString("\n"),
+                        placeholder = aliasSuggestion,
+                        isError = errorCode in SshErrorMessages.ALIAS_CODES,
+                        testTag = "ssh_editor_alias",
+                    )
+                    SshEditorField(fields.hostname, { fields.hostname = it }, R.string.ssh_hostname, enabled = !busy, isError = errorCode == "SSH_HOST_INVALID")
+                    SshEditorField(fields.port, { fields.port = it }, R.string.ssh_port, keyboardType = KeyboardType.Number, enabled = !busy, isError = errorCode == "SSH_PORT_INVALID")
+                    SshEditorField(fields.username, { fields.username = it }, R.string.ssh_username, enabled = !busy, isError = errorCode == "SSH_USERNAME_INVALID")
                 }
-                InfinitySettingsSection(
-                    title = stringResource(R.string.ssh_authentication),
-                    footer = listOfNotNull(
-                        if (authType == SshAuthType.KEY) stringResource(if (privateKey == null) R.string.ssh_key_import_help else R.string.ssh_key_imported) else null,
-                        if (authType == SshAuthType.KEY) stringResource(R.string.ssh_generate_help) else null,
-                        if (existing != null) stringResource(R.string.ssh_keep_credential_hint) else null,
-                    ).joinToString("\n"),
+            }
+            InfinitySettingsSection(
+                title = stringResource(R.string.ssh_authentication),
+                footer = listOfNotNull(
+                    if (fields.authType == SshAuthType.KEY) stringResource(
+                        when (keySource) {
+                            null -> R.string.ssh_key_import_help
+                            SshKeySource.FILE -> R.string.ssh_key_imported
+                            SshKeySource.CLIPBOARD -> R.string.ssh_key_pasted
+                        },
+                    ) else null,
+                    if (fields.authType == SshAuthType.KEY) stringResource(R.string.ssh_generate_help) else null,
+                    if (existing != null) stringResource(R.string.ssh_keep_credential_hint) else null,
+                ).joinToString("\n"),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
+                    verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
-                        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
-                    ) {
-                        InfinitySegmentedControl(
-                            segments = SshAuthType.entries.map { type ->
-                                InfinitySegment(type, stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password))
-                            },
-                            selected = authType,
-                            onSelect = { authType = it; clearSecrets() },
+                    InfinitySegmentedControl(
+                        segments = SshAuthType.entries.map { type ->
+                            InfinitySegment(type, stringResource(if (type == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password))
+                        },
+                        selected = fields.authType,
+                        onSelect = onAuthTypeChange,
+                        enabled = !busy,
+                        fillWidth = true,
+                    )
+                    if (fields.authType == SshAuthType.PASSWORD) {
+                        SshEditorField(fields.password, { fields.password = it }, R.string.ssh_password, secret = true, enabled = !busy, isError = errorCode == "SSH_PASSWORD_REQUIRED")
+                    } else {
+                        TextButton(
+                            onClick = onImportKey,
                             enabled = !busy,
-                            fillWidth = true,
-                        )
-                        if (authType == SshAuthType.PASSWORD) {
-                            SshEditorField(password, { password = it }, R.string.ssh_password, secret = true, enabled = !busy)
-                        } else {
-                            TextButton(
-                                onClick = { importKey.launch(arrayOf("*/*")) },
-                                enabled = !busy,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget),
-                            ) {
-                                Text(stringResource(R.string.ssh_import_key))
-                            }
-                            if (privateKey != null) {
-                                SshEditorField(passphrase, { passphrase = it }, R.string.ssh_passphrase, secret = true, enabled = !busy)
-                            }
-                            TextButton(
-                                onClick = { save(true) },
-                                enabled = !busy,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget),
-                            ) {
-                                Text(stringResource(R.string.ssh_generate_save_copy))
-                            }
-                        }
-                    }
-                }
-                InfinitySettingsSection(
-                    title = stringResource(R.string.ssh_visual_terminal_section),
-                    footer = stringResource(R.string.ssh_keep_terminal_help),
-                ) {
-                    SettingsToggle(
-                        title = stringResource(R.string.ssh_keep_terminal),
-                        description = stringResource(R.string.settings_batch1_ssh_keep_summary),
-                        checked = keepTerminal,
-                        onCheckedChange = { keepTerminal = it },
-                        icon = Icons.Rounded.Terminal,
-                        enabled = !busy,
-                    )
-                }
-                InfinitySettingsSection(
-                    title = stringResource(R.string.ssh_forward_configure),
-                    footer = stringResource(R.string.ssh_forward_loopback_only),
-                ) {
-                    SettingsToggle(
-                        title = stringResource(R.string.settings_batch1_network_forwarding),
-                        description = stringResource(R.string.settings_batch1_ssh_forward_summary),
-                        checked = forwarding,
-                        onCheckedChange = { forwarding = it },
-                        enabled = !busy,
-                    )
-                    if (forwarding) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
-                            verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget),
                         ) {
-                            SshEditorField(localPort, { localPort = it }, R.string.ssh_forward_local_port, keyboardType = KeyboardType.Number, enabled = !busy)
-                            SshEditorField(forwardHost, { forwardHost = it }, R.string.ssh_forward_remote_host, enabled = !busy)
-                            SshEditorField(forwardPort, { forwardPort = it }, R.string.ssh_forward_remote_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                            Text(stringResource(R.string.ssh_import_key))
+                        }
+                        TextButton(
+                            onClick = onPasteKey,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag("ssh_editor_paste_key"),
+                        ) {
+                            Text(stringResource(R.string.ssh_paste_key))
+                        }
+                        if (keySource != null) {
+                            SshEditorField(fields.passphrase, { fields.passphrase = it }, R.string.ssh_passphrase, secret = true, enabled = !busy)
+                        }
+                        TextButton(
+                            onClick = onGenerate,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = InfinitySpacing.MinimumTouchTarget),
+                        ) {
+                            Text(stringResource(R.string.ssh_generate_save_copy))
                         }
                     }
                 }
-                errorCode?.let { message ->
-                    InfinitySettingsSection(title = stringResource(R.string.ssh_visual_status_section)) {
-                        SshInformationRow(icon = Icons.Rounded.ErrorOutline, text = message, color = MaterialTheme.colorScheme.error)
+            }
+            InfinitySettingsSection(
+                title = stringResource(R.string.ssh_visual_terminal_section),
+                footer = stringResource(R.string.ssh_keep_terminal_help),
+            ) {
+                SettingsToggle(
+                    title = stringResource(R.string.ssh_keep_terminal),
+                    description = stringResource(R.string.settings_batch1_ssh_keep_summary),
+                    checked = fields.keepTerminal,
+                    onCheckedChange = { fields.keepTerminal = it },
+                    icon = Icons.Rounded.Terminal,
+                    enabled = !busy,
+                )
+            }
+            InfinitySettingsSection(
+                title = stringResource(R.string.ssh_forward_configure),
+                footer = stringResource(R.string.ssh_forward_loopback_only),
+            ) {
+                SettingsToggle(
+                    title = stringResource(R.string.settings_batch1_network_forwarding),
+                    description = stringResource(R.string.settings_batch1_ssh_forward_summary),
+                    checked = fields.forwarding,
+                    onCheckedChange = { fields.forwarding = it },
+                    enabled = !busy,
+                )
+                if (fields.forwarding) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(InfinitySpacing.Large),
+                        verticalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+                    ) {
+                        SshEditorField(fields.localPort, { fields.localPort = it }, R.string.ssh_forward_local_port, keyboardType = KeyboardType.Number, enabled = !busy)
+                        SshEditorField(fields.forwardHost, { fields.forwardHost = it }, R.string.ssh_forward_remote_host, enabled = !busy)
+                        SshEditorField(fields.forwardPort, { fields.forwardPort = it }, R.string.ssh_forward_remote_port, keyboardType = KeyboardType.Number, enabled = !busy)
                     }
                 }
             }
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.padding(top = InfinitySpacing.Small).size(InfinitySpacing.XLarge))
+        }
+        // 错误区不随表单滚动：无论点哪个按钮触发，错误都出现在可见位置。
+        errorCode?.let { code ->
+            Box(Modifier.fillMaxWidth().testTag("ssh_editor_error").semantics { liveRegion = LiveRegionMode.Polite }) {
+                SshInformationRow(icon = Icons.Rounded.ErrorOutline, text = sshErrorText(code), color = MaterialTheme.colorScheme.error)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = InfinitySpacing.Medium),
-                horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+        }
+        if (busy) {
+            CircularProgressIndicator(modifier = Modifier.padding(top = InfinitySpacing.Small).size(InfinitySpacing.XLarge))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = InfinitySpacing.Medium),
+            horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Small),
+        ) {
+            TextButton(
+                onClick = onCancel,
+                enabled = !busy,
+                modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
             ) {
-                TextButton(
-                    onClick = onDismiss,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
-                ) {
-                    Text(stringResource(R.string.ssh_cancel))
-                }
-                Button(
-                    onClick = { save(false) },
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
-                ) {
-                    Text(stringResource(R.string.ssh_save))
-                }
+                Text(stringResource(R.string.ssh_cancel))
+            }
+            Button(
+                onClick = onSave,
+                enabled = !busy,
+                modifier = Modifier.weight(1f).heightIn(min = InfinitySpacing.MinimumTouchTarget),
+            ) {
+                Text(stringResource(R.string.ssh_save))
             }
         }
     }
@@ -908,19 +1015,31 @@ private fun SshEditorField(
     enabled: Boolean,
     keyboardType: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
+    supportingText: String? = null,
+    placeholder: String? = null,
+    isError: Boolean = false,
+    testTag: String? = null,
 ) {
     val field = @Composable {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             label = { Text(stringResource(label)) },
+            placeholder = placeholder?.let { { Text(it) } },
+            supportingText = supportingText?.let { { Text(it) } },
+            isError = isError,
             enabled = enabled,
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
             textStyle = MaterialTheme.typography.bodyLarge.forInput(),
             shape = MaterialTheme.shapes.medium,
             visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-            keyboardOptions = if (secret) SecretKeyboardOptions else KeyboardOptions(keyboardType = keyboardType, autoCorrectEnabled = false),
+            // 主机 ID、主机名与用户名都区分大小写，不让输入法自动大写首字母。
+            keyboardOptions = if (secret) SecretKeyboardOptions else KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                keyboardType = keyboardType,
+                autoCorrectEnabled = false,
+            ),
         )
     }
     if (secret) SecretTextInput(field) else field()
