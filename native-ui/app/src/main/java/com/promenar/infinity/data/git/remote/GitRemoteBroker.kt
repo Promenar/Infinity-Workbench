@@ -24,13 +24,14 @@ private object EmptyLease : GitRemoteLease {
 }
 
 /**
- * 内置 git 的远端认证代理：懒启动 HTTPS 凭据注入代理与 SSH 桥，每条命令签发一次性 nonce。
+ * 命令远端认证代理：懒启动 git HTTPS、GitHub API 代理与 SSH 桥，每条命令签发一次性 nonce。
  *
  * 交给子进程的环境变量（都不含令牌或私钥）：
  * - [ENV_NONCE]：本条命令的 nonce，命令结束即失效；
  * - [ENV_HTTP_PROXY]：HTTPS 凭据注入代理地址 `127.0.0.1:<端口>`；
  * - [ENV_CREDENTIAL_HOSTS]：已配置 Git 凭据的主机键，逗号分隔，只有这些主机的 HTTPS 请求改经代理；
- * - [ENV_SSH_BRIDGE]：SSH 桥地址 `127.0.0.1:<端口>`。
+ * - [ENV_SSH_BRIDGE]：SSH 桥地址 `127.0.0.1:<端口>`；
+ * - [ENV_GH_SOCKET]：GitHub API 代理就绪后的 Linux socket 路径。
  *
  * 代理启动失败时不设置对应变量，内置 git 保持直连行为。
  */
@@ -40,6 +41,7 @@ class GitRemoteBroker(
     private val proxy: GitCredentialProxy?,
     private val sshBridge: GitSshBridge?,
     private val diagnostics: (String) -> Unit = {},
+    private val githubApi: GitHubApiEndpoint? = null,
 ) : GitRemoteSessions, AutoCloseable {
     override suspend fun open(): GitRemoteLease = withContext(Dispatchers.IO) {
         val scope = nonces.issue()
@@ -50,6 +52,12 @@ class GitRemoteBroker(
                 environment[ENV_HTTP_PROXY] = "127.0.0.1:$port"
                 environment[ENV_CREDENTIAL_HOSTS] = hosts.joinToString(",")
             }
+        }
+        if (GitCredentialStore.GITHUB_HOST in hosts && githubApi != null) {
+            runCatching { githubApi.start() }.onSuccess {
+                environment[ENV_GH_SOCKET] = com.promenar.infinity.data.linux.LinuxGhConfig.GUEST_SOCKET
+                environment[ENV_CREDENTIAL_HOSTS] = hosts.joinToString(",")
+            }.onFailure { diagnostics("git-broker: gh START_FAILED") }
         }
         sshBridge?.let { start("ssh", it::start) }?.let { port -> environment[ENV_SSH_BRIDGE] = "127.0.0.1:$port" }
         object : GitRemoteLease {
@@ -65,6 +73,7 @@ class GitRemoteBroker(
     override fun close() {
         proxy?.close()
         sshBridge?.close()
+        githubApi?.close()
     }
 
     companion object {
@@ -72,6 +81,7 @@ class GitRemoteBroker(
         const val ENV_HTTP_PROXY = "INFINITY_GIT_PROXY"
         const val ENV_CREDENTIAL_HOSTS = "INFINITY_GIT_CREDENTIAL_HOSTS"
         const val ENV_SSH_BRIDGE = "INFINITY_GIT_SSH_BRIDGE"
+        const val ENV_GH_SOCKET = "INFINITY_GH_SOCKET"
         /** SshRuntime 连接池中内置 git 使用的所有者。 */
         const val SSH_OWNER = "git"
     }

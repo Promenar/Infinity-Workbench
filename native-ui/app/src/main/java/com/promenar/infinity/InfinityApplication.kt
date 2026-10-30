@@ -2978,6 +2978,10 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             credentials = credentials,
             nonces = nonces,
             proxy = com.promenar.infinity.data.git.remote.GitCredentialProxy(credentials, nonces, gitRemoteHttpClient),
+            githubApi = com.promenar.infinity.data.git.remote.GitHubApiProxy(
+                com.promenar.infinity.data.linux.LinuxGhConfig.directory(cacheDir),
+                com.promenar.infinity.data.git.remote.GitHubApiForwarder(credentials, nonces, gitRemoteHttpClient),
+            ),
             sshBridge = com.promenar.infinity.data.git.remote.GitSshBridge(
                 nonces = nonces,
                 hosts = { com.promenar.infinity.data.git.remote.currentSshHosts(sshHostStore) },

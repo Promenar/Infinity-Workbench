@@ -45,6 +45,14 @@ class LinuxLaunchBuilder(
             Files.createDirectories(LinuxRootfsFiles.safePath(rootfs, LinuxWakeLimits.GUEST_DIRECTORY.removePrefix("/")).toPath())
             arguments += listOf("-b", "${it.absolutePath}:${LinuxWakeLimits.GUEST_DIRECTORY}")
         }
+        if (spec.environment["GH_CONFIG_DIR"] == LinuxGhConfig.GUEST_CONFIG) {
+            val ghDirectory = LinuxGhConfig.directory(cacheDirectory)
+            require(Files.isDirectory(ghDirectory.toPath(), NOFOLLOW_LINKS) && ':' !in ghDirectory.path && '\u0000' !in ghDirectory.path) {
+                messages(LinuxRuntimeMessage.HOST_MOUNT)
+            }
+            Files.createDirectories(LinuxRootfsFiles.safePath(rootfs, LinuxGhConfig.GUEST_DIRECTORY.removePrefix("/")).toPath())
+            arguments += listOf("-b", "${ghDirectory.absolutePath}:${LinuxGhConfig.GUEST_DIRECTORY}")
+        }
         spec.mounts.forEach { bind ->
             val guest = bind.guestPath
             require(guest.startsWith("/mnt/") && guest.split('/').none { it == ".." } &&

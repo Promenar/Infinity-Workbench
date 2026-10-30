@@ -7,8 +7,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 每条 shell_exec / python_exec 命令一个一次性 nonce：命令开始前签发，命令结束（含超时、取消、异常）时吊销。
- * 吊销同时关闭该 nonce 名下仍在进行的代理与 SSH 桥连接，命令结束后不会再有流量借用它。
- * nonce 只授权“经代理访问已配置主机的 git 智能协议”，本身不含也不能换出令牌。
+ * 吊销同时关闭该 nonce 名下仍在进行的 git、GitHub API 代理与 SSH 桥连接。
+ * nonce 只授权当前命令经受限代理访问远端，本身不含也不能换出令牌。
  */
 class GitNonceRegistry(private val random: SecureRandom = SecureRandom()) {
     private val active = ConcurrentHashMap<String, Scope>()
