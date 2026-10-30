@@ -157,6 +157,7 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     SCHEDULE(ToolSummaryCategory.UTILITY),
     SKILL(ToolSummaryCategory.SKILL),
     SUBAGENT(ToolSummaryCategory.SUBAGENT),
+    SECRET(ToolSummaryCategory.UTILITY),
     OTHER(ToolSummaryCategory.OTHER),
 }
 
@@ -206,6 +207,8 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "schedule_create", "schedule_list", "schedule_pause", "schedule_resume", "schedule_cancel" -> ToolSummaryAction.SCHEDULE
     "activate_skill" -> ToolSummaryAction.SKILL
     com.promenar.infinity.data.subagent.SubagentLimits.TOOL_NAME -> ToolSummaryAction.SUBAGENT
+    com.promenar.infinity.domain.secret.SecretIoLimits.REQUEST_TOOL_NAME,
+    com.promenar.infinity.domain.secret.SecretIoLimits.SHOW_TOOL_NAME -> ToolSummaryAction.SECRET
     else -> ToolSummaryAction.OTHER
 }
 

@@ -336,6 +336,11 @@ class ChatViewModel(
     private val parameterSchemeRepositoryOverride: com.promenar.infinity.data.repository.ParameterSchemeRepository? = null,
     composerQueueStoreOverride: ComposerQueueStore? = null,
     composerDraftRecoveryOverride: com.promenar.infinity.data.chat.queue.ComposerDraftRecoveryStore? = null,
+    /** 保密输入与输出的界面入口；默认取应用实例上的实现。 */
+    secretInputCoordinator: com.promenar.infinity.domain.secret.SecretInputCoordinator =
+        (application as InfinityApplication).secretInputCoordinator,
+    secretOutputController: com.promenar.infinity.domain.secret.SecretOutputController =
+        (application as InfinityApplication).secretOutputController,
 ) : ViewModel() {
 
     private val store = (application as InfinityApplication).chatStore
@@ -457,6 +462,59 @@ class ChatViewModel(
     val pendingQuestion: StateFlow<com.promenar.infinity.domain.ask.PendingQuestion?> = _currentSessionId
         .flatMapLatest { sessionId -> if (sessionId == null) flowOf(null) else askUserLedger.observePending(sessionId) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val secretIo = ChatSecretIo(
+        scope = viewModelScope,
+        sessionId = _currentSessionId,
+        coordinator = secretInputCoordinator,
+        controller = secretOutputController,
+        gitCredentials = { (application as InfinityApplication).gitCredentialStore },
+        saveTargetsLoader = {
+            val app = application as InfinityApplication
+            SecretSaveTargets(
+                sshHosts = app.sshHostStore.observeHosts().first().map { SecretSaveTargets.Target(it.id, it.alias) },
+                providers = ProviderManager.getInstance().providers.value.map {
+                    SecretSaveTargets.Target(it.id, it.name.ifBlank { it.typeName })
+                },
+                gitHosts = app.gitCredentialStore.credentials.value.map { it.host to it.username },
+            )
+        },
+        ioDispatcher = Dispatchers.IO,
+        failureText = { stringResourceResolver(R.string.secret_io_failed) },
+    )
+    /** 本会话等待用户输入的保密请求；卡片与 `ask_user` 提问卡在同一位置。 */
+    internal val pendingSecretInput: StateFlow<com.promenar.infinity.domain.secret.PendingSecretInput?> = secretIo.pending
+    /** 本会话 `show_secret` 交给用户的保密输出卡。 */
+    internal val secretOutputCards: StateFlow<List<com.promenar.infinity.domain.secret.SecretOutputCard>> = secretIo.outputCards
+    internal val secretInputReceipts: StateFlow<List<SecretInputReceipt>> = secretIo.receipts
+    internal val secretInputSubmission: StateFlow<SecretInputSubmission?> = secretIo.submission
+
+    /** 提交保密输入；[value] 由此处起负责清零，调用方不再使用。返回 false 表示请求已不在等待。 */
+    internal fun submitSecretInput(
+        expected: com.promenar.infinity.domain.secret.PendingSecretInput,
+        value: CharArray,
+        username: String?,
+    ): Boolean = secretIo.submit(expected, value, username)
+
+    internal fun cancelSecretInput(expected: com.promenar.infinity.domain.secret.PendingSecretInput) = secretIo.cancel(expected)
+
+    /** 设备验证通过后取值；调用方用完立即清零。 */
+    internal fun revealSecret(card: com.promenar.infinity.domain.secret.SecretOutputCard): CharArray? = secretIo.reveal(card)
+
+    internal fun saveSecretAs(
+        card: com.promenar.infinity.domain.secret.SecretOutputCard,
+        destination: com.promenar.infinity.domain.secret.SecretDestination,
+        username: String?,
+        onResult: (com.promenar.infinity.domain.secret.SecretInputOutcome) -> Unit,
+    ) = secretIo.saveAs(card, destination, username, onResult)
+
+    internal fun destroySecret(card: com.promenar.infinity.domain.secret.SecretOutputCard) = secretIo.destroy(card)
+
+    internal suspend fun secretSaveTargets(): SecretSaveTargets = secretIo.saveTargets()
+
+    /** 输入框提醒里把 GitHub 令牌存进 Git 凭据；[token] 由此处起负责清零。 */
+    internal fun saveComposerGitToken(host: String, username: String, token: CharArray, onResult: (Boolean) -> Unit) =
+        secretIo.saveComposerGitToken(host, username, token, onResult)
+
     private val _agentName = MutableStateFlow("")
 
     private val _streamingContent = MutableStateFlow("")
@@ -1836,6 +1894,8 @@ class ChatViewModel(
                 generationCoordinator.cancelAndJoinSession(sessionId, com.promenar.infinity.domain.generation.CancellationReason.USER)
                 askUserLedger.cancel(sessionId).forEach { messageManager.mirrorPersistedMessage(sessionId, it) }
             }
+            // 停止本轮时一并关闭仍在等待的保密输入卡，协调器把“已取消”交回 Agent。
+            secretIo.cancelForSession(sessionId)
             if (store.getSession(sessionId)?.approvalRequest != null) {
                 try {
                     approvalManager.cancelPendingApproval(sessionId)

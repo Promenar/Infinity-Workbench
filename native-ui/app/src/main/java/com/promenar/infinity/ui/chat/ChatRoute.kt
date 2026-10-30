@@ -313,6 +313,11 @@ fun ChatRoute(
     val sessionSubagentApprovals = remember(subagentApprovals, sessionId) { subagentApprovals.filter { it.sessionId == sessionId } }
     val inputText by chatViewModel.inputText.collectAsStateWithLifecycle()
     val pendingQuestion by chatViewModel.pendingQuestion.collectAsStateWithLifecycle()
+    val pendingSecretInput by chatViewModel.pendingSecretInput.collectAsStateWithLifecycle()
+    val secretInputSubmission by chatViewModel.secretInputSubmission.collectAsStateWithLifecycle()
+    val secretInputReceipts by chatViewModel.secretInputReceipts.collectAsStateWithLifecycle()
+    val secretOutputCards by chatViewModel.secretOutputCards.collectAsStateWithLifecycle()
+    var showSecretGitHubLogin by remember { mutableStateOf(false) }
     val tokenState by chatViewModel.tokenIndicatorState.collectAsStateWithLifecycle()
     val ragPhases by chatViewModel.ragPhases.collectAsStateWithLifecycle()
     val compressionState by chatViewModel.compressionState.collectAsStateWithLifecycle()
@@ -876,6 +881,10 @@ fun ChatRoute(
                 inputText = inputText,
                 completionFlashes = completionFlashes,
                 pendingQuestion = pendingQuestion,
+                pendingSecretInput = pendingSecretInput,
+                secretInputSubmission = secretInputSubmission,
+                secretInputReceipts = secretInputReceipts,
+                secretOutputCards = secretOutputCards,
                 tokenState = tokenState,
                 ragPhases = ragPhases,
                 compressionState = compressionState,
@@ -1047,6 +1056,19 @@ fun ChatRoute(
                     slashCommands.submit(text) { chatViewModel.stopAndSendNow(text, images) }
                 },
                 onAnswerQuestion = { question, answer -> chatViewModel.answerQuestion(question, answer) },
+                onSubmitSecretInput = chatViewModel::submitSecretInput,
+                onCancelSecretInput = chatViewModel::cancelSecretInput,
+                onGitHubBrowserLogin = { showSecretGitHubLogin = true },
+                secretOutputActions = { card ->
+                    SecretOutputActions(
+                        onReveal = { chatViewModel.revealSecret(card) },
+                        onSaveAs = { destination, username, onResult -> chatViewModel.saveSecretAs(card, destination, username, onResult) },
+                        onDestroy = { chatViewModel.destroySecret(card) },
+                        loadSaveTargets = chatViewModel::secretSaveTargets,
+                    )
+                },
+                onSaveComposerGitToken = chatViewModel::saveComposerGitToken,
+                loadSecretSaveTargets = chatViewModel::secretSaveTargets,
                 onEditQueued = { id ->
                     if (!chatViewModel.editQueuedMessage(id)) {
                         snackbarAction = null
@@ -1279,6 +1301,7 @@ fun ChatRoute(
             else -> 0
         },
     )
+    if (showSecretGitHubLogin) SecretGitHubLoginHost(onClose = { showSecretGitHubLogin = false })
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,
         onDismiss = { activeOverlayToken = null },

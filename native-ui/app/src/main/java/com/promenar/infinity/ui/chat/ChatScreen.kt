@@ -291,6 +291,14 @@ data class ChatScreenState(
     val subagentApprovals: List<com.promenar.infinity.data.subagent.SubagentApproval> = emptyList(),
     /** 本轮因 `ask_user` 暂停、等待回答的提问；卡片在会话流底部，输入栏写下的文字作为其他回答提交。 */
     val pendingQuestion: com.promenar.infinity.domain.ask.PendingQuestion? = null,
+    /** 本轮因 `request_secret` 等待用户输入的保密请求；卡片与提问卡在同一位置。 */
+    val pendingSecretInput: com.promenar.infinity.domain.secret.PendingSecretInput? = null,
+    /** 保密输入卡正在提交或提交失败的状态。 */
+    val secretInputSubmission: SecretInputSubmission? = null,
+    /** 已提交、取消或过期的保密输入回执，显示在发起请求的回复之后。 */
+    val secretInputReceipts: List<SecretInputReceipt> = emptyList(),
+    /** `show_secret` 交给用户的保密输出卡，显示在发起调用的回复之后。 */
+    val secretOutputCards: List<com.promenar.infinity.domain.secret.SecretOutputCard> = emptyList(),
     /** 会话工作区是 Git 仓库时的分支与改动摘要，显示在顶栏标题下方；否则为 null。 */
     val gitSummary: com.promenar.infinity.ui.git.GitEntrySummary.Repository? = null,
     /** 本会话或其工作区因启动自检问题暂停写入，顶栏下方显示提示条。 */
@@ -382,6 +390,23 @@ data class ChatScreenActions(
     val onSteerQueued: (String) -> Unit = {},
     /** 返回是否受理；未受理（提问已过期或重复提交）时输入栏保留文字。 */
     val onAnswerQuestion: (com.promenar.infinity.domain.ask.PendingQuestion, com.promenar.infinity.domain.ask.AskUserAnswer) -> Boolean = { _, _ -> false },
+    /** 提交保密输入；值数组交出后由接收方清零。返回是否受理。 */
+    val onSubmitSecretInput: (com.promenar.infinity.domain.secret.PendingSecretInput, CharArray, String?) -> Boolean = { _, value, _ ->
+        value.fill('\u0000')
+        false
+    },
+    val onCancelSecretInput: (com.promenar.infinity.domain.secret.PendingSecretInput) -> Unit = {},
+    /** 保密输入卡上的“改用浏览器登录 GitHub”；为 null 时不显示入口。 */
+    val onGitHubBrowserLogin: (() -> Unit)? = null,
+    /** 每张保密输出卡的操作入口。 */
+    val secretOutputActions: (com.promenar.infinity.domain.secret.SecretOutputCard) -> SecretOutputActions = { SecretOutputActions() },
+    /** 输入框提醒里把 GitHub 令牌存进 Git 凭据；令牌数组交出后由接收方清零，结果回调是否已保存。 */
+    val onSaveComposerGitToken: (host: String, username: String, token: CharArray, onResult: (Boolean) -> Unit) -> Unit = { _, _, token, onResult ->
+        token.fill('\u0000')
+        onResult(false)
+    },
+    /** 已保存的 Git 凭据等去向，用于输入框提醒预填用户名。 */
+    val loadSecretSaveTargets: suspend () -> SecretSaveTargets = { SecretSaveTargets() },
     val onSendSteering: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onStopAndSend: (String, List<android.net.Uri>) -> Unit = { _, _ -> },
     val onEditQueued: (String) -> Unit = {},
@@ -462,6 +487,9 @@ fun ChatScreenContent(
     val agentName = uiState.agentName
 
     val pipelineGroups = remember(uiState.messages) { buildPipelineGroups(uiState.messages) }
+    val secretsByGroup = remember(pipelineGroups, state.secretOutputCards, state.secretInputReceipts) {
+        secretItemsByGroup(pipelineGroups.map { group -> group.messages.mapTo(HashSet()) { it.id } }, state.secretOutputCards, state.secretInputReceipts)
+    }
     val branchAccess = LocalBranchAccess.current
     val pendingBranchPlan = branchAccess?.let { access ->
         remember(access) { access.controls.observePendingPlan(access.sessionId) }.collectAsState(initial = null).value
@@ -669,7 +697,8 @@ fun ChatScreenContent(
     val generationMotion = com.promenar.infinity.ui.common.motion.rememberGenerationMotion(
         phase = com.promenar.infinity.ui.common.motion.generationMotionPhase(
             phase = state.generationPhase,
-            awaitingUser = uiState.approvalRequest != null || state.subagentApprovals.isNotEmpty() || state.pendingQuestion != null,
+            awaitingUser = uiState.approvalRequest != null || state.subagentApprovals.isNotEmpty() ||
+                state.pendingQuestion != null || state.pendingSecretInput != null,
         ),
         retry = state.generationRetry,
         // 速率按正文加思考内容的到达字数估算：只有思考内容到达时也按流式显示。
@@ -824,7 +853,7 @@ fun ChatScreenContent(
                 runningJobs = activitySummary?.runningJobs ?: 0,
                 enabledSchedules = activitySummary?.enabledSchedules ?: 0,
                 boardTitle = boardTitle,
-                awaitingAnswer = state.pendingQuestion != null,
+                awaitingAnswer = state.pendingQuestion != null || state.pendingSecretInput != null,
                 elapsedMillis = null,
             )
             var lastDock by remember(uiState.session?.id) { mutableStateOf(dock) }
@@ -883,7 +912,8 @@ fun ChatScreenContent(
                 scope.launch {
                     // 审批卡与子代理审批组都排在底部留白之前，跳到其中第一项。
                     val pendingItems = (if (uiState.approvalRequest?.takeUnless { uiState.isApprovalSubmitting } != null) 1 else 0) +
-                        (if (state.pendingQuestion != null) 1 else 0) + subagentApprovalGroups.size
+                        (if (state.pendingQuestion != null) 1 else 0) + (if (state.pendingSecretInput != null) 1 else 0) +
+                        subagentApprovalGroups.size
                     val target = listState.layoutInfo.totalItemsCount - 1 - pendingItems
                     listState.animateScrollToItem(target.coerceAtLeast(0))
                 }
@@ -975,13 +1005,17 @@ fun ChatScreenContent(
                     val hasRagContent = selectRagActiveMessage(group.assistantMessages)?.let {
                         (if (isGeneratingGroup) ragPhases else emptyList()).isNotEmpty() || it.hasRagArtifacts()
                     } == true
+                    // 保密输入回执与输出卡跟在发起调用的回复之后，与回复同属一个列表项，出现时回复不重建。
+                    // 新消息只淡入、不做位移动画：位移会与生成中按像素跟随滚动的逻辑互相拉扯。
+                    Column(
+                        Modifier
+                            .animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)
+                            .padding(top = spacing.beforeDp.dp),
+                    ) {
                     CompositionLocalProvider(LocalMessageQuoteActions provides quoteActions) {
                         PipelineBubble(
                             hasRagContent = hasRagContent,
-                            // 新消息只淡入、不做位移动画：位移会与生成中按像素跟随滚动的逻辑互相拉扯。
-                            modifier = Modifier
-                                .animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = null)
-                                .padding(top = spacing.beforeDp.dp),
+                            modifier = Modifier,
                             ragContent = {
                                 val ragActiveMsg = selectRagActiveMessage(group.assistantMessages)
 
@@ -1037,6 +1071,13 @@ fun ChatScreenContent(
                             },
                         )
                     }
+                    secretsByGroup[idx]?.let { secrets ->
+                        secrets.receipts.forEach { receipt -> key(receipt.toolCallId) { SecretInputReceiptCard(receipt) } }
+                        secrets.cards.forEach { card ->
+                            key(card.toolCallId, card.slot.name) { SecretOutputCardView(card, actions.secretOutputActions(card)) }
+                        }
+                    }
+                    }
                 }
 
                 if (showCompressionFeedback) {
@@ -1060,6 +1101,21 @@ fun ChatScreenContent(
                                 stateKey = question.toolCallId,
                                 onSubmit = { answer -> actions.onAnswerQuestion(question, answer) },
                                 onSkip = { actions.onAnswerQuestion(question, com.promenar.infinity.domain.ask.AskUserAnswer(skipped = true)) },
+                            )
+                        }
+                    }
+                }
+                state.pendingSecretInput?.let { pending ->
+                    item(key = "secret_input") {
+                        ChatApprovalLiveRegion(Modifier.animateItem(fadeInSpec = ChatItemFadeIn, placementSpec = null, fadeOutSpec = ChatItemFadeOut)) {
+                            val submission = state.secretInputSubmission?.takeIf { it.toolCallId == pending.toolCallId }
+                            SecretInputCard(
+                                pending = pending,
+                                onSubmit = { value, username -> actions.onSubmitSecretInput(pending, value, username) },
+                                onCancel = { actions.onCancelSecretInput(pending) },
+                                submitting = submission?.submitting == true,
+                                error = submission?.error,
+                                onGitHubBrowserLogin = actions.onGitHubBrowserLogin,
                             )
                         }
                     }
@@ -1229,6 +1285,19 @@ fun ChatScreenContent(
                             send(inputText.ifBlank { fallback }, selectedImageUris)
                         }
                     }
+                    // 发送前检测疑似密钥：命中时先弹提醒面板，用户选“仍然发送”才执行原本的发送。
+                    var secretGuard by remember { mutableStateOf<ComposerSecretGuardRequest?>(null) }
+                    var secretGuardSaving by remember { mutableStateOf(false) }
+                    var secretGuardFailed by remember { mutableStateOf(false) }
+                    var secretGuardUsername by remember { mutableStateOf("") }
+                    val guardedSend: (() -> Unit) -> Unit = { send ->
+                        val matches = detectComposerSecrets(inputText)
+                        if (matches.isEmpty()) send()
+                        else {
+                            secretGuardFailed = false
+                            secretGuard = ComposerSecretGuardRequest(inputText, matches, send)
+                        }
+                    }
                     Box(modifier = Modifier.fillMaxWidth()) {
                         ChatInputBar(
                             text = inputText,
@@ -1244,14 +1313,16 @@ fun ChatScreenContent(
                                 actions.onTextChange(next)
                             },
                             onSend = {
-                                val question = state.pendingQuestion
-                                // 待回答时输入栏的文字就是“其他回答”，不另起一轮。
-                                if (question != null && inputText.isNotBlank()) {
-                                    if (actions.onAnswerQuestion(question, com.promenar.infinity.domain.ask.AskUserAnswer(other = inputText.trim()))) {
-                                        actions.onTextChange("")
+                                guardedSend {
+                                    val question = state.pendingQuestion
+                                    // 待回答时输入栏的文字就是“其他回答”，不另起一轮。
+                                    if (question != null && inputText.isNotBlank()) {
+                                        if (actions.onAnswerQuestion(question, com.promenar.infinity.domain.ask.AskUserAnswer(other = inputText.trim()))) {
+                                            actions.onTextChange("")
+                                        }
+                                    } else {
+                                        submitDraft(actions.onSend)
                                     }
-                                } else {
-                                    submitDraft(actions.onSend)
                                 }
                             },
                             answeringQuestion = state.pendingQuestion != null,
@@ -1259,8 +1330,8 @@ fun ChatScreenContent(
                             isGenerating = uiState.isGenerating,
                             onStop = actions.onStop,
                             completionFlashes = state.completionFlashes,
-                            onSendSteering = { submitDraft(actions.onSendSteering) },
-                            onStopAndSend = { submitDraft(actions.onStopAndSend) },
+                            onSendSteering = { guardedSend { submitDraft(actions.onSendSteering) } },
+                            onStopAndSend = { guardedSend { submitDraft(actions.onStopAndSend) } },
                             onDismissError = actions.onDismissGenerationError,
                             isModelSelected = uiState.session?.modelId?.isNotBlank() == true,
                             onModelHint = { showModelHint = true },
@@ -1378,6 +1449,46 @@ fun ChatScreenContent(
                                 )
                             }
                         }
+                    }
+                    secretGuard?.let { request ->
+                        val placeholder = stringResource(R.string.secret_guard_placeholder)
+                        LaunchedEffect(request) {
+                            secretGuardUsername = actions.loadSecretSaveTargets().gitHosts
+                                .firstOrNull { it.first == "github.com" }?.second.orEmpty()
+                        }
+                        ComposerSecretGuardSheet(
+                            request = request,
+                            modelName = modelDisplayName,
+                            defaultUsername = secretGuardUsername,
+                            saving = secretGuardSaving,
+                            saveFailed = secretGuardFailed,
+                            onSaveToGit = { host, username ->
+                                val first = request.matches.firstOrNull { it.kind.gitHubToken }
+                                if (first != null && !secretGuardSaving) {
+                                    val token = request.text.substring(first.range.first, first.range.last + 1)
+                                    // 同一令牌在消息里出现多次时一并替换。
+                                    val sameToken = request.matches.filter {
+                                        it.kind.gitHubToken && request.text.substring(it.range.first, it.range.last + 1) == token
+                                    }
+                                    secretGuardSaving = true
+                                    secretGuardFailed = false
+                                    actions.onSaveComposerGitToken(host, username, token.toCharArray()) { saved ->
+                                        secretGuardSaving = false
+                                        if (saved) {
+                                            actions.onTextChange(redactComposerSecrets(request.text, sameToken, placeholder))
+                                            secretGuard = null
+                                        } else {
+                                            secretGuardFailed = true
+                                        }
+                                    }
+                                }
+                            },
+                            onEdit = { secretGuard = null },
+                            onSendAnyway = {
+                                secretGuard = null
+                                request.send()
+                            },
+                        )
                     }
             }
             }
