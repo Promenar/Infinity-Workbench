@@ -94,7 +94,7 @@ private fun outputCard(purpose: String, label: String, state: SecretSlotState = 
 private val GiteaCard = outputCard("Gitea 管理员 admin 的初始密码。", "Gitea 管理员初始密码")
 private val EnglishCard = outputCard("Initial password for the Gitea admin account.", "Gitea admin password")
 
-private const val GuardText = "我的令牌是 ghp_8xQ2aB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0x 请帮我查仓库"
+private const val GuardText = "我的令牌是 ghp_8xQ2aB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xY 请帮我查仓库"
 
 @Composable
 private fun SecretFrame(dark: Boolean = true, content: @Composable () -> Unit) {

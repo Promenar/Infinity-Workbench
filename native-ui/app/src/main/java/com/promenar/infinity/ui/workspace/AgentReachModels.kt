@@ -150,7 +150,7 @@ private const val BUILTIN_SESSION_PATH = "/session"
 internal data class ReachRunners(
     val shown: List<ReachBackend>,
     val inactive: List<ReachBackendKind>,
-    /** Linux 会话的工具集去掉了内置 Python、隔离脚本与 Termux，单独一行说明。 */
+    /** Linux 会话的工具集去掉了内置 Python（python_exec 改用 Linux 的 Python）、隔离脚本与 Termux，单独一行说明。 */
     val linuxOmitsBuiltins: Boolean,
 )
 

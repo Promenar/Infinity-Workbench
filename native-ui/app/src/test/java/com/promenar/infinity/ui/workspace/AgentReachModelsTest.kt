@@ -121,9 +121,10 @@ class AgentReachModelsTest {
         assertThat(runners.shown.map { it.kind }).containsExactly(ReachBackendKind.LINUX, ReachBackendKind.SSH).inOrder()
         assertThat(runners.inactive).isEmpty()
         assertThat(runners.linuxOmitsBuiltins).isTrue()
-        // 与执行层一致：Linux 会话没有 python_exec、exec_js、python_sandbox、termux_exec。
-        assertThat(com.promenar.infinity.data.generation.DefaultSessionToolResolver.LINUX_HIDDEN_TOOLS)
-            .containsAtLeast("python_exec", "python_sandbox", "exec_js", "termux_exec")
+        // 与执行层一致：Linux 会话没有 exec_js、python_sandbox、termux_exec；python_exec 改在 Linux 的 Python 中运行。
+        val hidden = com.promenar.infinity.data.generation.DefaultSessionToolResolver.LINUX_HIDDEN_TOOLS
+        assertThat(hidden).containsAtLeast("python_sandbox", "exec_js", "termux_exec")
+        assertThat(hidden).doesNotContain("python_exec")
     }
 
     @Test

@@ -207,6 +207,7 @@ internal fun SecretOutputCardView(
     var secondsLeft by remember(key) { mutableIntStateOf(0) }
     var copied by remember(key) { mutableStateOf(false) }
     var notice by remember(key) { mutableStateOf<String?>(null) }
+    val resources = androidx.compose.ui.platform.LocalResources.current
     var destroyedLocally by remember(key) { mutableStateOf(false) }
     var confirmingDestroy by remember(key) { mutableStateOf(false) }
     var savingAs by remember(key) { mutableStateOf(false) }
@@ -294,7 +295,7 @@ internal fun SecretOutputCardView(
             onSave = actions.onSaveAs,
             onSaved = { label ->
                 savingAs = false
-                notice = context.getString(R.string.secret_save_as_saved, label)
+                notice = resources.getString(R.string.secret_save_as_saved, label)
             },
             onDismiss = { savingAs = false },
         )

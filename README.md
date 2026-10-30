@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/platform-Android%2012%2B-green.svg" alt="Platform: Android 12+">
   <img src="https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg" alt="Kotlin 2.2">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg" alt="Jetpack Compose Material 3">
-  <img src="https://img.shields.io/badge/version-0.7.2--beta-6366F1.svg" alt="Version 0.7.2-beta">
+  <img src="https://img.shields.io/badge/version-0.8.0--beta-6366F1.svg" alt="Version 0.8.0-beta">
 </p>
 
 <p align="center">
@@ -37,6 +37,7 @@
 - **Canvas.** Agents build interactive HTML pages with live preview and version history, saved as files in the chat's workspace.
 - **Library with RAG and a knowledge graph.** Import TXT, Markdown, PDF, Word and HTML. Hybrid vector and full-text retrieval, reranking, citations and a persistent knowledge graph.
 - **Workspaces and Git.** Per-chat folders, a built-in file system, mounted external folders and Git with credentials kept out of the model's reach.
+- **Secret input and output.** When an agent needs a password or token, a secret input card writes the value straight to its destination; secrets a command produces reach you through a secret output card after device unlock. Neither passes through the chat, logs or the model.
 - **Runs in the background.** Generation continues when you leave the app; long commands run as background tasks; agents can schedule one-off, interval or cron jobs, each with your approval.
 - **Rich output and adaptive layout.** Markdown, LaTeX, Mermaid, ECharts and content-sized tables. Three panes on foldables and tablets.
 - **Private by default.** Keys live in Android Keystore. Chats, documents and settings stay on the device, and model calls go straight to the provider you configured.
@@ -70,7 +71,7 @@
 
 **Install:** Download the APK and its `.sha256` file from [GitHub Releases](https://github.com/Promenar/Infinity-Workbench/releases), check the SHA-256 and install it. Public releases can lag behind the source tree. Do not install CI artifacts, debug APKs or repackaged builds from other sources.
 
-The source tree is at `v0.7.2-beta` (versionCode `22`). See the [changelog](CHANGELOG.md) for what changed.
+The source tree is at `v0.8.0-beta` (versionCode `23`). See the [changelog](CHANGELOG.md) for what changed.
 
 ## Build from source
 

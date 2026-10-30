@@ -10,9 +10,10 @@ class ReleaseConfigurationTest {
     private val cmake = source("app/src/main/cpp/CMakeLists.txt")
 
     @Test
-    fun `v0_2_2 beta 发行元数据与本地推理能力按构建类型隔离`() {
-        assertThat(gradle).contains("versionCode = 20")
-        assertThat(gradle).contains("versionName = \"0.7.0-beta\"")
+    fun `发行元数据格式有效且本地推理能力按构建类型隔离`() {
+        // 版本号随每次出包递增，这里只校验格式，避免每次升版本都改测试。
+        assertThat(gradle).containsMatch("""versionCode = [1-9]\d*\n""")
+        assertThat(gradle).containsMatch("""versionName = "\d+\.\d+\.\d+(-beta)?"\n""")
         assertThat(buildTypeBody("debug"))
             .contains("buildConfigField(\"boolean\", \"LOCAL_INFERENCE_AVAILABLE\", \"true\")")
         assertThat(buildTypeBody("release"))
