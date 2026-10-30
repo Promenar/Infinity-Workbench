@@ -70,3 +70,18 @@ internal fun intervalUnit(everyMinutes: Int): IntervalUnit = when {
     everyMinutes >= 60 && everyMinutes % 60 == 0 -> IntervalUnit.Hours(everyMinutes / 60)
     else -> IntervalUnit.Minutes(everyMinutes)
 }
+
+/** 传输进度比例；总大小未知时返回 null（界面显示不定进度条），空文件视为已完成。 */
+internal fun com.promenar.infinity.domain.jobs.SftpTransfer.progressFraction(): Float? {
+    val total = totalBytes ?: return null
+    if (total <= 0L) return 1f
+    return (transferredBytes.toDouble() / total).toFloat().coerceIn(0f, 1f)
+}
+
+/** 按当前速度估算的剩余毫秒；总大小或速度未知时返回 null。 */
+internal fun com.promenar.infinity.domain.jobs.SftpTransfer.remainingMillis(): Long? {
+    val total = totalBytes ?: return null
+    val speed = bytesPerSecond?.takeIf { it > 0 } ?: return null
+    val left = (total - transferredBytes).coerceAtLeast(0L)
+    return if (left > Long.MAX_VALUE / 1_000L) null else left * 1_000L / speed
+}

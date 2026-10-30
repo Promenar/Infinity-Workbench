@@ -646,4 +646,6 @@ object UiTags {
     fun shareImportFolder(uuid: String) = "share_import_folder:$uuid"
     const val LINUX_FILES_PICKER_BAR = "linux_files_picker_bar"
     const val LINUX_FILES_PICKER_CONFIRM = "linux_files_picker_confirm"
+    // SFTP 传输审批块
+    const val CHAT_APPROVAL_SFTP_TRANSFER = "chat_approval_sftp_transfer"
 }

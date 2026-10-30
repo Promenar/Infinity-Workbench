@@ -1130,6 +1130,10 @@ fun ChatScreenContent(
                                                 backgroundRunPreview(it, com.promenar.infinity.distribution.DistributionCapabilities.backgroundKeepAliveAvailable)
                                             }
                                         },
+                                        transfer = remember(call, request.assistantMessageId, uiState.messages) {
+                                            ApprovalPreview.arguments(call, uiState.messages, request.assistantMessageId)
+                                                ?.let { sftpTransferApprovalPreview(call.toolName, it) }
+                                        },
                                         knowledgeAccess = if (call.toolName != REQUEST_KNOWLEDGE_ACCESS_TOOL) null else {
                                             remember(call, request.assistantMessageId, uiState.messages) {
                                                 val reason = ApprovalPreview.arguments(call, uiState.messages, request.assistantMessageId)

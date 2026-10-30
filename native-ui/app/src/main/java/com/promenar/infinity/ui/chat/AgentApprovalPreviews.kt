@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WorkHistory
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.jobs.BackgroundJobExitAction
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
 import com.promenar.infinity.domain.schedule.ScheduleCalculation
 import com.promenar.infinity.domain.schedule.ScheduleTrigger
 import com.promenar.infinity.domain.schedule.previewScheduleTriggers
@@ -101,6 +104,77 @@ data class BackgroundRunPreview(
     val onExit: BackgroundJobExitAction,
     val keepAliveAvailable: Boolean,
 )
+
+/** sftp_upload / sftp_download 的审批摘要：方向、本地范围与路径、远端路径与是否允许覆盖；主机由执行目标给出。 */
+internal data class SftpTransferApprovalPreview(
+    val direction: SftpTransferDirection,
+    val localScope: String,
+    val localPath: String,
+    val remotePath: String,
+    val overwrite: Boolean,
+)
+
+internal fun sftpTransferApprovalPreview(toolName: String, args: JsonObject): SftpTransferApprovalPreview? {
+    val direction = when (toolName) {
+        "sftp_upload" -> SftpTransferDirection.UPLOAD
+        "sftp_download" -> SftpTransferDirection.DOWNLOAD
+        else -> return null
+    }
+    fun text(key: String) = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf(String::isNotBlank)
+    val local = text("local_path") ?: return null
+    val remote = text("remote_path") ?: return null
+    val scope = text("local_scope")?.takeIf { it == "workspace" || it == "linux" } ?: "workspace"
+    val overwrite = (args["overwrite"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull == true
+    return SftpTransferApprovalPreview(direction, scope, local, remote, overwrite)
+}
+
+/** 传输审批块：先写源后写目标，路径用等宽小块完整显示，允许覆盖时另起一行提示。 */
+@Composable
+internal fun SftpTransferApprovalBlock(preview: SftpTransferApprovalPreview) {
+    val upload = preview.direction == SftpTransferDirection.UPLOAD
+    val localLabel = stringResource(
+        if (preview.localScope == "linux") R.string.sftp_transfer_scope_linux else R.string.sftp_transfer_scope_workspace,
+    )
+    val remoteLabel = stringResource(R.string.sftp_transfer_remote)
+    Column(Modifier.testTag(UiTags.CHAT_APPROVAL_SFTP_TRANSFER), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(
+                if (upload) Icons.Rounded.CloudUpload else Icons.Rounded.CloudDownload,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                stringResource(if (upload) R.string.sftp_transfer_upload else R.string.sftp_transfer_download),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        val (fromLabel, fromPath, toLabel, toPath) = if (upload) {
+            listOf(localLabel, preview.localPath, remoteLabel, preview.remotePath)
+        } else {
+            listOf(remoteLabel, preview.remotePath, localLabel, preview.localPath)
+        }
+        SftpPathLine(stringResource(R.string.sftp_transfer_from, fromLabel), fromPath)
+        SftpPathLine(stringResource(R.string.sftp_transfer_to, toLabel), toPath)
+    }
+}
+
+@Composable
+private fun SftpPathLine(label: String, path: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text = path,
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = com.promenar.infinity.ui.theme.InfinityMonospace),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        )
+    }
+}
 
 internal fun backgroundRunPreview(args: JsonObject, keepAliveAvailable: Boolean): BackgroundRunPreview? {
     if ((args["background"] as? JsonPrimitive)?.booleanOrNull != true) return null

@@ -810,6 +810,8 @@ data class ApprovalDisplayCall(
     val background: BackgroundRunPreview? = null,
     /** 知识库访问授权的申请原因与挂载目标；存在时替代参数文本与通用类别说明。 */
     val knowledgeAccess: KnowledgeAccessApproval? = null,
+    /** sftp_upload / sftp_download 的方向与两端路径；存在时替代参数文本。 */
+    val transfer: SftpTransferApprovalPreview? = null,
 )
 
 @Composable
@@ -1083,6 +1085,8 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String, pen
         ApprovalReason(description)
         if (call.schedule != null) {
             ScheduleApprovalBlock(call.schedule)
+        } else if (call.transfer != null) {
+            SftpTransferApprovalBlock(call.transfer)
         } else if (preview == null) {
             ApprovalTextBlock(text = call.argumentsSummary)
         } else {
@@ -1130,6 +1134,7 @@ private fun ApprovalCallBody(call: ApprovalDisplayCall, description: String, pen
                 add(stringResource(R.string.chat_approval_high_risk_target_warning))
             }
             if (preview?.scriptAllowsNetwork == true) add(stringResource(R.string.agent_panels_network_allowed))
+            if (call.transfer?.overwrite == true) add(stringResource(R.string.sftp_transfer_overwrite_warning))
         }
         approvalRiskLines(description, riskFacts).forEach { ApprovalRiskLine(it) }
     }

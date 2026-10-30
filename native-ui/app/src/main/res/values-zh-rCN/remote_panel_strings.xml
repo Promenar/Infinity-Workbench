@@ -19,7 +19,7 @@
     <string name="remote_agent_session">交互会话</string>
     <string name="remote_agent_jobs">后台任务</string>
     <plurals name="remote_agent_jobs_running">
-        <item quantity="other">%d 条 SSH 后台命令运行中</item>
+        <item quantity="other">%d 个 SSH 后台任务运行中</item>
     </plurals>
     <string name="remote_agent_jobs_open">打开后台任务列表</string>
     <string name="remote_conn_section">活动连接</string>

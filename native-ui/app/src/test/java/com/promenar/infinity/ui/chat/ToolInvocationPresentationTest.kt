@@ -58,6 +58,7 @@ class ToolInvocationPresentationTest {
             listOf("web_fetch") to ToolSummaryAction.WEB_READ,
             listOf("read_file", "list_files", "search_files", "read_tool_output", "read_skill_file") to ToolSummaryAction.FILE_READ,
             listOf("write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file", "create_directory") to ToolSummaryAction.FILE_EDIT,
+            listOf("sftp_upload", "sftp_download") to ToolSummaryAction.FILE_TRANSFER,
             listOf("knowledge_search") to ToolSummaryAction.KNOWLEDGE_SEARCH,
             listOf("memory_search") to ToolSummaryAction.MEMORY_SEARCH,
             listOf("generate_image", "image_generation") to ToolSummaryAction.IMAGE,

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,12 +54,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
+import android.text.format.Formatter
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.domain.jobs.BackgroundJob
 import com.promenar.infinity.domain.jobs.BackgroundJobRunner
 import com.promenar.infinity.domain.jobs.BackgroundJobState
+import com.promenar.infinity.domain.jobs.SftpTransfer
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
+import com.promenar.infinity.domain.jobs.SftpTransferFailure
 import com.promenar.infinity.domain.schedule.ScheduleRunResult
 import com.promenar.infinity.domain.schedule.ScheduleTrigger
 import com.promenar.infinity.domain.schedule.ScheduledTask
@@ -207,6 +213,7 @@ private fun RunningJobCard(
                             maxLines = 1,
                         )
                     }
+                    job.transfer?.let { SftpTransferProgress(it, Modifier.padding(top = 2.dp)) }
                 }
                 OutlinedIconButton(
                     onClick = onStop,
@@ -262,7 +269,14 @@ private fun FinishedJobRow(
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(InfinitySpacing.Small))
-            if (failedExit) {
+            val transferFailure = job.transfer?.failure
+            if (transferFailure != null) {
+                SmallTag(
+                    sftpFailureLabel(transferFailure),
+                    MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            } else if (failedExit) {
                 SmallTag(
                     stringResource(R.string.agent_jobs_exit_badge, job.exitCode ?: -1),
                     MaterialTheme.colorScheme.errorContainer,
@@ -331,6 +345,7 @@ internal fun BackgroundJobRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
+                if (running) job.transfer?.let { SftpTransferProgress(it, Modifier.padding(top = InfinitySpacing.XSmall)) }
             }
             if (running) {
                 FilledTonalIconButton(onClick = onStop, modifier = Modifier.testTag(UiTags.backgroundJobStop(job.id))) {
@@ -371,7 +386,72 @@ private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
 
 @Composable
 private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> =
-    listOfNotNull(jobRunnerName(job), job.remoteHost, jobStateText(job, nowMillis))
+    listOfNotNull(jobRunnerName(job), job.remoteHost, jobStateText(job, nowMillis)) + transferMetaSegments(job)
+
+/** 已结束的传输：方向、本地范围、大小、中断原因或校验值前 12 位；运行中的进度由 [SftpTransferProgress] 显示。 */
+@Composable
+private fun transferMetaSegments(job: BackgroundJob): List<String> {
+    val transfer = job.transfer ?: return emptyList()
+    if (!job.state.isTerminal) return emptyList()
+    val context = LocalContext.current
+    return listOfNotNull(
+        sftpDirectionLabel(transfer.direction),
+        sftpScopeLabel(transfer.localScope),
+        (transfer.totalBytes ?: transfer.transferredBytes).let { Formatter.formatShortFileSize(context, it) },
+        transfer.failure?.let { sftpFailureLabel(it) },
+        transfer.sha256?.takeIf { transfer.failure == null }?.let { stringResource(R.string.sftp_transfer_verified, it.take(12)) },
+    )
+}
+
+/** 运行中的传输：确定进度条（总大小未知时为不定进度）加一行已传 / 总量、速度与剩余时间。 */
+@Composable
+private fun SftpTransferProgress(transfer: SftpTransfer, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val fraction = transfer.progressFraction()
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall)) {
+        if (fraction != null) LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+        else LinearProgressIndicator(Modifier.fillMaxWidth())
+        val done = Formatter.formatShortFileSize(context, transfer.transferredBytes)
+        InfinityMetaLine(
+            listOfNotNull(
+                sftpDirectionLabel(transfer.direction),
+                transfer.totalBytes?.let { stringResource(R.string.sftp_transfer_bytes_of, done, Formatter.formatShortFileSize(context, it)) } ?: done,
+                transfer.bytesPerSecond?.takeIf { it > 0 }?.let { stringResource(R.string.sftp_transfer_speed, Formatter.formatShortFileSize(context, it)) },
+                transfer.remainingMillis()?.let { stringResource(R.string.sftp_transfer_remaining, durationText(compactDuration(it))) },
+            ),
+            style = InfinityTypography.labelSmall.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun sftpDirectionLabel(direction: SftpTransferDirection): String = stringResource(
+    when (direction) {
+        SftpTransferDirection.UPLOAD -> R.string.sftp_transfer_upload
+        SftpTransferDirection.DOWNLOAD -> R.string.sftp_transfer_download
+    },
+)
+
+@Composable
+private fun sftpScopeLabel(scope: String): String? = when (scope) {
+    "workspace" -> stringResource(R.string.sftp_transfer_scope_workspace)
+    "linux" -> stringResource(R.string.sftp_transfer_scope_linux)
+    else -> null
+}
+
+@Composable
+private fun sftpFailureLabel(failure: SftpTransferFailure): String = stringResource(
+    when (failure) {
+        SftpTransferFailure.NETWORK -> R.string.sftp_transfer_failure_network
+        SftpTransferFailure.TIME_LIMIT -> R.string.sftp_transfer_failure_time_limit
+        SftpTransferFailure.STOPPED -> R.string.sftp_transfer_failure_stopped
+        SftpTransferFailure.CHECKSUM_MISMATCH -> R.string.sftp_transfer_failure_checksum
+        SftpTransferFailure.TARGET_CONFLICT -> R.string.sftp_transfer_failure_conflict
+        SftpTransferFailure.NO_SPACE -> R.string.sftp_transfer_failure_no_space
+        SftpTransferFailure.OTHER -> R.string.sftp_transfer_failure_other
+    },
+)
 
 /** 运行环境标签；SSH 任务后接主机 ID，与本地任务在同一列表里区分。 */
 @Composable

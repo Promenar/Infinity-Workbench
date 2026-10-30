@@ -5,6 +5,8 @@ import com.promenar.infinity.domain.jobs.BackgroundJob
 import com.promenar.infinity.domain.jobs.BackgroundJobExitAction
 import com.promenar.infinity.domain.jobs.BackgroundJobRunner
 import com.promenar.infinity.domain.jobs.BackgroundJobState
+import com.promenar.infinity.domain.jobs.SftpTransfer
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
 import com.promenar.infinity.domain.schedule.ScheduleTrigger
 import com.promenar.infinity.domain.schedule.ScheduledTask
 import java.time.LocalDateTime
@@ -12,6 +14,25 @@ import java.time.ZoneId
 import org.junit.Test
 
 class AgentActivityFormattingTest {
+    private fun transfer(total: Long?, done: Long, speed: Long?) =
+        SftpTransfer(SftpTransferDirection.UPLOAD, "workspace", "/a.bin", "/srv/a.bin", total, done, speed)
+
+    @Test
+    fun `传输进度：总量未知为不定进度，空文件算完成，超出总量按满格`() {
+        assertThat(transfer(null, 10, null).progressFraction()).isNull()
+        assertThat(transfer(0, 0, null).progressFraction()).isEqualTo(1f)
+        assertThat(transfer(200, 50, null).progressFraction()).isEqualTo(0.25f)
+        assertThat(transfer(100, 150, null).progressFraction()).isEqualTo(1f)
+    }
+
+    @Test
+    fun `剩余时间按当前速度估算，速度或总量未知时不显示`() {
+        assertThat(transfer(10_000, 2_000, 4_000).remainingMillis()).isEqualTo(2_000)
+        assertThat(transfer(10_000, 12_000, 4_000).remainingMillis()).isEqualTo(0)
+        assertThat(transfer(10_000, 2_000, 0).remainingMillis()).isNull()
+        assertThat(transfer(null, 2_000, 4_000).remainingMillis()).isNull()
+    }
+
     private val zone = ZoneId.of("Asia/Shanghai")
     private val now = LocalDateTime.of(2026, 10, 23, 23, 0).atZone(zone).toInstant().toEpochMilli()
 

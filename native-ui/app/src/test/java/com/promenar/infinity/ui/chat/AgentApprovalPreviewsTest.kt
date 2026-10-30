@@ -2,6 +2,7 @@ package com.promenar.infinity.ui.chat
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.domain.jobs.BackgroundJobExitAction
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
 import com.promenar.infinity.domain.schedule.ScheduleTrigger
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -77,5 +78,20 @@ class AgentApprovalPreviewsTest {
             .isEqualTo(BackgroundRunPreview(120, BackgroundJobExitAction.NOTIFY, keepAliveAvailable = false))
         assertThat(backgroundRunPreview(json("""{"background":true,"max_runtime_minutes":5000,"on_exit":"wake"}"""), true))
             .isEqualTo(BackgroundRunPreview(1_440, BackgroundJobExitAction.WAKE, keepAliveAvailable = true))
+    }
+
+    @Test
+    fun `传输审批预览按工具定方向，缺路径时不生成，未知范围按工作区`() {
+        assertThat(sftpTransferApprovalPreview("sftp_upload", json("""{"host":"nas","local_path":"/out/a.tar","remote_path":"/srv/a.tar","overwrite":true}""")))
+            .isEqualTo(SftpTransferApprovalPreview(SftpTransferDirection.UPLOAD, "workspace", "/out/a.tar", "/srv/a.tar", overwrite = true))
+        assertThat(sftpTransferApprovalPreview("sftp_download", json("""{"host":"nas","local_path":"/root/a","remote_path":"/srv/a","local_scope":"linux"}""")))
+            .isEqualTo(SftpTransferApprovalPreview(SftpTransferDirection.DOWNLOAD, "linux", "/root/a", "/srv/a", overwrite = false))
+        assertThat(sftpTransferApprovalPreview("sftp_upload", json("""{"local_path":"/a","remote_path":"/b","local_scope":"system"}"""))?.localScope)
+            .isEqualTo("workspace")
+        // 字符串 "true" 不是布尔值，不当作允许覆盖。
+        assertThat(sftpTransferApprovalPreview("sftp_upload", json("""{"local_path":"/a","remote_path":"/b","overwrite":"true"}"""))?.overwrite)
+            .isFalse()
+        assertThat(sftpTransferApprovalPreview("sftp_upload", json("""{"local_path":"/a"}"""))).isNull()
+        assertThat(sftpTransferApprovalPreview("sftp_write", json("""{"local_path":"/a","remote_path":"/b"}"""))).isNull()
     }
 }

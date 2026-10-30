@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sftp_transfer_upload">Upload</string>
+    <string name="sftp_transfer_download">Download</string>
+    <string name="sftp_transfer_bytes_of">%1$s of %2$s</string>
+    <string name="sftp_transfer_speed">%1$s/s</string>
+    <string name="sftp_transfer_remaining">%1$s left</string>
+    <string name="sftp_transfer_verified">SHA-256 %1$s</string>
+    <string name="sftp_transfer_failure_network">Connection lost</string>
+    <string name="sftp_transfer_failure_time_limit">System time limit</string>
+    <string name="sftp_transfer_failure_stopped">Stopped</string>
+    <string name="sftp_transfer_failure_checksum">Checksum mismatch</string>
+    <string name="sftp_transfer_failure_conflict">Target exists</string>
+    <string name="sftp_transfer_failure_no_space">Not enough space</string>
+    <string name="sftp_transfer_failure_other">Transfer failed</string>
+    <string name="sftp_transfer_scope_workspace">Workspace</string>
+    <string name="sftp_transfer_scope_linux">Linux</string>
+    <plurals name="chat_step_file_transfer_done"><item quantity="one">Transferred %1$d file</item><item quantity="other">Transferred %1$d files</item></plurals>
+    <string name="chat_step_file_transfer_running">Transferring files…</string>
+    <string name="chat_step_file_transfer_name">Transfer files</string>
+    <string name="sftp_transfer_remote">Remote</string>
+    <string name="sftp_transfer_from">From %1$s</string>
+    <string name="sftp_transfer_to">To %1$s</string>
+    <string name="sftp_transfer_overwrite_warning">Overwrites the target if it already exists</string>
+</resources>

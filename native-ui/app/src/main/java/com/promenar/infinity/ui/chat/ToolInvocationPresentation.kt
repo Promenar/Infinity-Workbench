@@ -134,7 +134,7 @@ internal fun toolDurationText(durationMs: Long): ToolDurationText =
 internal data class ToolDurationText(val resId: Int, val args: List<Any>)
 
 internal enum class ToolSummaryCategory {
-    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, RETRIEVAL, MEDIA, PLAN, UTILITY, SKILL, SUBAGENT, OTHER,
+    COMMAND, WEB_SEARCH, WEB_READ, FILE_READ, FILE_EDIT, FILE_TRANSFER, RETRIEVAL, MEDIA, PLAN, UTILITY, SKILL, SUBAGENT, OTHER,
 }
 
 internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
@@ -144,6 +144,7 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     BROWSER(ToolSummaryCategory.WEB_READ),
     FILE_READ(ToolSummaryCategory.FILE_READ),
     FILE_EDIT(ToolSummaryCategory.FILE_EDIT),
+    FILE_TRANSFER(ToolSummaryCategory.FILE_TRANSFER),
     KNOWLEDGE_SEARCH(ToolSummaryCategory.RETRIEVAL),
     MEMORY_SEARCH(ToolSummaryCategory.RETRIEVAL),
     MEMORY_WRITE(ToolSummaryCategory.UTILITY),
@@ -188,6 +189,7 @@ internal fun toolSummaryAction(name: String?): ToolSummaryAction = when (name) {
     "read_file", "list_files", "search_files", "read_tool_output", "read_skill_file" -> ToolSummaryAction.FILE_READ
     "write_file", "create_file", "patch_file", "diff_file", "move_file", "delete_file",
     "create_directory" -> ToolSummaryAction.FILE_EDIT
+    "sftp_upload", "sftp_download" -> ToolSummaryAction.FILE_TRANSFER
     "knowledge_search" -> ToolSummaryAction.KNOWLEDGE_SEARCH
     "memory_search", "memory_read" -> ToolSummaryAction.MEMORY_SEARCH
     "memory_save", "memory_forget" -> ToolSummaryAction.MEMORY_WRITE

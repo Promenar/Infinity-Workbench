@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sftp_transfer_upload">上传</string>
+    <string name="sftp_transfer_download">下载</string>
+    <string name="sftp_transfer_bytes_of">%1$s / %2$s</string>
+    <string name="sftp_transfer_speed">%1$s/秒</string>
+    <string name="sftp_transfer_remaining">剩余 %1$s</string>
+    <string name="sftp_transfer_verified">SHA-256 %1$s</string>
+    <string name="sftp_transfer_failure_network">网络断开</string>
+    <string name="sftp_transfer_failure_time_limit">系统时限断开</string>
+    <string name="sftp_transfer_failure_stopped">已停止</string>
+    <string name="sftp_transfer_failure_checksum">校验不一致</string>
+    <string name="sftp_transfer_failure_conflict">目标已存在</string>
+    <string name="sftp_transfer_failure_no_space">空间不足</string>
+    <string name="sftp_transfer_failure_other">传输失败</string>
+    <string name="sftp_transfer_scope_workspace">工作区</string>
+    <string name="sftp_transfer_scope_linux">Linux</string>
+    <plurals name="chat_step_file_transfer_done"><item quantity="other">传输了 %1$d 个文件</item></plurals>
+    <string name="chat_step_file_transfer_running">正在传输文件…</string>
+    <string name="chat_step_file_transfer_name">传输文件</string>
+    <string name="sftp_transfer_remote">远端</string>
+    <string name="sftp_transfer_from">源：%1$s</string>
+    <string name="sftp_transfer_to">目标：%1$s</string>
+    <string name="sftp_transfer_overwrite_warning">目标已存在时会被覆盖</string>
+</resources>

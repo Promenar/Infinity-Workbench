@@ -1083,6 +1083,7 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.BROWSER -> R.plurals.chat_step_browser_done
         ToolSummaryAction.FILE_READ -> R.plurals.chat_step_file_read_done
         ToolSummaryAction.FILE_EDIT -> R.plurals.chat_step_file_edit_done
+        ToolSummaryAction.FILE_TRANSFER -> R.plurals.chat_step_file_transfer_done
         ToolSummaryAction.KNOWLEDGE_SEARCH -> R.plurals.chat_step_knowledge_done
         ToolSummaryAction.MEMORY_SEARCH -> R.plurals.chat_step_memory_done
         ToolSummaryAction.MEMORY_WRITE -> R.plurals.chat_step_memory_write_done
@@ -1108,6 +1109,7 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.BROWSER -> R.string.chat_step_browser_name
     ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_name
     ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_name
+    ToolSummaryAction.FILE_TRANSFER -> R.string.chat_step_file_transfer_name
     ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_name
     ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_name
     ToolSummaryAction.MEMORY_WRITE -> R.string.chat_step_memory_write_name
@@ -1136,6 +1138,7 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.BROWSER -> R.string.chat_step_browser_running
             ToolSummaryAction.FILE_READ -> R.string.chat_step_file_read_running
             ToolSummaryAction.FILE_EDIT -> R.string.chat_step_file_edit_running
+            ToolSummaryAction.FILE_TRANSFER -> R.string.chat_step_file_transfer_running
             ToolSummaryAction.KNOWLEDGE_SEARCH -> R.string.chat_step_knowledge_running
             ToolSummaryAction.MEMORY_SEARCH -> R.string.chat_step_memory_running
             ToolSummaryAction.MEMORY_WRITE -> R.string.chat_step_memory_write_running

@@ -14,6 +14,9 @@ import com.promenar.infinity.domain.jobs.BackgroundJob
 import com.promenar.infinity.domain.jobs.BackgroundJobExitAction
 import com.promenar.infinity.domain.jobs.BackgroundJobRunner
 import com.promenar.infinity.domain.jobs.BackgroundJobState
+import com.promenar.infinity.domain.jobs.SftpTransfer
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
+import com.promenar.infinity.domain.jobs.SftpTransferFailure
 import com.promenar.infinity.domain.schedule.ScheduleRunResult
 import com.promenar.infinity.domain.schedule.ScheduleTrigger
 import com.promenar.infinity.domain.schedule.ScheduledTask
@@ -25,6 +28,7 @@ import com.promenar.infinity.ui.chat.ApprovalDisplayCall
 import com.promenar.infinity.ui.chat.ApprovalPreview
 import com.promenar.infinity.ui.chat.BackgroundRunPreview
 import com.promenar.infinity.ui.chat.ScheduleApprovalPreview
+import com.promenar.infinity.ui.chat.SftpTransferApprovalPreview
 import com.promenar.infinity.ui.chat.SystemTriggerRow
 import com.promenar.infinity.ui.theme.InfinityColorSource
 import com.promenar.infinity.ui.theme.InfinitySpacing
@@ -265,6 +269,73 @@ fun scheduleApprovalPlayDarkEnglishPreview() = ActivityPreviewFrame(dark = true)
                 argumentsSummary = "{\"command\":\"pkg upgrade -y\",\"background\":true}",
                 riskLabel = "Process",
                 background = BackgroundRunPreview(45, ExitAction.NOTIFY, keepAliveAvailable = false),
+            ),
+        ),
+    )
+}
+
+private val previewTransferJobs = listOf(
+    previewJob("t1", "上传 backup-1030.tar.gz → /srv/backup/", BackgroundJobState.RUNNING, runner = BackgroundJobRunner.SSH).copy(
+        remoteHost = "nas",
+        transfer = SftpTransfer(SftpTransferDirection.UPLOAD, "workspace", "/out/backup-1030.tar.gz", "/srv/backup/backup-1030.tar.gz",
+            totalBytes = 84_000_000, transferredBytes = 31_500_000, bytesPerSecond = 4_200_000),
+    ),
+    previewJob("c1", "./gradlew assembleRelease", BackgroundJobState.RUNNING),
+    previewJob("t2", "下载 dump.sql → /data/", BackgroundJobState.FAILED, runner = BackgroundJobRunner.SSH).copy(
+        remoteHost = "fnos",
+        transfer = SftpTransfer(SftpTransferDirection.DOWNLOAD, "workspace", "/data/dump.sql", "/var/backups/dump.sql",
+            totalBytes = 52_000_000, transferredBytes = 18_000_000, bytesPerSecond = null, failure = SftpTransferFailure.NETWORK),
+    ),
+    previewJob("t3", "下载 photos.zip → /root/", BackgroundJobState.EXITED, exit = 0, runner = BackgroundJobRunner.SSH).copy(
+        remoteHost = "nas",
+        transfer = SftpTransfer(SftpTransferDirection.DOWNLOAD, "linux", "/root/photos.zip", "/srv/photos.zip",
+            totalBytes = 12_400_000, transferredBytes = 12_400_000, bytesPerSecond = null,
+            sha256 = "9f2c4e81a0b7d3c5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d"),
+    ),
+)
+
+@PreviewTest
+@Preview(name = "后台任务含 SFTP 传输 浅中360", widthDp = 360, heightDp = 520, locale = "zh-rCN")
+@Composable
+fun backgroundJobsSftpTransferLightChinesePreview() = ActivityPreviewFrame(dark = false) {
+    BackgroundJobsContent(jobs = previewTransferJobs, nowMillis = NOW, keepAliveAvailable = true, onStop = {}, onOpenLog = {})
+}
+
+@PreviewTest
+@Preview(name = "SFTP 上传审批 深中360", widthDp = 360, heightDp = 520, locale = "zh-rCN")
+@Composable
+fun sftpUploadApprovalDarkChinesePreview() = ActivityPreviewFrame(dark = true) {
+    ApprovalCard(
+        toolName = "sftp_upload",
+        description = "把打包好的备份传到 nas。",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "sftp_upload",
+                argumentsSummary = "{}",
+                riskLabel = "外部写入",
+                executionTarget = "[\"ssh_host\",\"nas\"]",
+                transfer = SftpTransferApprovalPreview(SftpTransferDirection.UPLOAD, "workspace", "/out/backup-1030.tar.gz", "/srv/backup/backup-1030.tar.gz", overwrite = true),
+                background = BackgroundRunPreview(120, ExitAction.NOTIFY, keepAliveAvailable = true),
+            ),
+        ),
+        onApproveAll = {},
+    )
+}
+
+@PreviewTest
+@Preview(name = "SFTP 下载审批 浅英360", widthDp = 360, heightDp = 440, locale = "en")
+@Composable
+fun sftpDownloadApprovalLightEnglishPreview() = ActivityPreviewFrame(dark = false) {
+    ApprovalCard(
+        toolName = "sftp_download",
+        description = "",
+        calls = listOf(
+            ApprovalDisplayCall(
+                name = "sftp_download",
+                argumentsSummary = "{}",
+                riskLabel = "Write file",
+                executionTarget = "[\"ssh_host\",\"fnos\"]",
+                transfer = SftpTransferApprovalPreview(SftpTransferDirection.DOWNLOAD, "linux", "/root/dump.sql", "/var/backups/dump.sql", overwrite = false),
             ),
         ),
     )
