@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
 import com.google.common.truth.Truth.assertWithMessage
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertThrows
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -148,6 +150,11 @@ class TailnetDeviceTest {
 
     @Test
     fun 子进程在应用沙箱内启动并在未登录时给出登录链接() {
+        // 登录链接要经 Tailscale 公网控制面交互注册才会下发；托管 CI 模拟器拿不到，由本机与真机设备测试覆盖。
+        assumeFalse(
+            "已按 tailnetControlPlane=skip 跳过控制面交互登录",
+            InstrumentationRegistry.getArguments().getString("tailnetControlPlane") == "skip",
+        )
         val started = start()
         assertThat(started.port).isGreaterThan(0)
         val gotLogin = waitFor(90_000) { started.states.any { it.needsLogin && !it.authUrl.isNullOrBlank() } }
