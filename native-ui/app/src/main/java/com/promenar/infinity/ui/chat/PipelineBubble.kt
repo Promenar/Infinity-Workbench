@@ -1103,6 +1103,7 @@ private fun toolSummaryCompletedText(part: ToolSummaryPart): String {
         ToolSummaryAction.SCHEDULE -> R.plurals.chat_step_schedule_done
         ToolSummaryAction.SKILL -> R.plurals.chat_step_skill_done
         ToolSummaryAction.SUBAGENT -> R.plurals.chat_step_subagent_done
+        ToolSummaryAction.SECRET -> R.plurals.chat_step_secret_done
         ToolSummaryAction.OTHER -> R.plurals.chat_step_other_done
     }
     return pluralStringResource(resId, part.count, part.count)
@@ -1129,6 +1130,7 @@ internal fun toolFriendlyName(toolName: String?): String = stringResource(when (
     ToolSummaryAction.SCHEDULE -> R.string.chat_step_schedule_name
     ToolSummaryAction.SKILL -> R.string.chat_step_skill_name
     ToolSummaryAction.SUBAGENT -> R.string.chat_step_subagent_name
+    ToolSummaryAction.SECRET -> R.string.chat_step_secret_name
     ToolSummaryAction.OTHER -> R.string.chat_step_other_name
 })
 
@@ -1161,6 +1163,7 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
             ToolSummaryAction.SCHEDULE -> R.string.chat_step_schedule_running
             ToolSummaryAction.SKILL -> R.string.chat_step_skill_running
             ToolSummaryAction.SUBAGENT -> R.string.chat_step_subagent_running
+            ToolSummaryAction.SECRET -> R.string.chat_step_secret_running
             ToolSummaryAction.OTHER -> R.string.chat_step_other_running
         })
     }

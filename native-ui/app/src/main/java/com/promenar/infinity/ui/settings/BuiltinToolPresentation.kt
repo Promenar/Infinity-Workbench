@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.ImageSearch
 import androidx.compose.material.icons.rounded.Javascript
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PlayCircleOutline
@@ -90,6 +91,7 @@ internal fun builtinToolIcon(id: String): ImageVector = when (id) {
     "python_exec" -> Icons.Rounded.Code
     "python_sandbox" -> Icons.Rounded.Science
     "agent_task" -> Icons.Rounded.AccountTree
+    "request_secret", "show_secret" -> Icons.Rounded.Key
     "initialize_plan" -> Icons.AutoMirrored.Rounded.PlaylistAdd
     "update_plan" -> Icons.Rounded.Checklist
     "get_plan" -> Icons.AutoMirrored.Rounded.ListAlt
