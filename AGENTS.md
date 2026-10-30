@@ -9,6 +9,8 @@
 - **文档治理 (DIA 机制)**：每次修改必须评估对核心及按需文档的影响。核心文档包含 `CHANGELOG.md`、`README.md`、`.agent/handover.md`。
 
 ## 2. 项目特定架构与文档注册表
+`.agent/`（交接、计划、注册表）与 `.pdec`（开发执行契约）是本地治理目录，不进入本仓库：`.agent/` 本身是私有仓库 `Promenar/Infinity-Workbench-governance` 的工作区，`.pdec` 是指向 `.agent/pdec` 的符号链接。新机器上在仓库根执行 `git clone https://github.com/Promenar/Infinity-Workbench-governance.git .agent && ln -s .agent/pdec .pdec`；写入 handover 后在 `.agent/` 内单独提交推送。
+
 本项目的完整文档治理体系和文档注册表已在以下文件中声明：
 - **[文档注册表]** — [.agent/registry.md](.agent/registry.md)
 - **[跨会话交接说明]** — [.agent/handover.md](.agent/handover.md)

@@ -1,3 +1,7 @@
+# === 本地治理目录（私有仓库 Infinity-Workbench-governance） ===
+.agent/
+.pdec
+
 # === IDE ===
 .idea/
 *.iml
@@ -12,7 +16,6 @@
 # === Generated runtime artifacts ===
 __pycache__/
 *.pyc
-.agent/tmp-agent-reports/*
 
 # === Android ===
 *.jks

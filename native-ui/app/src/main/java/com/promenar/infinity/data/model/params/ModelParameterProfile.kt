@@ -237,7 +237,6 @@ private const val END = """(?![-.]?\d(?!\d))"""
 
 /**
  * 依据各厂商官方文档（2026-10-21 核对）。按顺序取第一个匹配项，具体型号写在系列通配之前。
- * 详见 `.agent/plans/20261021-reasoning-effort-parameter-schemes.md`。
  */
 private val MODEL_FAMILIES: List<ModelFamily> = listOf(
     // OpenAI：effort 不为 none 时不接受 temperature / top_p；官方 API 不接受 top_k 与 repetition_penalty。

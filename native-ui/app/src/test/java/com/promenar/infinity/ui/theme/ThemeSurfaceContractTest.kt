@@ -13,7 +13,7 @@ class ThemeSurfaceContractTest {
 
     private val testResourcesPath = "native-ui/app/src/test/resources"
     private val uiSourcePath = "native-ui/app/src/main/java/com/promenar/infinity/ui"
-    private val manifestPath = ".agent/plans/20260720-md3-convergence-task13-manifest.txt"
+    private val manifestPath = "native-ui/app/src/test/resources/md3-theme-surface-manifest.txt"
     private val themeFileWhitelist = setOf(
         "native-ui/app/src/main/java/com/promenar/infinity/ui/theme/Color.kt",
         "native-ui/app/src/main/java/com/promenar/infinity/ui/theme/Theme.kt",
