@@ -14,11 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.7.1-beta] - 2026-10-31
+## [0.7.2-beta] - 2026-10-31
+
+`v0.7.1-beta` 标签的发行流水线未通过设备回归，没有发布安装包；其全部内容并入本版本。
 
 ### 变更
 
 - 主分支更名为 `main`。发行工作流改为推送 `v<versionName>` 注释标签触发：版本号取自 `build.gradle.kts`，发布说明取自本文件对应版本小节，`-beta` 版本标为 prerelease，附侧载与 Play 两个签名 APK 及其 SHA-256。Android CI 不再在每次推送时运行，只在 PR 与手动触发时运行。
+- 发行与 Android CI 的托管模拟器跳过 Tailscale 控制面交互登录用例：该用例需经 Tailscale 公网控制面注册才能拿到登录链接，托管 x86_64 模拟器上无法完成；本机模拟器与真机设备测试仍完整运行。
 
 ### 修复
 
