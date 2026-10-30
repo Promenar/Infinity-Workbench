@@ -26,9 +26,12 @@ class RequestSecretSkill : SkillDefinition {
         "kind":{"type":"string","enum":["password","token","api_key","passphrase","other"]},
         "destination":{"type":"object","additionalProperties":false,"required":["type"],"properties":{
             "type":{"type":"string","enum":["git_credential","ssh_host","provider_api_key","job_input","session_env"]},
-            "host":{"type":"string"},"username":{"type":"string"},"hostId":{"type":"string"},
-            "field":{"type":"string","enum":["password","key_passphrase"]},"providerId":{"type":"string"},
-            "jobId":{"type":"string"},"name":{"type":"string"}
+            "host":{"type":"string","description":"git_credential：主机名，如 github.com"},"username":{"type":"string"},
+            "hostId":{"type":"string","description":"ssh_host：SSH 主机别名"},
+            "field":{"type":"string","enum":["password","key_passphrase"]},
+            "providerId":{"type":"string","description":"provider_api_key：模型服务商名称"},
+            "jobId":{"type":"string","description":"job_input：后台任务的 job_id"},
+            "name":{"type":"string","description":"session_env：环境变量名，大写字母开头，只含大写字母、数字与下划线"}
         }}
     }}""".trimIndent()
     override suspend fun execute(args: JsonObject, context: SkillExecutionContext) =

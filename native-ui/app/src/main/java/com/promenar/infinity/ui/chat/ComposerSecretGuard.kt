@@ -1,6 +1,8 @@
 package com.promenar.infinity.ui.chat
 
 import androidx.compose.foundation.layout.Column
+import com.promenar.infinity.ui.theme.forInput
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -218,6 +220,7 @@ internal fun ComposerSecretGuardContent(
         if (offersGit && savingForm) {
             OutlinedTextField(
                 value = host,
+                textStyle = LocalTextStyle.current.forInput(),
                 onValueChange = { host = it },
                 label = { Text(stringResource(R.string.secret_save_as_host)) },
                 singleLine = true,
@@ -227,6 +230,7 @@ internal fun ComposerSecretGuardContent(
             )
             OutlinedTextField(
                 value = username,
+                textStyle = LocalTextStyle.current.forInput(),
                 onValueChange = { username = it },
                 label = { Text(stringResource(R.string.secret_save_as_username)) },
                 singleLine = true,

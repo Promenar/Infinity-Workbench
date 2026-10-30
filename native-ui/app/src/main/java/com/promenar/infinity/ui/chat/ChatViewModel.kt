@@ -497,6 +497,8 @@ class ChatViewModel(
 
     internal fun cancelSecretInput(expected: com.promenar.infinity.domain.secret.PendingSecretInput) = secretIo.cancel(expected)
 
+    internal fun completeSecretInputWithGitHubLogin() = secretIo.completeWithGitHubLogin()
+
     /** 设备验证通过后取值；调用方用完立即清零。 */
     internal fun revealSecret(card: com.promenar.infinity.domain.secret.SecretOutputCard): CharArray? = secretIo.reveal(card)
 

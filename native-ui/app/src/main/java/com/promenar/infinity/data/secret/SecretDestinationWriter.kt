@@ -15,4 +15,7 @@ data class SecretDestinationInfo(
 interface SecretDestinationWriter {
     suspend fun describe(sessionId: String, destination: SecretDestination): SecretDestinationInfo
     suspend fun write(sessionId: String, destination: SecretDestination, value: ByteArray, username: String?)
+
+    /** 去向是 github.com 的 Git 凭据，且已有浏览器登录保存的凭据时为真。 */
+    suspend fun satisfiedByGitHubLogin(destination: SecretDestination): Boolean = false
 }

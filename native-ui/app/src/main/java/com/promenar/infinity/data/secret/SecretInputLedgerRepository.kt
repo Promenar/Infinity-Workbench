@@ -165,6 +165,15 @@ class SecretInputLedgerRepository(
         }
     }
 
+    override suspend fun completeWithGitHubLogin(expected: PendingSecretInput): SecretInputOutcome? = writable(expected.sessionId) {
+        val current = database.withTransaction { pendingInTransaction(expected.sessionId) } ?: return@writable null
+        if (!sameRequest(current, expected) || !destinations.satisfiedByGitHubLogin(current.request.destination)) return@writable null
+        database.withTransaction {
+            if (clock() >= current.expiresAtMillis) finish(current, SecretInputOutcome.Expired)
+            else finish(current, SecretInputOutcome.Saved(destinationType(current.request.destination)))
+        }
+    }
+
     suspend fun expirePending() = withContext(Dispatchers.IO) {
         ledger.getAllInput().filter { it.toolName == SecretIoLimits.REQUEST_TOOL_NAME && it.status == ToolLedgerStatus.WAITING_INPUT &&
             clock() >= it.createdAt + SecretIoLimits.INPUT_TIMEOUT_MILLIS }.forEach { entry ->

@@ -1301,7 +1301,12 @@ fun ChatRoute(
             else -> 0
         },
     )
-    if (showSecretGitHubLogin) SecretGitHubLoginHost(onClose = { showSecretGitHubLogin = false })
+    if (showSecretGitHubLogin) {
+        SecretGitHubLoginHost(
+            onLoggedIn = chatViewModel::completeSecretInputWithGitHubLogin,
+            onClose = { showSecretGitHubLogin = false },
+        )
+    }
     UnifiedPromptEditor(
         show = activeOverlay == ChatOverlay.PromptEditor,
         onDismiss = { activeOverlayToken = null },

@@ -1,6 +1,8 @@
 package com.promenar.infinity.ui.chat
 
 import android.content.ClipData
+import com.promenar.infinity.ui.theme.forInput
+import androidx.compose.material3.LocalTextStyle
 import android.content.ClipboardManager
 import android.content.Context
 import android.hardware.biometrics.BiometricManager
@@ -577,6 +579,7 @@ internal fun SecretSaveAsContent(
             SecretSaveAsKind.GIT -> {
                 OutlinedTextField(
                     value = gitHost,
+                    textStyle = LocalTextStyle.current.forInput(),
                     onValueChange = { gitHost = it },
                     label = { Text(stringResource(R.string.secret_save_as_host)) },
                     singleLine = true,
@@ -586,6 +589,7 @@ internal fun SecretSaveAsContent(
                 )
                 OutlinedTextField(
                     value = gitUsername,
+                    textStyle = LocalTextStyle.current.forInput(),
                     onValueChange = { gitUsername = it },
                     label = { Text(stringResource(R.string.secret_save_as_username)) },
                     singleLine = true,
@@ -631,7 +635,7 @@ internal fun SecretSaveAsContent(
             onClick = {
                 val target = destination ?: return@Button
                 val label = when (kind) {
-                    SecretSaveAsKind.GIT -> "$gitLabel · ${gitHost.trim()}"
+                    SecretSaveAsKind.GIT -> "$gitLabel · ${gitHost.trim()}" // wrap-check: allow 单个去向短语，作为回执标签整体显示
                     SecretSaveAsKind.SSH -> targets.sshHosts.firstOrNull { it.id == sshHostId }?.label.orEmpty()
                     SecretSaveAsKind.PROVIDER -> targets.providers.firstOrNull { it.id == providerId }?.label.orEmpty()
                 }

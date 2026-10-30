@@ -16,13 +16,14 @@ import com.promenar.infinity.R
 import com.promenar.infinity.ui.settings.GitCredentialSettingsViewModel
 import com.promenar.infinity.ui.settings.GitHubLoginSheet
 import com.promenar.infinity.ui.settings.GitHubLoginSheetActions
+import com.promenar.infinity.ui.settings.GitHubLoginState
 
 /**
  * 保密输入卡上的“改用浏览器登录 GitHub”：复用设置 › Git 凭据的设备码登录与授权面板，
- * 登录成功后 github.com 的凭据经同一存储保存。未配置浏览器登录时直接关闭。
+ * 登录成功后 github.com 的凭据经同一存储保存，并通知协调器结束等待中的请求。未配置浏览器登录时直接关闭。
  */
 @Composable
-internal fun SecretGitHubLoginHost(onClose: () -> Unit) {
+internal fun SecretGitHubLoginHost(onLoggedIn: () -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val viewModel: GitCredentialSettingsViewModel = viewModel(
         key = "secret_input_github_login",
@@ -31,6 +32,10 @@ internal fun SecretGitHubLoginHost(onClose: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) {
         if (viewModel.state.value.githubLoginAvailable) viewModel.startGitHubLogin() else onClose()
+    }
+    val loggedIn = state.githubLogin is GitHubLoginState.Success
+    LaunchedEffect(loggedIn) {
+        if (loggedIn) onLoggedIn()
     }
     val close = {
         viewModel.closeGitHubLogin()

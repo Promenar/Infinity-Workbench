@@ -133,6 +133,12 @@ interface SecretInputCoordinator {
     suspend fun submit(expected: PendingSecretInput, value: CharArray, username: String?): SecretInputOutcome?
 
     suspend fun cancel(expected: PendingSecretInput): SecretInputOutcome?
+
+    /**
+     * 用户在卡片上改用浏览器登录 GitHub 并已保存 github.com 凭据后结束请求，结果与填写提交相同。
+     * 没有浏览器登录保存的凭据、或请求已不再等待时返回 null。
+     */
+    suspend fun completeWithGitHubLogin(expected: PendingSecretInput): SecretInputOutcome? = null
 }
 
 /** 保密输出的来源，只用于展示。 */

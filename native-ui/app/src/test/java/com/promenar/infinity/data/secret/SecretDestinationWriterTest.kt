@@ -82,6 +82,34 @@ class SecretDestinationWriterTest {
         assertThat(savedCredential!!.passphrase.decodeToString()).isEqualTo("synthetic-phrase")
     }
 
+    @Test fun `SSH去向接受模型可见的别名并按主机ID写入`() = runBlocking {
+        val destination = SecretDestination.SshHost("fnos", SshSecretField.PASSWORD)
+        assertThat(writer.describe("s", destination).label).isEqualTo("SSH 主机 fnos · 登录密码")
+        writer.write("s", destination, "synthetic-password".toByteArray(), null)
+        assertThat(savedHost).isEqualTo(configuredHost)
+        assertThat(savedCredential!!.password.decodeToString()).isEqualTo("synthetic-password")
+        assertThat(runCatching { writer.describe("s", SecretDestination.SshHost("missing", SshSecretField.PASSWORD)) }.exceptionOrNull())
+            .isInstanceOf(SecretIoFailure::class.java)
+    }
+
+    @Test fun `只有浏览器登录保存的githubcom凭据满足GitHub请求`() = runBlocking {
+        val github = SecretDestination.GitCredential("github.com")
+        assertThat(writer.satisfiedByGitHubLogin(github)).isFalse()
+        git.save("github.com", "alice", "synthetic-git-token".toByteArray())
+        assertThat(writer.satisfiedByGitHubLogin(github)).isFalse()
+        git.saveGitHubLogin("alice", "synthetic-oauth-token".toByteArray())
+        assertThat(writer.satisfiedByGitHubLogin(github)).isTrue()
+        assertThat(writer.satisfiedByGitHubLogin(SecretDestination.GitCredential("gitlab.com"))).isFalse()
+        assertThat(writer.satisfiedByGitHubLogin(SecretDestination.SessionEnv("TOKEN"))).isFalse()
+    }
+
+    @Test fun `服务商去向接受模型可见的名称并忽略大小写`() = runBlocking {
+        val name = provider.getProviderSummary("default")!!.name
+        writer.write("s", SecretDestination.ProviderApiKey(name.uppercase()), "synthetic-api-key".toByteArray(), null)
+        assertThat(store.get(SecretCatalog.providerApiKey("default"))!!.decodeToString()).isEqualTo("synthetic-api-key")
+        assertThat(writer.describe("s", SecretDestination.ProviderApiKey(name)).label).isEqualTo("模型服务商 $name · API Key")
+    }
+
     @Test fun `服务商密钥只进入加密SecretStore`() = runBlocking {
         writer.write("s", SecretDestination.ProviderApiKey("default"), "synthetic-api-key".toByteArray(), null)
         assertThat(store.get(SecretCatalog.providerApiKey("default"))!!.decodeToString()).isEqualTo("synthetic-api-key")

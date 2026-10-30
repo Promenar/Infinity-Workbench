@@ -124,6 +124,21 @@ internal class ChatSecretIo(
         }
     }
 
+    /** 卡片上改用浏览器登录 GitHub 成功后结束当前请求；协调器确认凭据已由登录保存，否则请求继续等待。 */
+    fun completeWithGitHubLogin() {
+        val expected = pending.value?.takeIf { it.offersGitHubBrowserLogin && it.sessionId == currentSessionId.value } ?: return
+        scope.launch {
+            val outcome = try {
+                withContext(NonCancellable) { coordinator.completeWithGitHubLogin(expected) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            settle(expected, outcome, null)
+        }
+    }
+
     /** 停止本轮时关闭本会话仍在等待的输入请求；请求已不在等待时协调器返回 null。 */
     suspend fun cancelForSession(sessionId: String) {
         val expected = pending.value?.takeIf { it.sessionId == sessionId } ?: return

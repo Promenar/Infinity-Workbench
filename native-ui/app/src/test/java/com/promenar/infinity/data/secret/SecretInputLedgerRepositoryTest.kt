@@ -36,7 +36,9 @@ class SecretInputLedgerRepositoryTest {
         override suspend fun write(sessionId: String, destination: SecretDestination, value: ByteArray, username: String?) {
             writes += value.copyOf()
         }
+        override suspend fun satisfiedByGitHubLogin(destination: SecretDestination) = githubLoginSaved
     }
+    private var githubLoginSaved = false
     private val call = ToolCall("secret", "request_secret", """{"purpose":"登录","kind":"token","destination":{"type":"session_env","name":"TEST_TOKEN"}}""")
 
     @Before fun setup() = runBlocking {
@@ -70,6 +72,18 @@ class SecretInputLedgerRepositoryTest {
                 assertThat(cursor.getString(i).orEmpty()).doesNotContain("synthetic-credential-for-test")
             }
         }
+    }
+
+    @Test fun `浏览器登录GitHub只在已有登录凭据时结束请求且不写值`() = runBlocking {
+        val pending = create().pending!!
+        assertThat(ledger.completeWithGitHubLogin(pending)).isNull()
+        assertThat(ledger.pending("s")).isEqualTo(pending)
+        githubLoginSaved = true
+        assertThat(ledger.completeWithGitHubLogin(pending)).isInstanceOf(SecretInputOutcome.Saved::class.java)
+        assertThat(writes).isEmpty()
+        assertThat(ledger.pending("s")).isNull()
+        assertThat(AskUserLedgerRepository(db).resumption("s")!!.result.content).contains("saved")
+        assertThat(ledger.completeWithGitHubLogin(pending)).isNull()
     }
 
     @Test fun `过期引用不写入并清零输入`() = runBlocking {

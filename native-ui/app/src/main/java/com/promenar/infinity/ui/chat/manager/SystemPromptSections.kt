@@ -29,6 +29,7 @@ object SystemPromptSections {
         "Linux 命令以本应用的 Android 用户运行，工作区档逐条审批，完全访问档免批。" +
         "原生 git 访问 HTTPS 远端时自动使用用户在设置中保存的 Git 凭据，与内置模式共用，无需在 Linux 中登录或配置凭据助手。" +
         "git@主机: 与 ssh:// 远端在 Linux 中不经 SSH 桥，需要时请用户切到内置模式。" +
+        "gh 同样经应用代理使用已保存的 github.com 凭据，无需运行 gh auth login，不要让用户粘贴令牌；尚未保存时调用 request_secret（git_credential，github.com），卡片里也可改用浏览器登录 GitHub。" +
         "shell_exec 在伪终端运行（TERM=xterm-256color，120列×40行，stderr合并到stdout）。默认15秒让出为后台任务，yield_after_seconds=0 等待到 timeout_seconds；background:true 立即返回任务号。" +
         "命令输出实时显示给用户，模型仅在工具返回或查询任务时看到输出。交互命令让出后，应立即把已有输出中需用户操作的登录链接、验证码转告用户，再用 job_wait 等待或 job_input 回答提示。" +
         "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。" +

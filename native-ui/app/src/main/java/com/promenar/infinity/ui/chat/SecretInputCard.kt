@@ -1,6 +1,8 @@
 package com.promenar.infinity.ui.chat
 
 import androidx.compose.animation.animateContentSize
+import com.promenar.infinity.ui.theme.forInput
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -205,6 +207,7 @@ internal fun SecretInputCard(
             if (pending.needsUsername) {
                 OutlinedTextField(
                     value = username,
+                    textStyle = LocalTextStyle.current.forInput(),
                     onValueChange = { username = it },
                     label = { Text(stringResource(R.string.secret_input_username)) },
                     singleLine = true,

@@ -54,6 +54,13 @@ class ChatSecretIoTest {
             pending.value = null
             return SecretInputOutcome.Cancelled
         }
+
+        var githubLoginOutcome: SecretInputOutcome? = null
+        val githubLogins = mutableListOf<PendingSecretInput>()
+        override suspend fun completeWithGitHubLogin(expected: PendingSecretInput): SecretInputOutcome? {
+            githubLogins += expected
+            return githubLoginOutcome
+        }
     }
 
     private class FakeController : SecretOutputController {
@@ -118,6 +125,21 @@ class ChatSecretIoTest {
         assertThat(io.receipts.value).containsExactly(
             SecretInputReceipt("s1", "a1", "call-1", SecretInputReceipt.Status.SAVED, "设置 › Git 凭据 · github.com", "Promenar"),
         )
+    }
+
+    @Test fun `浏览器登录成功后由协调器确认才留下回执`() = runTest(dispatcher) {
+        val io = io()
+        val request = pending()
+        coordinator.pending.value = request
+        io.completeWithGitHubLogin()
+        assertThat(coordinator.githubLogins).containsExactly(request)
+        assertThat(io.receipts.value).isEmpty()
+        coordinator.githubLoginOutcome = SecretInputOutcome.Saved("git_credential")
+        io.completeWithGitHubLogin()
+        assertThat(io.receipts.value.map { it.status }).containsExactly(SecretInputReceipt.Status.SAVED)
+        coordinator.pending.value = request.copy(offersGitHubBrowserLogin = false, toolCallId = "call-2")
+        io.completeWithGitHubLogin()
+        assertThat(coordinator.githubLogins).hasSize(2)
     }
 
     @Test fun `提交中重复点击不再交给协调器`() = runTest(dispatcher) {
