@@ -203,6 +203,8 @@ jobs:
         uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
         env:
           INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}
+          # 托管模拟器无法完成 Tailscale 公网控制面的交互登录。
+          INFINITY_E2E_TAILNET_CONTROL_PLANE: skip
         with:
           api-level: ${{ matrix.api-level }}
           target: default

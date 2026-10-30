@@ -479,8 +479,12 @@ run_test git-inspector "${APP_RUNNER}" \
     -e class com.promenar.infinity.data.git.GitInspectorDeviceTest
 run_test git-remote-auth "${APP_RUNNER}" \
     -e class com.promenar.infinity.data.git.remote.GitRemoteAuthDeviceTest
-run_test tailnet-node "${APP_RUNNER}" \
-    -e class com.promenar.infinity.data.tailnet.TailnetDeviceTest
+tailnet_args=(-e class com.promenar.infinity.data.tailnet.TailnetDeviceTest)
+if [[ "${INFINITY_E2E_TAILNET_CONTROL_PLANE:-}" == "skip" ]]; then
+    echo "跳过 Tailscale 控制面交互登录用例：INFINITY_E2E_TAILNET_CONTROL_PLANE=skip。"
+    tailnet_args+=(-e tailnetControlPlane skip)
+fi
+run_test tailnet-node "${APP_RUNNER}" "${tailnet_args[@]}"
 
 if [[ "${DEVICE_E2E_SCOPE}" == "full" ]]; then
     if (( API_LEVEL >= 33 )); then
