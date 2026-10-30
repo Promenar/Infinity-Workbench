@@ -1,3 +1,8 @@
+## Material Symbols Rounded 头像符号
+
+- 来源：[google/material-design-icons，提交 10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7](https://github.com/google/material-design-icons/tree/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7)，Apache-2.0，版权 Google LLC；[完整许可](licenses/material-symbols-Apache-2.0.txt)。
+- 打包形式：按 390 个码位子集化并固定轴（FILL=1、wght=500、GRAD=0、opsz=24）的 `native-ui/app/src/main/res/font/infinity_avatar_symbols.ttf`，保留 name 表版权与许可条目；许可全文另随 APK 存放于 `assets/licenses/material-symbols-LICENSE.txt`。来源哈希与重新生成方法见 `scripts/avatar/SOURCE.md`。
+
 ## QuickJS 脚本引擎
 
 - Android 依赖：`io.github.dokar3:quickjs-kt-android:1.0.15`；JVM 测试使用同版本 `quickjs-kt-jvm`，不打入 APK。

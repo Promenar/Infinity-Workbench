@@ -50,6 +50,9 @@ import com.promenar.infinity.domain.avatar.AgentAvatarCodec
 import com.promenar.infinity.domain.avatar.AgentAvatarSpec
 import com.promenar.infinity.ui.testing.UiTags
 import com.promenar.infinity.ui.theme.infinityDomainColors
+import com.promenar.infinity.ui.theme.InfinityAvatarHighlight
+import com.promenar.infinity.ui.theme.InfinityAvatarInitialInk
+import com.promenar.infinity.ui.theme.InfinityAvatarInitialShadow
 import java.text.BreakIterator
 import kotlin.math.cos
 import kotlin.math.sin
@@ -85,7 +88,7 @@ fun agentAvatarTones(hex: String, dark: Boolean, fallback: Color): AgentAvatarTo
     }
 }
 
-/** 生成头像的渐变参数：第二段色相相对主题色的偏移与渐变角度，均由种子确定。 */
+/** 生成头像的渐变参数：第二段色相相对主题色的偏移（带方向）与渐变角度，均由种子确定。 */
 data class GeneratedAvatarStyle(val hueShift: Int, val angleDegrees: Int)
 
 /** FNV-1a 32 位散列，按 UTF-16 码元计算，跨版本稳定。 */
@@ -100,19 +103,23 @@ internal fun avatarSeedHash(seed: String): UInt {
 
 fun generatedAvatarStyle(seed: String): GeneratedAvatarStyle {
     val hash = avatarSeedHash(seed)
+    val magnitude = 25 + (hash % 30u).toInt()
+    val clockwise = (hash / 30u) % 2u == 0u
     return GeneratedAvatarStyle(
-        hueShift = 35 + (hash % 50u).toInt(),
-        angleDegrees = 110 + ((hash / 50u) % 140u).toInt(),
+        hueShift = if (clockwise) magnitude else -magnitude,
+        angleDegrees = 110 + ((hash / 60u) % 140u).toInt(),
     )
 }
 
-/** 生成头像的两段渐变色。 */
+/** 生成头像的两段渐变色。终点色相落进黄绿段时改向另一侧偏移，避免低 tone 下发成橄榄色。 */
 @SuppressLint("RestrictedApi")
 fun generatedAvatarColors(hex: String, seed: String, dark: Boolean, fallback: Color): Pair<Color, Color> {
     val base = Hct.fromInt((parseAgentColor(hex) ?: fallback).toArgb())
     val shift = generatedAvatarStyle(seed).hueShift
+    val forward = (base.hue + shift + 360.0) % 360.0
+    val endHue = if (forward in GENERATED_MUDDY_HUES) (base.hue - shift + 360.0) % 360.0 else forward
     val start = TonalPalette.fromHueAndChroma(base.hue, GENERATED_START_CHROMA)
-    val end = TonalPalette.fromHueAndChroma((base.hue + shift) % 360.0, GENERATED_END_CHROMA)
+    val end = TonalPalette.fromHueAndChroma(endHue, GENERATED_END_CHROMA)
     return if (dark) Color(start.tone(64)) to Color(end.tone(44)) else Color(start.tone(72)) to Color(end.tone(52))
 }
 
@@ -135,6 +142,8 @@ private fun agentTonalPalette(hex: String, fallback: Color, maxChroma: Double): 
 private const val TONE_MAX_CHROMA = 48.0
 private const val GENERATED_START_CHROMA = 48.0
 private const val GENERATED_END_CHROMA = 64.0
+/** HCT 黄绿段，两侧各留 5° 余量，抵消色域裁剪带来的色相漂移。 */
+private val GENERATED_MUDDY_HUES = 80.0..135.0
 
 /** 符号字形占头像直径的比例；28dp 菜单到 80dp 设置页都按同一比例缩放。 */
 private const val SYMBOL_SCALE = 0.54f
@@ -265,7 +274,7 @@ fun AgentAvatarArt(
             val typeface = rememberAvatarTypeface(symbols = false)
             Canvas(modifier) {
                 drawGeneratedBackground(colors.first, colors.second, angle)
-                if (initial.isNotEmpty()) drawCenteredText(initial, typeface, Color.White, size.minDimension * INITIAL_SCALE, shadow = true)
+                if (initial.isNotEmpty()) drawCenteredText(initial, typeface, InfinityAvatarInitialInk, size.minDimension * INITIAL_SCALE, shadow = true)
             }
         }
     }
@@ -299,7 +308,7 @@ private fun DrawScope.drawGeneratedBackground(start: Color, end: Color, angleDeg
     // 左上角柔光，让渐变有一点体积感。
     drawRect(
         Brush.radialGradient(
-            listOf(Color.White.copy(alpha = 0.35f), Color.Transparent),
+            listOf(InfinityAvatarHighlight, Color.Transparent),
             center = Offset(size.width * 0.28f, size.height * 0.22f),
             radius = size.minDimension * 0.5f,
         ),
@@ -310,12 +319,18 @@ private fun DrawScope.drawCenteredText(text: String, typeface: Typeface?, color:
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.typeface = typeface
         this.textSize = textSize
-        this.color = color.toArgb()
-        if (shadow) setShadowLayer(textSize * 0.06f, 0f, textSize * 0.03f, Color.Black.copy(alpha = 0.18f).toArgb())
     }
     val bounds = Rect()
     paint.getTextBounds(text, 0, text.length, bounds)
+    val x = center.x - bounds.exactCenterX()
+    val y = center.y - bounds.exactCenterY()
     drawIntoCanvas { canvas ->
-        canvas.nativeCanvas.drawText(text, center.x - bounds.exactCenterX(), center.y - bounds.exactCenterY(), paint)
+        // 投影用同一字形下移一小段先画一遍，再叠正文，让白字在浅色渐变上也有轮廓。
+        if (shadow) {
+            paint.color = InfinityAvatarInitialShadow.toArgb()
+            canvas.nativeCanvas.drawText(text, x, y + textSize * 0.03f, paint)
+        }
+        paint.color = color.toArgb()
+        canvas.nativeCanvas.drawText(text, x, y, paint)
     }
 }

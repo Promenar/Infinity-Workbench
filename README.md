@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/platform-Android%2012%2B-green.svg" alt="Platform: Android 12+">
   <img src="https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg" alt="Kotlin 2.2">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg" alt="Jetpack Compose Material 3">
-  <img src="https://img.shields.io/badge/version-0.6.2--beta-6366F1.svg" alt="Version 0.6.2-beta">
+  <img src="https://img.shields.io/badge/version-0.7.0--beta-6366F1.svg" alt="Version 0.7.0-beta">
 </p>
 
 <p align="center">
@@ -70,7 +70,7 @@
 
 **Install:** Download the APK and its `.sha256` file from [GitHub Releases](https://github.com/Promenar/Infinity-Workbench/releases), check the SHA-256 and install it. Public releases can lag behind the source tree. Do not install CI artifacts, debug APKs or repackaged builds from other sources.
 
-The source tree is at `v0.6.2-beta` (versionCode `19`). See the [changelog](CHANGELOG.md) for what changed.
+The source tree is at `v0.7.0-beta` (versionCode `20`). See the [changelog](CHANGELOG.md) for what changed.
 
 ## Build from source
 
@@ -101,4 +101,4 @@ See also the [architecture overview](docs/ARCHITECTURE.md) and the [guide index]
 
 ## License
 
-Infinity Workbench is released under the [GNU General Public License v3.0](LICENSE). The settings list, navigation bar and appearance page include Compose adaptations of [Bettbox](https://github.com/appshubcc/Bettbox), also GPLv3. Sources and scope are listed in the [third-party notices](docs/legal/THIRD_PARTY_NOTICES.md).
+Infinity Workbench is released under the [GNU General Public License v3.0](LICENSE). The settings list, navigation bar and appearance page include Compose adaptations of [Bettbox](https://github.com/appshubcc/Bettbox), also GPLv3. Agent avatar symbols come from Google's Material Symbols Rounded (Apache-2.0). Sources and scope are listed in the [third-party notices](docs/legal/THIRD_PARTY_NOTICES.md).

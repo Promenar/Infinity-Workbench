@@ -257,3 +257,8 @@ val InfinityKgEntityLight = listOf(
     Color(0xFFC4472B), Color(0xFF1E8E3E), Color(0xFF00838F), Color(0xFFC2185B),
     Color(0xFF1A73E8), Color(0xFF8E3FD1), Color(0xFF9A6A00), Color(0xFF5F6673),
 )
+
+/** 生成头像（渐变首字母）的固定配色：渐变两端都在中等 tone，首字母恒为白字加淡投影，左上角是白色柔光。 */
+val InfinityAvatarInitialInk = Color.White
+val InfinityAvatarInitialShadow = Color.Black.copy(alpha = 0.18f)
+val InfinityAvatarHighlight = Color.White.copy(alpha = 0.35f)

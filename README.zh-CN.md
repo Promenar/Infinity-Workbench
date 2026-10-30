@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/platform-Android%2012%2B-green.svg" alt="平台 Android 12+">
   <img src="https://img.shields.io/badge/Kotlin-2.2-7F52FF.svg" alt="Kotlin 2.2">
   <img src="https://img.shields.io/badge/Jetpack_Compose-Material3-4285F4.svg" alt="Jetpack Compose Material 3">
-  <img src="https://img.shields.io/badge/version-0.6.2--beta-6366F1.svg" alt="版本 0.6.2-beta">
+  <img src="https://img.shields.io/badge/version-0.7.0--beta-6366F1.svg" alt="版本 0.7.0-beta">
 </p>
 
 <p align="center">
@@ -70,7 +70,7 @@
 
 **安装**：从 [GitHub Releases](https://github.com/Promenar/Infinity-Workbench/releases) 下载 APK 与对应 `.sha256` 文件，核对 SHA-256 后安装。公开发布可能落后于源码；不要安装 CI 临时制品、Debug APK 或来源不明的重打包版本。
 
-当前源码版本为 `v0.6.2-beta`（versionCode `19`），变更见[更新日志](CHANGELOG.md)。
+当前源码版本为 `v0.7.0-beta`（versionCode `20`），变更见[更新日志](CHANGELOG.md)。
 
 ## 从源码构建
 
@@ -99,4 +99,4 @@ Debug APK 输出在 `native-ui/app/build/outputs/apk/<渠道>/debug/`。离线�
 
 ## 许可证
 
-Infinity Workbench 以 [GNU General Public License v3.0](LICENSE) 发布。设置列表、底部导航与外观页包含对同为 GPLv3 的 [Bettbox](https://github.com/appshubcc/Bettbox) 视觉实现的 Compose 转译，来源与范围见[第三方通知](docs/legal/THIRD_PARTY_NOTICES.md)。
+Infinity Workbench 以 [GNU General Public License v3.0](LICENSE) 发布。设置列表、底部导航与外观页包含对同为 GPLv3 的 [Bettbox](https://github.com/appshubcc/Bettbox) 视觉实现的 Compose 转译；智能体头像符号来自 Google Material Symbols Rounded（Apache-2.0）。来源与范围见[第三方通知](docs/legal/THIRD_PARTY_NOTICES.md)。

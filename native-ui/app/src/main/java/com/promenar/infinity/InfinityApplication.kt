@@ -2032,7 +2032,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    android.util.Log.w("InfinityApplication", "预置智能体头像升级失败，保留原值", failure)
+                    InfinityLogger.logError("PresetAgentAvatarUpgrade", failure)
                 }
                 val runtime = backupRuntime
                 PostBackupStartupRecoverySequence(

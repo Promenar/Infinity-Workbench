@@ -2,6 +2,8 @@ package com.promenar.infinity.ui.common
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import com.google.android.material.color.utilities.Hct
 import com.promenar.infinity.domain.avatar.AgentAvatarPalette
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -60,10 +62,24 @@ class AgentAvatarTest {
         assertEquals(generatedAvatarStyle("coder"), generatedAvatarStyle("coder"))
         val styles = (0 until 200).map { generatedAvatarStyle("agent-$it") }
         styles.forEach {
-            assertTrue(it.hueShift in 35..84)
+            assertTrue(kotlin.math.abs(it.hueShift) in 25..54)
             assertTrue(it.angleDegrees in 110..249)
         }
         assertTrue(styles.map { it.hueShift }.toSet().size > 20, "种子应带来足够的色相差异")
+        assertTrue(styles.any { it.hueShift < 0 } && styles.any { it.hueShift > 0 }, "偏移方向应由种子决定")
+    }
+
+    @Test
+    fun `generated gradient end never lands in the muddy yellow green band`() {
+        AgentAvatarPalette.swatches.map { it.hex }.forEach { hex ->
+            (0 until 200).forEach { i ->
+                listOf(false, true).forEach { dark ->
+                    val end = generatedAvatarColors(hex, "agent-$i", dark, fallback).second
+                    val hue = Hct.fromInt(end.toArgb()).hue
+                    assertTrue(hue !in MUDDY_HUES, "$hex agent-$i dark=$dark 终点色相 $hue 落在黄绿区")
+                }
+            }
+        }
     }
 
     @Test
@@ -80,6 +96,11 @@ class AgentAvatarTest {
         assertEquals(a.first, b.first)
         assertNotEquals(a.second, b.second)
         assertTrue(aDark.first.luminance() < a.first.luminance())
+    }
+
+    private companion object {
+        /** HCT 色相约 85–130 的黄绿段：压到渐变终点的低 tone 后呈橄榄色。 */
+        val MUDDY_HUES = 85.0..130.0
     }
 
     private fun contrast(a: Color, b: Color): Double {
