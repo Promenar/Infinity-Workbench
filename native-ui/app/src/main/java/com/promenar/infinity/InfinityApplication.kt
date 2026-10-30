@@ -342,6 +342,15 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.infinity.data.repository.AskUserLedgerRepository(database, sessionExecutionGate)
     }
 
+    /** 保密信息输入与输出的界面入口；后端实现接入前为空实现。 */
+    val secretInputCoordinator: com.promenar.infinity.domain.secret.SecretInputCoordinator by lazy {
+        com.promenar.infinity.domain.secret.NoopSecretInputCoordinator
+    }
+
+    val secretOutputController: com.promenar.infinity.domain.secret.SecretOutputController by lazy {
+        com.promenar.infinity.domain.secret.NoopSecretOutputController
+    }
+
     val localInferenceRuntimeGate: LocalInferenceRuntimeGate by lazy {
         LocalInferenceRuntimeGate.fromBuildConfig()
     }
