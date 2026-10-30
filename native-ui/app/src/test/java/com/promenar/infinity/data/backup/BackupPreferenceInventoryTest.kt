@@ -73,6 +73,7 @@ class BackupPreferenceInventoryTest {
             "data/network/AgentNetworkSettings.kt#preferences" to "infinity_settings",
             "ui/settings/LocalModelsViewModel.kt#prefs" to "infinity_settings",
             "ui/settings/SshSettingsScreen.kt#settingsPrefs" to "infinity_settings",
+            "data/ssh/SshUserPrompts.kt#settings" to "infinity_settings",
             "ui/settings/SearchConfigViewModel.kt#prefs" to "infinity_search",
             "ui/rag/RagViewModel.kt#prefs" to "rag_settings",
             "ui/rag/RagViewModel.kt#settingsPrefs" to "infinity_settings",

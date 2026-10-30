@@ -370,11 +370,13 @@ private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
 }
 
 @Composable
-private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> = listOf(jobRunnerLabel(job), jobStateText(job, nowMillis))
+private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> =
+    listOfNotNull(jobRunnerName(job), job.remoteHost, jobStateText(job, nowMillis))
 
 /** 运行环境标签；SSH 任务后接主机 ID，与本地任务在同一列表里区分。 */
 @Composable
-private fun jobRunnerLabel(job: BackgroundJob): String = listOfNotNull(jobRunnerName(job), job.remoteHost).joinToString(" · ")
+private fun jobRunnerLabel(job: BackgroundJob): String =
+    listOfNotNull(jobRunnerName(job), job.remoteHost).joinToString(" · ")  // wrap-check: allow 单行小标签
 
 @Composable
 private fun jobRunnerName(job: BackgroundJob): String = stringResource(

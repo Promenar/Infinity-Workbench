@@ -72,7 +72,8 @@ class ChatPagesTest {
         assertThat(ChatInspectorBadges(gitAvailable = true, gitChanges = 2).hasContent).isTrue()
         assertThat(ChatInspectorBadges(pendingApprovals = 1).hasContent).isTrue()
         assertThat(ChatInspectorBadges(canvases = 1).hasContent).isTrue()
-        assertThat(ChatInspectorBadges().pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Canvas).inOrder()
-        assertThat(ChatInspectorBadges(gitAvailable = true).pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Git, ChatPage.Canvas).inOrder()
+        // 远程页签常驻，不依赖工作区内容。
+        assertThat(ChatInspectorBadges().pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Canvas, ChatPage.Remote).inOrder()
+        assertThat(ChatInspectorBadges(gitAvailable = true).pages()).containsExactly(ChatPage.Run, ChatPage.Explorer, ChatPage.Git, ChatPage.Canvas, ChatPage.Remote).inOrder()
     }
 }

@@ -76,7 +76,7 @@ internal object BackupPreferencePolicy {
         "provider_status" to setOf("statuses"),
         "settings" to setOf(
             "local_models_enabled", "local_auto_load", "last_local_model", "unlimited_auto_confirmed",
-            "termux_integration_enabled", "ssh_agent_host_management", "mcp_allow_loopback_http", "script_lan_hosts", "script_approve_writes",
+            "termux_integration_enabled", "ssh_agent_host_management", "ssh_terminal_idle_disconnect", "mcp_allow_loopback_http", "script_lan_hosts", "script_approve_writes",
             "rolled_back_summary_usage_v1", "embedding_setup_hint_shown",
         ),
         "generation_notification_permission" to setOf("post_notifications_asked"),
