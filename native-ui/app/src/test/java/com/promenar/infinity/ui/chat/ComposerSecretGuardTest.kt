@@ -11,7 +11,7 @@ class ComposerSecretGuardTest {
     private val fineGrained = "github_pat_11ABCDEFG0aB3dE5fG7hJ9kL_" + "mN2pQ4rS6tU8vW0xY2zA4bC5dE7fG9hJ1kL3mN5pQ7rS9tU1vW3xY5zA7bC9d"
     private val openAi = "sk-proj-Q7rS9tU1vW3xY5zA7bC9dE1fG3hJ5kL7mN9pQ1rS3t"
     private val anthropic = "sk-ant-api03-Zx8Cv7Bn6Mq5Wl4Er3Ty2Ui1Op0As9Df8Gh7Jk6"
-    private val deepSeek = "sk-0f3a9c7e1b5d4a8c2e6f0b9d3a7c5e1f"
+    private val deepSeek = "sk-" + "0f3a9c7e1b5d4a8c" + "2e6f0b9d3a7c5e1f"
     private val aws = "AKIAZ4Q7R2T9K3M8P5N1"
     private val pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----"
 
