@@ -15,9 +15,13 @@ object SessionRunModeToolDefinitions {
     fun forSession(tool: ProtocolTool, mode: SessionRunMode?): ProtocolTool {
         if (mode != SessionRunMode.LINUX || tool.sourceId != "builtin") return tool
         val name = tool.function.name
-        if (name != "shell_exec" && name !in files) return tool
+        if (name !in setOf("shell_exec", "python_exec") && name !in files) return tool
         val base = tool.baseDefinitionDigest ?: (ToolInvocationIdentityFactory.definitionDigest(tool) as? ToolDefinitionDigestResolution.Valid)?.digest ?: return tool
-        val description = if (name == "shell_exec") SystemPromptSections.LINUX_SHELL_GUIDANCE else "$name。$PATHS"
+        val description = when (name) {
+            "shell_exec" -> SystemPromptSections.LINUX_SHELL_GUIDANCE
+            "python_exec" -> "在本会话 Linux 环境的 python3 中执行 code，可使用本会话保密库的环境变量引用与 capture_secret；捕获强制前台。" + SystemPromptSections.LINUX_SHELL_GUIDANCE
+            else -> "$name。$PATHS"
+        }
         val schema = if (name !in files) tool.function.parameters else runCatching {
             val definition = Json.parseToJsonElement(tool.function.parameters).jsonObject
             val properties = definition["properties"]?.jsonObject.orEmpty().mapValues { (key, value) ->

@@ -140,6 +140,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -188,7 +189,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             com.promenar.infinity.data.ssh.SshTerminalIdlePolicy.read(
                 getSharedPreferences(com.promenar.infinity.data.ssh.SshTerminalIdlePolicy.PREFERENCES_NAME, MODE_PRIVATE),
             ).timeoutMillis
-        }, liveOutput = toolLiveOutputStore)
+        }, liveOutput = toolLiveOutputStore, vault = sessionSecretVault, redactor = secretOutputRedactor)
     }
     /** 内置 Tailscale（tsnet 子进程，不占用系统 VPN）；创建时安装为全局 tailnet 路由。未打包可执行文件时报告不可用。 */
     val tailnetManager: com.promenar.infinity.data.tailnet.TailnetManager by lazy {
@@ -342,13 +343,29 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
         com.promenar.infinity.data.repository.AskUserLedgerRepository(database, sessionExecutionGate)
     }
 
-    /** 保密信息输入与输出的界面入口；后端实现接入前为空实现。 */
-    val secretInputCoordinator: com.promenar.infinity.domain.secret.SecretInputCoordinator by lazy {
-        com.promenar.infinity.domain.secret.NoopSecretInputCoordinator
+    val sessionSecretVault = com.promenar.infinity.data.secret.SessionSecretVault()
+    val secretOutputRedactor = com.promenar.infinity.data.secret.SecretOutputRedactor(sessionSecretVault)
+    private val secretDestinations by lazy {
+        com.promenar.infinity.data.secret.DefaultSecretDestinationWriter(
+            git = { gitCredentialStore }, hosts = sshHostStore,
+            provider = { ProviderManager.getInstance() }, jobs = { backgroundJobs }, vault = sessionSecretVault,
+        )
     }
-
+    val secretInputLedger by lazy {
+        com.promenar.infinity.data.secret.SecretInputLedgerRepository(database, secretDestinations, sessionExecutionGate).also { ledger ->
+            generationScope.launch(Dispatchers.IO) {
+                while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                    try { ledger.expirePending() }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* 启动写屏障关闭时等待下一次检查。 */ }
+                    kotlinx.coroutines.delay(1_000)
+                }
+            }
+        }
+    }
+    val secretInputCoordinator: com.promenar.infinity.domain.secret.SecretInputCoordinator get() = secretInputLedger
     val secretOutputController: com.promenar.infinity.domain.secret.SecretOutputController by lazy {
-        com.promenar.infinity.domain.secret.NoopSecretOutputController
+        com.promenar.infinity.data.secret.DefaultSecretOutputController(sessionSecretVault, secretDestinations)
     }
 
     val localInferenceRuntimeGate: LocalInferenceRuntimeGate by lazy {
@@ -704,6 +721,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 )
             },
             cleanupSessionData = { sessionId ->
+                sessionSecretVault.clearSession(sessionId)
+                secretOutputRedactor.clearSession(sessionId)
                 com.promenar.infinity.data.session.cleanupSessionRuntimeData(
                     // 会话私有工作区只属于该会话，删除会话时一并撤销绑定到它的白名单条目。
                     { toolAllowlistStore.removeScope("session:$sessionId") },
@@ -1187,6 +1206,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             runModeCheck = ::checkSessionRunMode,
             linuxFiles = linuxSessionFiles,
             askUserLedger = askUserLedger,
+            secretInputLedger = secretInputLedger,
             branchService = { branchService }, branchPlans = branchPlans, sessionMailbox = sessionMailbox,
             knowledgeCatalog = knowledgeCatalog, knowledgeAccessPlanner = knowledgeAccessPlanner, knowledgeTurns = knowledgeTurns,
         )
@@ -1373,6 +1393,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             linuxRuntime = linux.runtime,
             sessionMode = sessionRunModes::modeFor,
             messages = runModeMessages,
+            vault = sessionSecretVault, redactor = secretOutputRedactor,
         )
     }
 
@@ -1395,6 +1416,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             reconcileSessionHome = ::reconcileSessionHome,
             wakeInbox = { linuxWakeInbox.prepare(it) },
             messages = runModeMessages,
+            vault = sessionSecretVault, redactor = secretOutputRedactor,
             linuxLaunchBinding = { sessionId ->
                 val row = database.sessionDao().getById(sessionId)
                 row?.worktreeDirectory?.let { com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace(branchUnderlyingWorkspace(row), it) }
@@ -1644,6 +1666,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 workspaceRepository, linux.files, { linux.runtime.state.value is com.promenar.infinity.domain.linux.LinuxRuntimeState.Ready }, ::reconcileSessionHome))
             register(CalculatorSkill())
             register(com.promenar.infinity.ui.chat.manager.AskUserTool())
+            register(com.promenar.infinity.ui.chat.manager.skills.RequestSecretSkill())
+            register(com.promenar.infinity.ui.chat.manager.skills.ShowSecretSkill(sessionSecretVault))
             register(com.promenar.infinity.data.branch.SessionBranchTool())
             register(com.promenar.infinity.data.branch.SessionListTool { branchService })
             register(com.promenar.infinity.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
@@ -2053,6 +2077,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                                 toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
                                 toolExecutionLedger.recoverApprovalState()
                                 askUserLedger.recoverAnsweredState()
+                                secretInputLedger.expirePending()
+                                com.promenar.infinity.data.secret.SessionSecretRecovery(database, sessionSecretVault).restoreUnavailableSlots()
                             }
                         }
                     },
@@ -2079,6 +2105,8 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                                     toolExecutionLedger.recoverInterruptedRunning("进程在工具执行期间中断，请确认结果后重新发起")
                                     toolExecutionLedger.recoverApprovalState()
                                     askUserLedger.recoverAnsweredState()
+                                secretInputLedger.expirePending()
+                                com.promenar.infinity.data.secret.SessionSecretRecovery(database, sessionSecretVault).restoreUnavailableSlots()
                                 }
                                 StartupSubsystem.VECTOR_QUEUE -> withContext(Dispatchers.IO) { vectorizationQueue.resumeInterruptedTasks().getOrThrow() }
                                 else -> throw failure

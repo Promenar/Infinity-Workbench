@@ -61,4 +61,6 @@ interface SkillExecutionContext {
         get() = com.promenar.infinity.domain.tool.ToolLiveOutputSink.None
     /** 本次调用的执行步骤 id，供需要按调用归档过程的工具使用。 */
     val toolStepId: String? get() = null
+    /** 执行器的 step_<毫秒>_<调用ID> 步骤键中保留原始调用 ID。 */
+    val toolCallId: String? get() = toolStepId?.let { Regex("^step_[0-9]+_(.+)$").matchEntire(it)?.groupValues?.get(1) }
 }

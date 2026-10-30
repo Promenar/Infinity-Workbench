@@ -1,6 +1,9 @@
 package com.promenar.infinity.data.jobs
 
 import com.promenar.infinity.data.exec.*
+import com.promenar.infinity.data.secret.SessionSecretVault
+import com.promenar.infinity.data.secret.SecretOutputRedactor
+import com.promenar.infinity.domain.secret.SecretIoLimits
 import com.promenar.infinity.data.termux.*
 import com.promenar.infinity.data.ssh.*
 import com.promenar.infinity.domain.jobs.*
@@ -16,7 +19,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class JobAccessException(val code: String, override val message: String) : IllegalArgumentException(message)
-data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean, val sessionId: String? = null, val workspaceKindOverride: String? = null) {
+data class BackgroundJobLocation(val commandDirectory: File, val workspaceDirectory: File, val isolated: Boolean, val termuxShared: Boolean, val sessionId: String? = null, val workspaceKindOverride: String? = null,
+    /** 执行器类型和原始代码分别传递，避免把发送用 shell 包装记为命令来源。 */
+    val pythonSource: Boolean = false) {
     val workspaceKind: String get() = workspaceKindOverride ?: if (isolated) "private" else if (termuxShared) "shared" else "project"
 }
 class PreparedBackgroundCommand(
@@ -79,7 +84,10 @@ class BackgroundJobManager(
     private val linuxRuntime: com.promenar.infinity.domain.linux.LinuxRuntime? = null,
     private val sessionMode: suspend (String) -> com.promenar.infinity.domain.model.SessionRunMode? = { com.promenar.infinity.domain.model.SessionRunMode.BUILTIN },
     private val messages: RunModeMessages = RunModeMessages(),
+    private val vault: SessionSecretVault? = null,
+    redactor: SecretOutputRedactor? = null,
 ) : BackgroundJobController {
+    private val redactor = redactor ?: vault?.let(::SecretOutputRedactor)
     private class Active(val control: BuiltinCommandControl = BuiltinCommandControl()) {
         val terminal = CompletableDeferred<Unit>()
         var worker: Job? = null
@@ -87,6 +95,8 @@ class BackgroundJobManager(
         val completion = CompletableDeferred<Pair<BackgroundJobRecord, JobLogTail>>()
         var sink: ToolLiveOutputSink = ToolLiveOutputSink.None
         var lastTail: String = ""
+        var termuxOutput: ToolLiveOutputSink? = null
+        var termuxOutputFinished: Boolean = false
         @Volatile var suppressCompletion: Boolean = false
         var sshControl: SshExecControl? = null
     }
@@ -128,14 +138,16 @@ class BackgroundJobManager(
         store.prune()
         for (record in store.all()) {
             if (!record.running || record.runnerKind == BackgroundJobRunner.TERMUX) continue
+            val missingSecrets = record.secretNames.filter { name -> vault?.revealBytes(record.sessionId, name)?.let { it.fill(0); true } != true }
+            val secretWarning = missingSecrets.takeIf { it.isNotEmpty() }?.let { "JOB_SECRET_UNAVAILABLE：本会话保密库已清除，缺少槽位 ${it.joinToString()}；任务不会恢复执行。" }
             if (record.runnerKind == BackgroundJobRunner.SSH) {
-                store.put(record.copy(state = "INTERRUPTED", endedAtMillis = now(), guidance = if (record.transfer == null) SSH_DISCONNECTED_GUIDANCE else "应用重启，传输已中断；请检查临时文件清理状态后重试。",
+                store.put(record.copy(state = "INTERRUPTED", endedAtMillis = now(), guidance = secretWarning ?: if (record.transfer == null) SSH_DISCONNECTED_GUIDANCE else "应用重启，传输已中断；请检查临时文件清理状态后重试。",
                     transfer = record.transfer?.copy(bytesPerSecond = null, failure = SftpTransferFailure.NETWORK.name)))
                 continue
             }
             val cleaned=runner.interruptBackground(File(record.runDirectory,"pgid"))
             val reconcileWarning = try { reconcile(record, false, true) } catch (_: Exception) { "工作区恢复失败；任务副本和日志已保留。" }
-            val warning=listOfNotNull(reconcileWarning,if(cleaned)null else "应用重启后无法核验旧进程组身份，未发送信号；请确认旧命令已停止。").joinToString(" ").ifEmpty{null}
+            val warning=listOfNotNull(secretWarning,reconcileWarning,if(cleaned)null else "应用重启后无法核验旧进程组身份，未发送信号；请确认旧命令已停止。").joinToString(" ").ifEmpty{null}
             store.put(record.copy(state="INTERRUPTED",endedAtMillis=now(),guidance=warning,logMigrationDeferred=!cleaned))
         }
         for (record in store.all()) {
@@ -168,7 +180,9 @@ class BackgroundJobManager(
         if(running.count{it.sessionId==sessionId} >= 3) throw JobAccessException("JOB_SESSION_LIMIT","本会话已有 3 个运行中任务，请先用 job_wait 等待或用 job_stop 停止。")
         if(running.size >= 6) throw JobAccessException("JOB_GLOBAL_LIMIT","全局已有 6 个运行中任务，请先结束部分后台任务。")
         val id="job-${UUID.randomUUID()}"
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost,transfer=transfer).also {
+        val secretNames = try { vault?.environment(sessionId,source)?.keys?.sorted().orEmpty() }
+        catch (_: IllegalStateException) { throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁或不能作为环境变量，任务未启动。") }
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost,transfer=transfer,secretNames=secretNames).also {
             store.put(it); active[id]=Active().also { handle -> handle.sshControl = sshControl }; publish()
         }
     }
@@ -178,10 +192,10 @@ class BackgroundJobManager(
         val mode = sessionMode(sessionId) ?: throw JobAccessException("EXEC_RUN_MODE_REQUIRED", messages(RunModeMessage.MODE_REQUIRED))
         if (expectedMode != null && mode != expectedMode) throw JobAccessException("EXEC_MODE_CHANGED", messages(RunModeMessage.MODE_CHANGED))
         val linux = mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX
-        if (linux && kind == BackgroundJobRunner.PYTHON || !linux && kind == BackgroundJobRunner.LINUX) {
+        if (!linux && kind == BackgroundJobRunner.LINUX) {
             throw JobAccessException("EXEC_MODE_TOOL_UNAVAILABLE", messages(RunModeMessage.BUILTIN_TOOL_BLOCKED))
         }
-        val actualKind = if (kind == BackgroundJobRunner.SHELL && linux) BackgroundJobRunner.LINUX else kind
+        val actualKind = if (kind in setOf(BackgroundJobRunner.SHELL, BackgroundJobRunner.PYTHON) && linux) BackgroundJobRunner.LINUX else kind
         val record=reserve(sessionId,workspaceRootUuid,actualKind,source,minutes,action)
         val handle=active.getValue(record.id)
         val started=CompletableDeferred<BackgroundJobRecord>()
@@ -199,7 +213,16 @@ class BackgroundJobManager(
                         val log=logFile(current)
                         log.parentFile?.mkdirs(); if(!log.exists()) log.createNewFile()
                         reconcile(current,false,false)
-                        val prepared=prepareCommand(actualKind,source,stdin,location.copy(sessionId=record.sessionId),minutes)
+                        val environment = try { vault?.environment(sessionId, source).orEmpty() }
+                        catch (_: IllegalStateException) { throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁或不能作为环境变量，任务未执行。") }
+                        environment.values.forEach { value ->
+                            val bytes = value.toByteArray(Charsets.UTF_8)
+                            try { redactor?.registerJobInput(sessionId, record.id, bytes) } finally { bytes.fill(0) }
+                        }
+                        if (!environment.keys.containsAll(record.secretNames)) throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁，任务未执行。")
+                        val original = prepareCommand(actualKind,source,stdin,location.copy(sessionId=record.sessionId, pythonSource = kind == BackgroundJobRunner.PYTHON),minutes)
+                        val prepared = PreparedBackgroundCommand(original.request.copy(environment = original.request.environment + environment,
+                            outputTransform = redactor?.let { secretCommandOutput(sessionId, it) }), original.close, original.afterRun)
                         command=prepared
                         var linuxRemoved = false
                         val output = coroutineScope {
@@ -219,7 +242,7 @@ class BackgroundJobManager(
                         finish(current.copy(state=terminal,exitCode=output.exitCode,endedAtMillis=now(),guidance=if(linuxRemoved) messages(RunModeMessage.LINUX_UNAVAILABLE) else if(actualKind == BackgroundJobRunner.LINUX) LinuxMissingCommandGuidance.hint(output.exitCode, readJobLogTail(log).text, messages) else null),handle)
                         if(!started.isCompleted) started.completeExceptionally(JobAccessException("JOB_STOPPED","任务在进程启动前被停止。"))
                     } catch (failure:Exception) {
-                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance=if(failure is com.promenar.infinity.domain.linux.LinuxUnavailableException) messages(RunModeMessage.LINUX_UNAVAILABLE) else "后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
+                        val terminal=current.copy(state=if(failure is CancellationException) "INTERRUPTED" else "FAILED",endedAtMillis=now(),guidance=if(failure is JobAccessException) "${failure.code}：${failure.message}" else if(failure is com.promenar.infinity.domain.linux.LinuxUnavailableException) messages(RunModeMessage.LINUX_UNAVAILABLE) else "后台任务无法运行（${failure.javaClass.simpleName}），请检查执行后端和工作区。")
                         withContext(NonCancellable) {
                             if(store.all().find{it.id==record.id}?.running==true) finish(terminal,handle)
                         }
@@ -234,6 +257,7 @@ class BackgroundJobManager(
                 }
             } finally {
                 handle.terminal.complete(Unit)
+                redactor?.clearJob(record.sessionId, record.id)
                 active.remove(record.id,handle)
                 liveOutput.close("job:${record.id}",sink)
             }
@@ -283,14 +307,15 @@ class BackgroundJobManager(
                             finally { withContext(NonCancellable) { watcher?.cancelAndJoin() } }
                         }
                         withContext(NonCancellable) {
+                            val safeValue = value.redacted(sessionId, redactor)
                             val terminal = record.copy(
                                 workspaceDirectory = directory?.path,
                                 state = when { runtimeRemoved -> "FAILED"; value.errorCode == "EXEC_STOPPED" -> "STOPPED"; value.timedOut -> "TIMED_OUT"; value.errorCode != null -> "FAILED"; else -> "EXITED" },
-                                exitCode = value.exitCode, endedAtMillis = now(), commandResult = value.toJson(),
-                                guidance = if (runtimeRemoved) messages(RunModeMessage.LINUX_UNAVAILABLE) else value.guidance,
+                                exitCode = value.exitCode, endedAtMillis = now(), commandResult = safeValue.toJson(),
+                                guidance = if (runtimeRemoved) messages(RunModeMessage.LINUX_UNAVAILABLE) else safeValue.guidance,
                             )
                             store.put(terminal); publish(); handle.terminal.complete(Unit)
-                            result.complete(value)
+                            result.complete(safeValue)
                             if (yielded.get() && sessionAllowed(record) && !handle.suppressCompletion) {
                                 try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
                             }
@@ -301,7 +326,7 @@ class BackgroundJobManager(
                             publish(); result.completeExceptionally(failure)
                         }
                     } finally {
-                        handle.terminal.complete(Unit); active.remove(record.id, handle)
+                        handle.terminal.complete(Unit); redactor?.clearJob(record.sessionId, record.id); active.remove(record.id, handle)
                         release(); liveOutput.close("job:${record.id}", sink)
                     }
                 }
@@ -404,8 +429,11 @@ class BackgroundJobManager(
                 else sink.onStop { scope.launch { stop(record.id) } }
                 handle.worker = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
                     try {
+                        val environment = try { vault?.environment(sessionId, source).orEmpty() }
+                        catch (_: IllegalStateException) { throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁，任务未执行。") }
+                        if (!environment.keys.containsAll(record.secretNames)) throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁，任务未执行。")
                         val value = RotatingJobLog(logFile(record)).use { log ->
-                            val tee = object : ToolLiveOutputSink by live {
+                            val rawTee = object : ToolLiveOutputSink by live {
                                 override fun emit(stream: ToolOutputStream, text: String) {
                                     log.write(text.toByteArray(Charsets.UTF_8))
                                     sink.emit(stream, text)
@@ -413,6 +441,7 @@ class BackgroundJobManager(
                                 }
                                 override fun onStop(stop: () -> Unit) { sink.onStop(stop); live.onStop(stop) }
                             }
+                            val tee = redactor?.sink(sessionId, rawTee) ?: rawTee
                             if (transfer != null) tee.emit(ToolOutputStream.STDOUT, sftpProgressText(transfer.totalBytes))
                             trace?.workerStarted()
                             try {
@@ -425,7 +454,7 @@ class BackgroundJobManager(
                                             val text = sftpProgressText(total, done, speed)
                                             tee.emit(ToolOutputStream.STDOUT, text)
                                         } else runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
-                                            timeoutSeconds, maxOutputChars, tee, control).commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
+                                            timeoutSeconds, maxOutputChars, tee, control, secretSessionId = sessionId).commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
                                     }
                                 }.let { output ->
                                     trace?.next(null)
@@ -440,26 +469,28 @@ class BackgroundJobManager(
                                 throw failure
                             } finally {
                                 trace?.let { it.next(null); tee.emit(ToolOutputStream.STDOUT, "\n${it.summary()}\n") }
+                                redactor?.finish(tee)
                             }
                         }
                         withContext(NonCancellable) {
                             val settled = if (transfer == null && control.stopRequested.get()) value.copy(
                                 errorCode = "SSH_STOPPED", guidance = SSH_DISCONNECTED_GUIDANCE, exitCode = null, timedOut = false,
                             ) else value
+                            val safeSettled = settled.redacted(sessionId, redactor)
                             val current = store.all().first { it.id == record.id }
                             val terminal = current.copy(
                                 transfer = current.transfer?.copy(bytesPerSecond = null,
-                                    sha256 = (settled.backendFields["sha256"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
-                                    failure = settled.errorCode?.let { sftpFailure(it).name }),
-                                state = when { settled.errorCode == "SSH_STOPPED" -> "STOPPED"; settled.timedOut -> "TIMED_OUT"; settled.errorCode != null -> "FAILED"; else -> "EXITED" },
-                                exitCode = settled.exitCode, endedAtMillis = now(), commandResult = settled.toJson(),
-                                guidance = settled.guidance,
+                                    sha256 = (safeSettled.backendFields["sha256"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                                    failure = safeSettled.errorCode?.let { sftpFailure(it).name }),
+                                state = when { safeSettled.errorCode == "SSH_STOPPED" -> "STOPPED"; safeSettled.timedOut -> "TIMED_OUT"; safeSettled.errorCode != null -> "FAILED"; else -> "EXITED" },
+                                exitCode = safeSettled.exitCode, endedAtMillis = now(), commandResult = safeSettled.toJson(),
+                                guidance = safeSettled.guidance,
                             )
                             handle.inputGate.withLock {
                                 // 先持久化终态，再归还连接；job_stop 在同一把任务锁内重新核对状态。
                                 store.put(terminal)
                                 runtime.finishJob(record.id)
-                                publish(); handle.terminal.complete(Unit); result.complete(settled)
+                                publish(); handle.terminal.complete(Unit); result.complete(safeSettled)
                             }
                             if (ownership.await() && sessionAllowed(record) && !handle.suppressCompletion) {
                                 try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
@@ -486,7 +517,7 @@ class BackgroundJobManager(
                                 }),
                                 state = if (serviceLimited) "TIMED_OUT" else if (control.stopRequested.get()) "STOPPED" else if (failure is CancellationException) "INTERRUPTED" else "FAILED",
                                 endedAtMillis = now(), guidance = stoppedResult?.guidance ?: if (failure is CancellationException) SSH_DISCONNECTED_GUIDANCE
-                                    else "SSH 后台命令无法执行，请检查主机配置和网络；不要自动重试。",
+                                    else if (failure is JobAccessException) "${failure.code}：${failure.message}" else "SSH 后台命令无法执行，请检查主机配置和网络；不要自动重试。",
                                 commandResult = stoppedResult?.toJson(),
                             )
                             runtime.finishJob(record.id)
@@ -557,6 +588,41 @@ class BackgroundJobManager(
         return withContext(Dispatchers.IO) { block(trace) }
     }
 
+    /** 保密输入只经字节接口写入终端，登记遮蔽后发送，调用方数组无论成功失败均清零。 */
+    suspend fun input(sessionId: String, id: String, value: ByteArray, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus {
+        try { return withContext(Dispatchers.IO) {
+            require(value.isNotEmpty() && value.size <= SecretIoLimits.MAX_SECRET_BYTES && 0.toByte() !in value) { "保密输入为空、过长或包含 NUL。" }
+            val record = owned(sessionId, id)
+            if (!record.running) throw JobAccessException("JOB_NOT_RUNNING", "任务已经结束，不能写入输入。")
+            if (record.runnerKind == BackgroundJobRunner.SSH) throw JobAccessException("JOB_INPUT_UNSUPPORTED", "SSH 后台命令不支持输入。")
+            val handle = active[id] ?: throw JobAccessException("JOB_INPUT_UNAVAILABLE", "任务输入不可用。")
+            val redact = redactor ?: throw JobAccessException("JOB_SECRET_REDACTOR_UNAVAILABLE", "保密输出遮蔽不可用，输入未发送。")
+            handle.inputGate.withLock {
+                if (handle.control.inputBytes == null) throw JobAccessException("JOB_INPUT_UNAVAILABLE", "任务没有可写的交互输入。")
+                redact.registerJobInput(sessionId, id, value)
+                val bytes = if (newline) value + byteArrayOf(13) else value.copyOf()
+                try {
+                    withTimeout(5_000) { runInterruptible { handle.control.writeInput(bytes, eof) } }
+                } catch (_: TimeoutCancellationException) {
+                    throw JobAccessException("JOB_INPUT_TIMEOUT", "输入写入超时，请查询任务状态。")
+                } catch (_: java.io.IOException) {
+                    throw JobAccessException("JOB_INPUT_FAILED", "输入写入失败，请查询任务状态。")
+                } finally { bytes.fill(0) }
+            }
+            status(sessionId, id)
+        } } finally { value.fill(0) }
+    }
+
+    suspend fun input(sessionId: String, id: String, value: CharArray, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus {
+        var bytes: ByteArray? = null
+        try {
+            val encoded = Charsets.UTF_8.encode(java.nio.CharBuffer.wrap(value))
+            bytes = ByteArray(encoded.remaining()).also(encoded::get)
+            if (encoded.hasArray()) encoded.array().fill(0)
+            return input(sessionId, id, bytes, newline, eof)
+        } finally { value.fill('\u0000'); bytes?.fill(0) }
+    }
+
     suspend fun input(sessionId: String, id: String, text: String, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus = withContext(Dispatchers.IO) {
         require(text.length <= 32_000 && '\u0000' !in text) { "text 应为不含 NUL 的字符串，最多32000字符。" }
         val record = owned(sessionId, id)
@@ -623,6 +689,8 @@ class BackgroundJobManager(
                 }
             } finally {
                 handle.terminal.complete(Unit)
+                handle.termuxOutput?.let { redactor?.finish(it) }
+                redactor?.clearJob(record.sessionId, record.id)
                 active.remove(record.id,handle)
                 liveOutput.close("job:${record.id}",sink)
             }
@@ -638,7 +706,7 @@ class BackgroundJobManager(
             sink.onStop {scope.launch{stop(record.id)}}
             try {
                 keepAlive.hold(runInfo(record),{scope.launch{stop(record.id)}}) { monitorTermuxLoop(record,handle) }
-            } finally {handle.terminal.complete(Unit);active.remove(record.id,handle);liveOutput.close("job:${record.id}",sink)}
+            } finally {handle.termuxOutput?.let { redactor?.finish(it) };handle.terminal.complete(Unit);active.remove(record.id,handle);liveOutput.close("job:${record.id}",sink)}
         }
     }
     private suspend fun monitorTermuxLoop(record:BackgroundJobRecord,handle:Active) {
@@ -674,7 +742,7 @@ class BackgroundJobManager(
             store.put(current)
             backend.inspect(recovered)
         }
-        if (!result.alive) {
+        if (!result.alive && redactor == null) {
             try {
                 val migrated = backend.migrateCompleted(current.id, current.workspaceDirectory?.let(::File), termuxHandle(current))
                 current = current.copy(termuxDirectory = migrated.directory, termuxPid = migrated.pid,
@@ -686,14 +754,23 @@ class BackgroundJobManager(
                 store.put(current)
             }
         }
+        // Termux 自己持有原始日志；存在保密库时不让外部脚本原样复制或迁移该日志。
+        // 原位置保持可恢复，应用只发布经过遮蔽的状态与实时文本。
+        val safeTail = redactor?.redact(current.sessionId, result.logTail) ?: result.logTail
         active[record.id]?.let { running ->
-            if (result.logTail != running.lastTail) {
+            if (redactor != null) {
+                if (!running.termuxOutputFinished) {
+                    val sink = running.termuxOutput ?: redactor.sink(current.sessionId, running.sink).also { running.termuxOutput = it }
+                    sink.replace(ToolOutputStream.STDOUT, result.logTail)
+                    if (!result.alive) { redactor.finish(sink); running.termuxOutputFinished = true }
+                }
+            } else if (result.logTail != running.lastTail) {
                 val text = if (result.logTail.startsWith(running.lastTail)) result.logTail.drop(running.lastTail.length) else result.logTail
-                running.lastTail=result.logTail
-                running.sink.emit(ToolOutputStream.STDOUT,text)
+                running.sink.emit(ToolOutputStream.STDOUT, text)
             }
+            running.lastTail=result.logTail
         }
-        val tail=JobLogTail(result.logTail.takeLast(8_000),result.truncated || result.logTail.length>8_000)
+        val tail=JobLogTail(safeTail.takeLast(8_000),result.truncated || safeTail.length>8_000)
         if(current.running && !result.alive) {
             val next=current.copy(state=when {result.timedOut->"TIMED_OUT";result.stopped->"STOPPED";result.exitCode!=null->"EXITED";else->"FAILED"},exitCode=result.exitCode,endedAtMillis=now())
             // 终态落盘与所有权交接不可被一次查询的取消拆开。
@@ -716,9 +793,10 @@ class BackgroundJobManager(
             if(directory.canonicalFile.parentFile==runRoot.canonicalFile) deleteJobTree(File(directory,"workspace"))
         }
         if(warning!=null) settled=settled.copy(guidance=listOfNotNull(settled.guidance,warning).joinToString(" "))
+        settled = redactedRecord(settled)
         store.put(settled);publish();handle.terminal.complete(Unit)
         if(sessionAllowed(record)) {
-            try { completion.dispatch(settled,readJobLogTail(logFile(settled))) }
+            try { completion.dispatch(settled, readJobLogTail(logFile(settled)).let { it.copy(text = redactor?.redact(record.sessionId, it.text) ?: it.text) }) }
             catch(cancelled:CancellationException) { throw cancelled }
             catch(_:Exception) { /* 完成通知失败不能改写真实进程终态。 */ }
         }
@@ -738,7 +816,15 @@ class BackgroundJobManager(
         val tail = status(sessionId, id).tail
         return com.promenar.infinity.domain.jobs.BackgroundJobLog(tail.text, tail.truncated)
     }
-    suspend fun list(sessionId:String):List<BackgroundJobRecord> { initialize(); return store.all().filter{it.sessionId==sessionId && sessionId !in deletedSessions}.sortedByDescending{it.startedAtMillis} }
+    suspend fun list(sessionId:String):List<BackgroundJobRecord> { initialize(); return store.all().filter{it.sessionId==sessionId && sessionId !in deletedSessions}.map(::redactedRecord).sortedByDescending{it.startedAtMillis} }
+    private fun redactedRecord(record: BackgroundJobRecord): BackgroundJobRecord {
+        val redact = redactor ?: return record
+        return record.copy(summary = redact.redact(record.sessionId, record.summary), guidance = record.guidance?.let { redact.redact(record.sessionId, it) },
+            commandResult = record.commandResult?.let { value ->
+                // 既有 SSH 结果在存盘前已遮蔽；读取历史记录时再进行完整 JSON 字符串值遮蔽。
+                redactCommandJson(record.sessionId, value, redact)
+            })
+    }
     suspend fun status(sessionId:String,id:String):BackgroundJobStatus = withContext(Dispatchers.IO) {
         var record=owned(sessionId,id)
         var warning: String? = null
@@ -752,7 +838,8 @@ class BackgroundJobManager(
             if (directory == null) raw else raw.copy(text = BuiltinExecService.virtualize(raw.text, directory))
         }
         record=owned(sessionId,id)
-        BackgroundJobStatus(record.copy(guidance=listOfNotNull(record.guidance,warning).distinct().joinToString(" ").ifEmpty { null }),tail)
+        BackgroundJobStatus(redactedRecord(record.copy(guidance=listOfNotNull(record.guidance,warning).distinct().joinToString(" ").ifEmpty { null })),
+            tail.copy(text = redactor?.redact(sessionId, tail.text) ?: tail.text))
     }
     suspend fun waitFor(sessionId:String,id:String,timeoutSeconds:Int):BackgroundJobStatus {
         require(timeoutSeconds in 1..600){"timeout_seconds 必须为 1–600"}

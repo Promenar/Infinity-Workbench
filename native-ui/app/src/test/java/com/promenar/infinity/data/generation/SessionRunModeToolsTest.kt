@@ -33,7 +33,7 @@ class SessionRunModeToolsTest {
         val resolver = DefaultSessionToolResolver(settings, registry)
         val session = Session("s", "a", runMode = SessionRunMode.LINUX)
         val linux = resolver.resolve(session)
-        assertThat(linux.map { it.function.name }).containsExactly("shell_exec", "read_file", "web_search", "job_wait")
+        assertThat(linux.map { it.function.name }).containsExactly("shell_exec", "python_exec", "read_file", "web_search", "job_wait")
         assertThat(linux.single { it.function.name == "shell_exec" }.function.description).contains("Alpine Linux")
         val builtin = resolver.resolve(session.copy(runMode = SessionRunMode.BUILTIN))
         assertThat(builtin.map { it.function.name }).containsAtLeastElementsIn(names)

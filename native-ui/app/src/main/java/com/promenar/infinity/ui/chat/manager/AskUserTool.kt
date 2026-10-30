@@ -19,6 +19,7 @@ class AskUserTool : SkillDefinition {
     override val description = "执行中遇到只有用户能决定的方案取舍、范围或偏好时，集中提出 1–4 个选择题。" +
         "能从上下文或合理默认推断的事不要问。推荐项放在第一项，label 末尾标注“（推荐）”。" +
         "用户总能自由回答或跳过，不要添加“其他”选项。相关问题一次问完。" +
+        "不要用它索取密码、令牌或密钥，请调用 request_secret。" +
         "ask_user 必须单独调用；同批其它调用全部不会执行，多个 ask_user 只受理第一个。回答后按需重新调用其它工具。"
     override val parametersSchema = """{
         "type":"object","additionalProperties":false,"required":["questions"],"properties":{

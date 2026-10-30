@@ -78,7 +78,7 @@ object ToolExecutionTargets {
         }
         if (tool.risk == ToolRisk.PROCESS && tool.function.name == "python_exec" && tool.sourceId == "builtin") {
             val code = args.string("code")?.takeIf(String::isNotBlank) ?: return null
-            return tuple("process", "python", code)
+            return tuple("process", if (usesLinux) "linux" else "python", code)
         }
         if (tool.risk == ToolRisk.PROCESS) {
             val host = when (tool.function.name) {

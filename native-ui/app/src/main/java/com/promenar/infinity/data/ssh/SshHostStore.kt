@@ -5,12 +5,14 @@ import com.promenar.infinity.data.local.db.entity.SshHostEntity
 import com.promenar.infinity.data.security.SecretStore
 import com.promenar.infinity.data.security.SshCredential
 import com.promenar.infinity.data.security.SshCredentialStore
+import com.promenar.infinity.domain.secret.SshSecretField
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -68,6 +70,18 @@ interface SshHostStore {
     suspend fun delete(alias: String)
     suspend fun trust(alias: String, expectedOld: String?, key: SshHostKey, expectedHost: SshHost): Boolean
     fun credential(host: SshHost): SshCredential?
+
+    /** 仅替换指定凭据字段；生产实现与主机配置修改共用锁，值由方法负责清零。 */
+    suspend fun replaceSecret(hostId: String, field: SshSecretField, value: ByteArray) {
+        try {
+            val host = observeHosts().first().firstOrNull { it.id == hostId }
+                ?: throw IllegalArgumentException("SSH_HOST_NOT_FOUND")
+            val previous = credential(host)
+            try {
+                replacementCredential(previous, field, value).use { save(host, it) }
+            } finally { previous?.close() }
+        } finally { value.fill(0) }
+    }
 }
 
 class RoomSshHostStore(private val dao: SshHostDao, secrets: SecretStore) : SshHostStore {
@@ -140,8 +154,33 @@ class RoomSshHostStore(private val dao: SshHostDao, secrets: SecretStore) : SshH
         return try { credentials.get(host.id, binding) } finally { binding.fill(0) }
     }
 
+    override suspend fun replaceSecret(hostId: String, field: SshSecretField, value: ByteArray) {
+        try {
+            withContext(Dispatchers.IO) {
+                mutationMutex.withLock {
+                    val host = dao.findById(hostId)?.toHost() ?: throw IllegalArgumentException("SSH_HOST_NOT_FOUND")
+                    val binding = host.binding()
+                    var previous: SshCredential? = null
+                    try {
+                        previous = credentials.get(hostId, binding)
+                        replacementCredential(previous, field, value).use { replacement ->
+                            // 不改写 Room 主机行，保留锁内读取的最新配置、信任状态和其它字段。
+                            withContext(NonCancellable) { credentials.replace(hostId, binding, replacement) {} }
+                        }
+                    } finally { previous?.close(); binding.fill(0) }
+                }
+            }
+        } finally { value.fill(0) }
+    }
+
     private companion object { val mutationMutex = Mutex() }
 }
+
+private fun replacementCredential(previous: SshCredential?, field: SshSecretField, value: ByteArray): SshCredential = SshCredential(
+    privateKey = previous?.privateKey?.copyOf() ?: ByteArray(0),
+    password = if (field == SshSecretField.PASSWORD) value.copyOf() else previous?.password?.copyOf() ?: ByteArray(0),
+    passphrase = if (field == SshSecretField.KEY_PASSPHRASE) value.copyOf() else previous?.passphrase?.copyOf() ?: ByteArray(0),
+)
 
 private val aliasPattern = Regex("[a-z][a-z0-9_-]{0,47}")
 private fun requireAlias(alias: String) = require(aliasPattern.matches(alias)) { "SSH 别名格式无效" }

@@ -2,6 +2,9 @@ package com.promenar.infinity.data.jobs
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.exec.*
+import com.promenar.infinity.data.secret.SessionSecretVault
+import com.promenar.infinity.data.secret.SecretOutputRedactor
+import com.promenar.infinity.domain.secret.SecretSource
 import com.promenar.infinity.domain.jobs.*
 import com.promenar.infinity.domain.trigger.*
 import java.io.File
@@ -227,6 +230,93 @@ class BackgroundJobManagerTest {
         } finally {releaseStop.complete(Unit);scope.cancel();deleteJobTree(root)}
     }
     private fun sample()=BackgroundJobRecord("job-a","s","root","SHELL","echo",startedAtMillis=System.currentTimeMillis(),maxRuntimeMinutes=1,onExit="none",logWorkspacePath="jobs/job-a.log",runDirectory="")
+    @Test fun `后台注入与落盘遮蔽且重启明确报告缺槽位`() = runBlocking<Unit> {
+        val root = Files.createTempDirectory("job-secret").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val vault = SessionSecretVault()
+            vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "fixture-background-secret".toByteArray())
+            val store = BackgroundJobStore(File(root, "store"))
+            val manager = manager(root, scope, store, vault = vault)
+            val job = manager.startBuiltin("s", "root", BackgroundJobRunner.SHELL, "printf '%s' \"\$TOKEN\"", null, 1, BackgroundJobExitAction.NONE)
+            val result = manager.waitFor("s", job.id, 5)
+            assertThat(result.tail.text).isEqualTo("‹保密:TOKEN›")
+            assertThat(File(job.runDirectory, "output.log").readText()).isEqualTo("‹保密:TOKEN›")
+            assertThat(File(root, "store/records.json").readText()).doesNotContain("fixture-background-secret")
+            assertThat(result.record.secretNames).containsExactly("TOKEN")
+            store.put(result.record.copy(state = "RUNNING"))
+            val restarted = manager(root, scope, store, vault = SessionSecretVault())
+            restarted.initialize()
+            assertThat(restarted.status("s", job.id).record.guidance).contains("JOB_SECRET_UNAVAILABLE")
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun `保密输入失败也清零字节与字符数组`() = runBlocking<Unit> {
+        val root = Files.createTempDirectory("job-secret-input").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val manager = manager(root, scope, BackgroundJobStore(File(root, "store")), vault = SessionSecretVault())
+            val bytes = "fixture-byte-input".toByteArray()
+            val chars = "fixture-char-input".toCharArray()
+            runCatching { manager.input("s", "missing", bytes) }
+            runCatching { manager.input("s", "missing", chars) }
+            assertThat(bytes.all { it == 0.toByte() }).isTrue()
+            assertThat(chars.all { it == '\u0000' }).isTrue()
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun `Termux输出先遮蔽且保密会话保留外部原始日志不迁移`() = runBlocking<Unit> {
+        val root = Files.createTempDirectory("job-secret-termux").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val vault = SessionSecretVault()
+            vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "fixture-termux-secret".toByteArray())
+            val store = BackgroundJobStore(File(root, "store"))
+            store.put(sample().copy(runner = "TERMUX", state = "EXITED", exitCode = 0,
+                runDirectory = File(root, "runs/job-a").path, workspaceDirectory = root.path,
+                termuxDirectory = "/termux/jobs/job-a", termuxPid = 123))
+            var calls = 0
+            val backend = com.promenar.infinity.data.termux.TermuxBackgroundJobs {
+                calls++
+                val content = java.util.Base64.getEncoder().encodeToString("fixture-termux-secret".toByteArray())
+                com.promenar.infinity.data.termux.TermuxCommandResult(stdout = "INFINITY_JOB_V1\n0\n0\n0\n0\n21\n$content\n", exitCode = 0)
+            }
+            val manager = manager(root, scope, store, termux = backend, vault = vault)
+            val status = manager.status("s", "job-a")
+            assertThat(status.tail.text).isEqualTo("‹保密:TOKEN›")
+            assertThat(status.record.termuxDirectory).isEqualTo("/termux/jobs/job-a")
+            assertThat(calls).isEqualTo(1)
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun `Termux实时快照保留秘密短尾直到完整匹配`() = runBlocking<Unit> {
+        val root = Files.createTempDirectory("job-secret-termux-live").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val vault = SessionSecretVault()
+            vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "fixture-termux-secret".toByteArray())
+            val store = BackgroundJobStore(File(root, "store"))
+            store.put(sample().copy(runner = "TERMUX", runDirectory = File(root, "runs/job-a").path,
+                termuxDirectory = "/termux/jobs/job-a", termuxPid = 123))
+            val content = java.util.concurrent.atomic.AtomicReference("fixture-termux-")
+            val backend = com.promenar.infinity.data.termux.TermuxBackgroundJobs {
+                val text = content.get()
+                val encoded = java.util.Base64.getEncoder().encodeToString(text.toByteArray())
+                com.promenar.infinity.data.termux.TermuxCommandResult(stdout = "INFINITY_JOB_V1\n-\n1\n0\n0\n${text.length}\n$encoded\n", exitCode = 0)
+            }
+            val live = ToolLiveOutputStore()
+            val manager = manager(root, scope, store, termux = backend, vault = vault, live = live)
+            manager.initialize()
+            withTimeout(5_000) { while (live.snapshot("job:job-a") == null) delay(10) }
+            manager.status("s", "job-a")
+            assertThat(live.snapshot("job:job-a")?.text).doesNotContain("fixture-termux-")
+            content.set("fixture-termux-secret" + " padding".repeat(30))
+            manager.status("s", "job-a")
+            assertThat(live.snapshot("job:job-a")?.text).contains("‹保密:TOKEN›")
+            assertThat(live.snapshot("job:job-a")?.text).doesNotContain("fixture-termux-secret")
+        } finally { scope.coroutineContext[Job]?.cancelAndJoin(); root.deleteRecursively() }
+    }
+
     private fun fixture(block:suspend CoroutineScope.(BackgroundJobManager)->Unit)=runBlocking {
         val root=Files.createTempDirectory("job-manager").toFile()
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
@@ -236,11 +326,12 @@ class BackgroundJobManagerTest {
     private fun manager(root:File,scope:CoroutineScope,store:BackgroundJobStore,
         reconcile:suspend(BackgroundJobRecord,Boolean,Boolean)->String?={_,_,_->null},
         completion:BackgroundJobCompletion=BackgroundJobCompletion(),keepAlive:ExecKeepAlive=NoExecKeepAlive,
-        termux:com.promenar.infinity.data.termux.TermuxBackgroundJobs?=null)=BackgroundJobManager(
+        termux:com.promenar.infinity.data.termux.TermuxBackgroundJobs?=null,
+        vault:SessionSecretVault?=null, live:ToolLiveOutputStore=ToolLiveOutputStore())=BackgroundJobManager(
         scope,store,File(root,"runs"),
         BuiltinCommandRunner(listOf("/usr/bin/perl","-e","setpgrp(0, 0); exec @ARGV or exit 127"),"/bin/sh",ProcessGroupSignaller {pid,signal->ProcessBuilder("/bin/kill","-$signal","-$pid").start().waitFor()}, {File(root,"scratch")},killGraceMillis=100),
         prepareWorkspace={ BackgroundJobLocation(root,root,false,false) },
-        reconcile=reconcile,completion=completion,keepAlive=keepAlive,termux=termux,
+        reconcile=reconcile,completion=completion,keepAlive=keepAlive,termux=termux,vault=vault,redactor=vault?.let(::SecretOutputRedactor),liveOutput=live,
         prepareCommand={_,source,stdin,location,minutes -> PreparedBackgroundCommand(BuiltinCommandRequest(listOf("/bin/sh","-c",source),location.commandDirectory,mapOf("PATH" to "/usr/bin:/bin"),stdin,minutes*60)) },
     )
 }
