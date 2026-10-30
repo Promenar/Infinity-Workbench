@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowRight
+import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.VerifiedUser
@@ -79,6 +80,8 @@ internal data class ChatInspectorBadges(
     val browser: com.promenar.infinity.data.browser.BrowserMode? = null,
     /** 会话提供浏览器入口时浏览器页签常驻，未打开网页时显示空状态。 */
     val browserEntry: Boolean = false,
+    /** 远程页签圆点：智能体正在使用 SSH（主色）或 Tailscale 需要登录、连接失败（橙色）。 */
+    val remote: RemoteDot? = null,
 ) {
     /** 没有运行内容、改动与产物时检视器完全隐藏，只留顶栏入口。 */
     val hasContent: Boolean get() = running || pendingApprovals > 0 || hasRunContent || gitChanges > 0 || canvases > 0 || browser != null
@@ -95,6 +98,7 @@ private val ChatPage.icon: ImageVector
         ChatPage.Git -> Icons.Rounded.AccountTree
         ChatPage.Canvas -> Icons.Rounded.Dashboard
         ChatPage.Browser -> Icons.Rounded.Public
+        ChatPage.Remote -> Icons.Rounded.Lan
     }
 
 @Composable
@@ -105,6 +109,7 @@ private fun ChatPage.label(): String = stringResource(
         ChatPage.Git -> R.string.chat_inspector_tab_git
         ChatPage.Canvas -> R.string.chat_inspector_tab_canvas
         ChatPage.Browser -> R.string.chat_inspector_tab_browser
+        ChatPage.Remote -> R.string.remote_panel_title
     },
 )
 
@@ -117,6 +122,7 @@ private fun ChatPage.description(badges: ChatInspectorBadges): String = listOfNo
     } else null,
     if (this == ChatPage.Run && badges.running) stringResource(R.string.chat_inspector_running) else null,
     if (this == ChatPage.Browser) browserDotDescription(badges.browser) else null,
+    if (this == ChatPage.Remote) remoteDotDescription(badges.remote) else null,
     when (this) {
         ChatPage.Git -> badges.gitChanges
         ChatPage.Canvas -> badges.canvases
@@ -136,10 +142,14 @@ private fun InspectorIcon(page: ChatPage, badges: ChatInspectorBadges, tint: Col
         ChatPage.Run -> badges.pendingApprovals
         ChatPage.Git -> badges.gitChanges
         ChatPage.Canvas -> badges.canvases
-        ChatPage.Explorer, ChatPage.Browser -> 0
+        ChatPage.Explorer, ChatPage.Browser, ChatPage.Remote -> 0
     }
-    // 浏览器页签不计数，只用圆点区分 Agent 操作中（主色）与需要用户处理（橙色）。
-    val dot = if (page == ChatPage.Browser) browserDotColor(badges.browser) else null
+    // 浏览器与远程页签不计数，只用圆点区分 Agent 操作中（主色）与需要用户处理（橙色）。
+    val dot = when (page) {
+        ChatPage.Browser -> browserDotColor(badges.browser)
+        ChatPage.Remote -> remoteDotColor(badges.remote)
+        else -> null
+    }
     val badgeColor = if (page == ChatPage.Run) scheme.tertiary else scheme.primary
     val badgeContent = if (page == ChatPage.Run) scheme.onTertiary else scheme.onPrimary
     Layout(
@@ -183,6 +193,29 @@ private fun browserDotDescription(mode: com.promenar.infinity.data.browser.Brows
     com.promenar.infinity.data.browser.BrowserMode.AGENT -> stringResource(R.string.chat_inspector_browser_agent)
     com.promenar.infinity.data.browser.BrowserMode.HANDOFF -> stringResource(R.string.chat_inspector_browser_needs_you)
     else -> null
+}
+
+/** 远程页签圆点；两种情况同时出现时需要用户处理的橙点优先。 */
+enum class RemoteDot { AGENT, ATTENTION }
+
+internal fun remoteDot(agentUsingSsh: Boolean, tailscaleNeedsAttention: Boolean): RemoteDot? = when {
+    tailscaleNeedsAttention -> RemoteDot.ATTENTION
+    agentUsingSsh -> RemoteDot.AGENT
+    else -> null
+}
+
+@Composable
+private fun remoteDotColor(dot: RemoteDot?): Color? = when (dot) {
+    RemoteDot.AGENT -> MaterialTheme.colorScheme.primary
+    RemoteDot.ATTENTION -> MaterialTheme.colorScheme.tertiary
+    null -> null
+}
+
+@Composable
+private fun remoteDotDescription(dot: RemoteDot?): String? = when (dot) {
+    RemoteDot.AGENT -> stringResource(R.string.remote_panel_dot_agent)
+    RemoteDot.ATTENTION -> stringResource(R.string.remote_panel_dot_attention)
+    null -> null
 }
 
 private val BadgeOverlap = 4.dp

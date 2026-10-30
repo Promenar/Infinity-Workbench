@@ -64,6 +64,7 @@ object UiTags {
     const val CHAT_QUEUE_EXPAND = "chat_queue_expand"
     const val CHAT_SESSION_SETTINGS = "chat_session_settings"
     const val CHAT_MENU_WORKSPACE = "chat_menu_workspace"
+    const val CHAT_MENU_REMOTE = "chat_menu_remote"
     const val CHAT_INPUT = "chat_input"
     const val CHAT_ADD_ATTACHMENT = "chat_add_attachment"
     const val CHAT_EXECUTION_MODE = "chat_execution_mode"

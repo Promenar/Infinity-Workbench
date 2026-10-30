@@ -146,6 +146,21 @@ fun backgroundJobsSideloadLightEnglishPreview() = ActivityPreviewFrame(dark = fa
     BackgroundJobsContent(jobs = previewJobs, nowMillis = NOW, keepAliveAvailable = true, onStop = {}, onOpenLog = {})
 }
 
+// SSH 后台命令与本地任务同一列表，运行环境标签后接主机 ID。
+private val mixedJobs = listOf(
+    previewJob("ssh1", "rsync -a /data/ backup:/srv/data/", BackgroundJobState.RUNNING, runner = BackgroundJobRunner.SSH).copy(remoteHost = "nas"),
+    previewJob("sh1", "./gradlew assembleDebug", BackgroundJobState.RUNNING),
+    previewJob("ssh2", "journalctl -u app --since today", BackgroundJobState.EXITED, exit = 0, runner = BackgroundJobRunner.SSH).copy(remoteHost = "build-server"),
+)
+
+@PreviewTest
+@Preview(name = "后台任务面板 本地与 SSH 混排 深中360", widthDp = 360, heightDp = 480, locale = "zh-rCN")
+@Preview(name = "后台任务面板 本地与 SSH 混排 浅英360 大字体", widthDp = 360, heightDp = 560, locale = "en", fontScale = 1.3f)
+@Composable
+fun backgroundJobsMixedSshPreview() = ActivityPreviewFrame(dark = true) {
+    BackgroundJobsContent(jobs = mixedJobs, nowMillis = NOW, keepAliveAvailable = true, onStop = {}, onOpenLog = {})
+}
+
 @PreviewTest
 @Preview(name = "定时任务面板 Play 浅中360", widthDp = 360, heightDp = 420, locale = "zh-rCN")
 @Composable

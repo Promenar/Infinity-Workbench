@@ -1,0 +1,12 @@
+<resources>
+    <string name="ssh_remote_runner">SSH</string>
+    <string name="ssh_remote_connected_title">SSH connected to %1$d hosts</string>
+    <string name="ssh_remote_connection_row">%1$s · %2$s</string>
+    <string name="ssh_remote_kind_terminal">Terminal</string>
+    <string name="ssh_remote_kind_forward">Forward</string>
+    <string name="ssh_remote_kind_job">Background command</string>
+    <string name="ssh_remote_open">Open remote</string>
+    <string name="ssh_remote_disconnect_all">Disconnect all</string>
+    <string name="ssh_remote_timeout_title">SSH disconnected</string>
+    <string name="ssh_remote_timeout_body">System background time limit reached. Return to the app to reconnect.</string>
+</resources>

@@ -375,6 +375,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PACKAGED_PYTHON_VERSION", "\"$packagedPythonVersion\"")
         buildConfigField("String", "GIT_COMMIT_SHORT", "\"$gitCommitShortSha\"")
+        val githubOAuthClientId = providers.gradleProperty("infinity.githubOAuthClientId").orNull ?: ""
+        require(githubOAuthClientId.isEmpty() || githubOAuthClientId.matches(Regex("[A-Za-z0-9._-]+"))) {
+            "Gradle 属性 infinity.githubOAuthClientId 格式不正确：只允许字母、数字、点、下划线和连字符"
+        }
+        buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"$githubOAuthClientId\"")
 
         androidResources {
             localeFilters += listOf("en", "zh-rCN")

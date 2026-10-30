@@ -12,13 +12,13 @@ import kotlinx.serialization.json.*
 internal const val BACKGROUND_EXEC_SCHEMA = """"background":{"type":"boolean","description":"后台立即返回任务号；shell 使用会话固定运行模式，环境不可用时返回错误；默认 false"},"on_exit":{"type":"string","enum":["none","notify","wake"],"description":"后台结束处理，默认 notify；长任务优先 wake"},"max_runtime_minutes":{"type":"integer","description":"仅后台模式：最长运行 1–1440 分钟，默认 120；后台模式不使用 timeout_seconds"}"""
 internal fun JsonObject.backgroundRequested() = (this["background"] as? JsonPrimitive)?.booleanOrNull == true
 internal fun backgroundStartJson(record: BackgroundJobRecord): JsonObject = buildJsonObject {
-    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
+    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", when(record.runnerKind) { BackgroundJobRunner.SSH -> "ssh"; BackgroundJobRunner.LINUX -> "linux"; else -> "system" })
     put("runner",record.runnerKind.name.lowercase())
     put("job_id",record.id);put("state",record.state.lowercase());put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
     put("log_reference",BackgroundJobLogs.reference(record.id))
-    val confirmed=record.runnerKind!=BackgroundJobRunner.TERMUX || record.termuxPid!=null
+    val confirmed=record.runnerKind!=BackgroundJobRunner.SSH && (record.runnerKind!=BackgroundJobRunner.TERMUX || record.termuxPid!=null)
     put("launch_confirmed",confirmed)
-    put("guidance",if(confirmed) "后台任务已启动；可以继续其它工作，需要结果时用 job_status 或 job_wait；不要循环轮询。" else record.guidance ?: "启动结果尚未确认；请用 job_status 查询或 job_stop 撤销，避免重复执行。")
+    put("guidance",if(record.runnerKind==BackgroundJobRunner.SSH) "SSH 后台任务已登记；连接与启动结果通过 job_status/job_wait 查看，job_stop 只断开通道，远端进程可能仍在运行。" else if(confirmed) "后台任务已启动；可以继续其它工作，需要结果时用 job_status 或 job_wait；不要循环轮询。" else record.guidance ?: "启动结果尚未确认；请用 job_status 查询或 job_stop 撤销，避免重复执行。")
     record.guidance?.let { put("warning",it) }
     if(record.runnerKind == BackgroundJobRunner.LINUX) put("stderr_merged",true)
     if(record.isolatedWorkspace) put("workspace_mode","snapshot_merge_on_exit")
@@ -57,7 +57,7 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
     override val name=id
     override val risk=if (operation == "input") ToolRisk.PROCESS else ToolRisk.SESSION_STATE
     override val mcpServerId:String?=null
-    override val description=when(operation) {"status"->"读取本会话后台任务状态和最多 8000 字符日志末尾。";"wait"->"等待本会话后台任务结束或 1–600 秒超时；取消等待不会停止任务。";"stop"->"停止本会话后台任务整个进程组（TERM，2 秒后 KILL）。";"input"->"向本会话运行中的 Linux 任务输入文本；工作区档逐次审批，完全访问档免批。需要交互的命令不要传 stdin；newline 默认 true 追加回车，eof 默认 false；返回写入后1秒的输出尾部。";else->"列出本会话后台任务，不包含日志。"}
+    override val description=when(operation) {"status"->"读取本会话后台任务状态和最多 8000 字符日志末尾。";"wait"->"等待本会话后台任务结束或 1–600 秒超时；取消等待不会停止任务。";"stop"->"停止本会话后台任务：本机任务停止整个进程组（TERM，2 秒后 KILL）；SSH 任务断开通道，远端进程可能仍在运行。";"input"->"向本会话运行中的 Linux 任务输入文本；工作区档逐次审批，完全访问档免批。需要交互的命令不要传 stdin；newline 默认 true 追加回车，eof 默认 false；返回写入后1秒的输出尾部。";else->"列出本会话后台任务，不包含日志。"}
     override val parametersSchema=if(operation=="input") """{"type":"object","properties":{"job_id":{"type":"string"},"text":{"type":"string","description":"要写入的文本，可为空，最多32000字符"},"newline":{"type":"boolean"},"eof":{"type":"boolean"}},"required":["job_id","text"],"additionalProperties":false}""" else if(operation=="list") """{"type":"object","properties":{},"additionalProperties":false}""" else """{"type":"object","properties":{"job_id":{"type":"string"}${if(operation=="wait") ",\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"1–600 秒，默认 60\"}" else ""}},"required":["job_id"],"additionalProperties":false}"""
     override suspend fun execute(rawArgs:JsonObject,context:SkillExecutionContext)=jobToolResult(id) {
         val normalized = ExecToolArguments.normalize(rawArgs)
@@ -71,17 +71,22 @@ private class JobSkill(private val jobs:BackgroundJobManager,private val operati
         normalized.result(response)
     }
     private suspend fun info(record:BackgroundJobRecord):JsonObject {
-        val runtime = if (record.directWorkspace) record.commandResult ?: JsonObject(emptyMap()) else if (record.runnerKind == BackgroundJobRunner.TERMUX) JsonObject(emptyMap()) else
+        val runtime = if (record.directWorkspace || record.runnerKind == BackgroundJobRunner.SSH) record.commandResult ?: JsonObject(emptyMap()) else if (record.runnerKind == BackgroundJobRunner.TERMUX) JsonObject(emptyMap()) else
             com.promenar.infinity.data.exec.RuntimeDataMonitor.backgroundResult(java.io.File(record.runDirectory), expectResult = !record.running)
         return JsonObject(buildJsonObject {
-    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", if(record.runnerKind==BackgroundJobRunner.LINUX) "linux" else "system")
+    if(record.runnerKind!=BackgroundJobRunner.TERMUX) put("runtime", when(record.runnerKind) { BackgroundJobRunner.SSH -> "ssh"; BackgroundJobRunner.LINUX -> "linux"; else -> "system" })
     put("runner",record.runnerKind.name.lowercase())
     put("job_id",record.id);put("state",record.state.lowercase());put("exit_code",record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
         put("summary",record.summary);put("elapsed_seconds",BackgroundJobCompletion.elapsedSeconds(record));put("started_at",java.time.Instant.ofEpochMilli(record.startedAtMillis).toString())
-        put("log_reference",BackgroundJobLogs.reference(record.id));put("keep_alive",jobs.keepAliveMode)
+        put("log_reference",BackgroundJobLogs.reference(record.id));put("keep_alive",if(record.runnerKind==BackgroundJobRunner.SSH) "service" else jobs.keepAliveMode)
         if (record.runnerKind == BackgroundJobRunner.LINUX) put("stderr_merged", true)
-        if (record.directWorkspace) put("workspace_mode", "direct_reconcile_on_exit")
+        if (record.directWorkspace && record.runnerKind != BackgroundJobRunner.SSH) put("workspace_mode", "direct_reconcile_on_exit")
         record.guidance?.let{put("guidance",it)}
-        } + runtime)
+        } + runtime + buildJsonObject {
+            if (record.runnerKind == BackgroundJobRunner.SSH) {
+                record.guidance?.let { put("guidance", it) }
+                put("exit_code", record.exitCode?.let(::JsonPrimitive) ?: JsonNull)
+            }
+        })
     }
 }

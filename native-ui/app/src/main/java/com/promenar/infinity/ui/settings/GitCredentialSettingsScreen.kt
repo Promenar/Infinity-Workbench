@@ -1,6 +1,13 @@
 package com.promenar.infinity.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +64,9 @@ internal data class GitCredentialSettingsActions(
     val onSave: (host: String, username: String, token: CharArray) -> Unit = { _, _, token -> token.fill('\u0000') },
     val onDelete: (String) -> Unit = {},
     val onOpenSsh: () -> Unit = {},
+    val onStartGitHubLogin: () -> Unit = {},
+    val onCloseGitHubLogin: () -> Unit = {},
+    val onOpenGitHubVerification: (verificationUri: String, userCode: String) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -72,8 +82,24 @@ fun GitCredentialSettingsScreen(onBack: () -> Unit, onOpenSsh: () -> Unit) {
             onSave = viewModel::save,
             onDelete = viewModel::delete,
             onOpenSsh = onOpenSsh,
+            onStartGitHubLogin = viewModel::startGitHubLogin,
+            onCloseGitHubLogin = viewModel::closeGitHubLogin,
+            onOpenGitHubVerification = { uri, code -> openGitHubVerification(context, uri, code) },
         ),
     )
+}
+
+/** 复制设备码并用系统浏览器打开验证页；只接受 https 的 github.com 地址。 */
+private fun openGitHubVerification(context: Context, verificationUri: String, userCode: String) {
+    context.getSystemService(ClipboardManager::class.java)
+        ?.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.github_login_code_label), userCode))
+    val uri = Uri.parse(verificationUri).takeIf { it.scheme == "https" && it.host == "github.com" }
+        ?: Uri.parse("https://github.com/login/device")
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+        // 没有浏览器时代码已复制，用户可在其它设备打开验证页。
+    }
 }
 
 /** Git 凭据页：已保存的主机只显示主机与用户名，令牌输入始终遮蔽且不提供显示原文。 */
@@ -111,6 +137,24 @@ internal fun GitCredentialSettingsContent(
         modifier = modifier,
     ) { contentPadding ->
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
+            if (state.githubLoginAvailable) {
+                item("github") {
+                    InfinitySettingsSection(
+                        title = stringResource(R.string.github_login_section),
+                        footer = stringResource(R.string.github_login_entry_footer),
+                    ) {
+                        InfinitySettingsItem(
+                            icon = Icons.AutoMirrored.Rounded.Login,
+                            title = stringResource(R.string.github_login_title),
+                            subtitle = stringResource(R.string.github_login_entry_summary),
+                            onClick = actions.onStartGitHubLogin,
+                            enabled = state.credentials != null,
+                            showChevron = true,
+                            modifier = Modifier.testTag("git_credential_github_login"),
+                        )
+                    }
+                }
+            }
             item("saved") {
                 InfinitySettingsSection(
                     title = stringResource(R.string.git_credentials_saved_section),
@@ -204,6 +248,15 @@ internal fun GitCredentialSettingsContent(
             )
         }
     }
+    GitHubLoginSheet(
+        state = state.githubLogin,
+        actions = GitHubLoginSheetActions(
+            onCancel = actions.onCloseGitHubLogin,
+            onRetry = actions.onStartGitHubLogin,
+            onOpenBrowser = actions.onOpenGitHubVerification,
+            onDone = actions.onCloseGitHubLogin,
+        ),
+    )
     deleting?.let { credential ->
         InfinityConfirmDialog(
             onDismissRequest = { deleting = null },

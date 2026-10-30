@@ -7,7 +7,7 @@ import android.content.SharedPreferences
  *
  * `enabled_skills` 保存用户启用的工具，`known_builtin_skills` 保存用户在设置中已经见过的工具。
  * 不在已知集合中的新内置工具默认启用，避免旧版本固化的启用集合把后续新增工具永久排除。
- * Termux 执行工具额外要求用户显式开启集成，默认不暴露；Agent 管理 SSH 主机的工具同样需要在 SSH 设置中显式开启。
+ * Termux 执行工具额外要求用户显式开启集成，默认不暴露；Agent 管理 SSH 主机的工具默认开启，用户可在 SSH 设置中关闭。
  * 两个集合都可能混用设置键（如 `file_read`）与运行时 id（如 `read_file`），读取时统一归一为运行时 id。
  */
 object BuiltinToolPreferences {

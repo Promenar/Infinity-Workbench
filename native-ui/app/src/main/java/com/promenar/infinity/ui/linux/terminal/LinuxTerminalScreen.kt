@@ -414,9 +414,10 @@ private fun ExitedBanner(tab: TerminalTab.Shell, onClose: (String) -> Unit) {
 /**
  * 额外按键：两行七列的紧凑网格，与 Termux 按键行同为 40dp 高。
  * 上行 `Esc / - | ~ ↑ 键盘`，下行 `Tab Ctrl Alt ← ↓ →`；Ctrl、Alt 各占一格半，使 ↑ 与 ↓ 对齐在同一列。
+ * SSH 终端共用同一按键行。
  */
 @Composable
-private fun ExtraKeys(
+internal fun ExtraKeys(
     modifiers: TerminalModifiers,
     enabled: Boolean,
     imeVisible: Boolean,

@@ -9,6 +9,10 @@ import com.promenar.infinity.data.git.remote.GitCredential
 import com.promenar.infinity.data.git.remote.GitCredentialHost
 import com.promenar.infinity.data.git.remote.GitCredentialInputException
 import com.promenar.infinity.data.git.remote.GitCredentialStore
+import com.promenar.infinity.data.git.remote.GitHubDeviceFailure
+import com.promenar.infinity.data.git.remote.GitHubDeviceFlowException
+import com.promenar.infinity.data.git.remote.GitHubDeviceLogin
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -31,22 +35,38 @@ sealed interface GitCredentialOperation {
 
 enum class GitCredentialErrorCode { INVALID_HOST, INVALID_USERNAME, INVALID_TOKEN, LOAD_FAILED, SAVE_FAILED, DELETE_FAILED }
 
+/** 浏览器登录 GitHub 的进度；令牌只在后端流转，不进入界面状态。 */
+sealed interface GitHubLoginState {
+    data object Idle : GitHubLoginState
+    data object Requesting : GitHubLoginState
+    data class AwaitingUser(val userCode: String, val verificationUri: String, val expiresAtMillis: Long) : GitHubLoginState
+    data class Success(val login: String) : GitHubLoginState
+    data class Failed(val failure: GitHubDeviceFailure) : GitHubLoginState
+}
+
 /** 界面状态只含主机与用户名，令牌不进入 StateFlow。[credentials] 为 null 表示仍在读取。 */
 data class GitCredentialUiState(
     val credentials: List<GitCredential>? = null,
     val operation: GitCredentialOperation = GitCredentialOperation.Idle,
+    /** 构建时配置了 OAuth App client_id 才提供浏览器登录。 */
+    val githubLoginAvailable: Boolean = false,
+    val githubLogin: GitHubLoginState = GitHubLoginState.Idle,
 )
 
 /** [store] 在 [ioDispatcher] 上首次取用：凭据存储构造时要解密 Keystore 中的主机列表，不能放在主线程。 */
 class GitCredentialSettingsViewModel(
     private val store: () -> GitCredentialStore,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val githubLogin: GitHubDeviceLogin? = null,
 ) : ViewModel() {
     private val credentials = MutableStateFlow<List<GitCredential>?>(null)
     private val operation = MutableStateFlow<GitCredentialOperation>(GitCredentialOperation.Idle)
+    private val github = MutableStateFlow<GitHubLoginState>(GitHubLoginState.Idle)
+    private var githubJob: Job? = null
 
-    val state: StateFlow<GitCredentialUiState> = combine(credentials, operation) { list, current -> GitCredentialUiState(list, current) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, GitCredentialUiState())
+    val state: StateFlow<GitCredentialUiState> = combine(credentials, operation, github) { list, current, login ->
+        GitCredentialUiState(list, current, githubLoginAvailable = githubLogin?.configured == true, githubLogin = login)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, GitCredentialUiState(githubLoginAvailable = githubLogin?.configured == true))
 
     init {
         viewModelScope.launch {
@@ -93,6 +113,35 @@ class GitCredentialSettingsViewModel(
         }
     }
 
+    /** 开始（或重试）浏览器登录；已在进行中时忽略。成功后凭据列表经存储自动刷新。 */
+    fun startGitHubLogin() {
+        val login = githubLogin?.takeIf { it.configured } ?: return
+        if (githubJob?.isActive == true) return
+        github.value = GitHubLoginState.Requesting
+        githubJob = viewModelScope.launch {
+            github.value = try {
+                GitHubLoginState.Success(
+                    login.login { code ->
+                        github.value = GitHubLoginState.AwaitingUser(code.userCode, code.verificationUri, code.expiresAtMillis)
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: GitHubDeviceFlowException) {
+                GitHubLoginState.Failed(failure.failure)
+            } catch (_: Exception) {
+                GitHubLoginState.Failed(GitHubDeviceFailure.NETWORK)
+            }
+        }
+    }
+
+    /** 关闭授权面板：仍在等待时停止轮询。 */
+    fun closeGitHubLogin() {
+        githubJob?.cancel()
+        githubJob = null
+        github.value = GitHubLoginState.Idle
+    }
+
     fun delete(host: String) {
         viewModelScope.launch {
             operation.value = try {
@@ -110,7 +159,10 @@ class GitCredentialSettingsViewModel(
         fun factory(application: Application): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GitCredentialSettingsViewModel({ (application as InfinityApplication).gitCredentialStore }) as T
+                GitCredentialSettingsViewModel(
+                    { (application as InfinityApplication).gitCredentialStore },
+                    githubLogin = (application as InfinityApplication).gitHubDeviceLogin,
+                ) as T
         }
     }
 }

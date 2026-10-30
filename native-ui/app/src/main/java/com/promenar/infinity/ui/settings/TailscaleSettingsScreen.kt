@@ -27,6 +27,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.rounded.Add
+import com.promenar.infinity.data.ssh.SshHost
+import com.promenar.infinity.ui.common.InfinityIdentifierText
+import com.promenar.infinity.ui.ssh.SshTailnetCandidate
+import com.promenar.infinity.ui.ssh.sshTailnetCandidates
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.ui.common.InfinityBottomSheet
@@ -104,13 +110,21 @@ internal data class TailscaleSettingsActions(
 )
 
 @Composable
-fun TailscaleSettingsScreen(onBack: () -> Unit) {
+fun TailscaleSettingsScreen(
+    onBack: () -> Unit,
+    /** 会话“远程”面板传入：设备行显示“SSH”，点按后在 SSH 分段打开预填的新建主机面板。 */
+    onAddSshHost: ((TailnetPeer) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val viewModel: TailscaleSettingsViewModel =
         viewModel(factory = TailscaleSettingsViewModel.factory(context.applicationContext as android.app.Application))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val noticeHost = remember { SnackbarHostState() }
+    val sshHosts by remember(context, onAddSshHost != null) {
+        if (onAddSshHost == null) kotlinx.coroutines.flow.flowOf(emptyList())
+        else (context.applicationContext as com.promenar.infinity.InfinityApplication).sshHostStore.observeHosts()
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     LifecycleResumeEffect(viewModel) {
         viewModel.refresh()
@@ -155,6 +169,8 @@ fun TailscaleSettingsScreen(onBack: () -> Unit) {
                     onAuthKeyEdited = viewModel::clearAuthKeyError,
                 ),
                 contentPadding = contentPadding,
+                sshHosts = sshHosts,
+                onAddSshHost = onAddSshHost,
             )
             SnackbarHost(
                 hostState = noticeHost,
@@ -204,6 +220,8 @@ internal fun TailscaleSettingsContent(
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
     initialEditor: TailscaleEditor? = null,
+    sshHosts: List<SshHost> = emptyList(),
+    onAddSshHost: ((TailnetPeer) -> Unit)? = null,
 ) {
     val settings = state.settings
     val tailnet = state.tailnet
@@ -253,7 +271,7 @@ internal fun TailscaleSettingsContent(
                 }
             }
             if (tailnet.phase == TailnetPhase.RUNNING) {
-                item { TailscalePeersSection(tailnet.peers) }
+                item { TailscalePeersSection(tailnet.peers, sshHosts, onAddSshHost) }
             }
         }
         item {
@@ -375,22 +393,31 @@ private fun TailscaleStatusSection(state: TailscaleSettingsUiState, actions: Tai
 }
 
 @Composable
-private fun TailscalePeersSection(peers: List<TailnetPeer>) {
+private fun TailscalePeersSection(peers: List<TailnetPeer>, sshHosts: List<SshHost>, onAddSshHost: ((TailnetPeer) -> Unit)?) {
     val online = peers.count { it.online }
+    // 可添加为 SSH 主机的设备（有 tailnet 地址）及已指向它的主机 ID。
+    val candidates = remember(peers, sshHosts, onAddSshHost != null) {
+        if (onAddSshHost == null) emptyMap() else sshTailnetCandidates(peers, sshHosts).associateBy { it.peer }
+    }
     InfinitySettingsSection(
         title = stringResource(R.string.tailscale_section_peers),
         footer = if (peers.isEmpty()) {
             stringResource(R.string.tailscale_peers_empty)
         } else {
-            pluralStringResource(R.plurals.tailscale_peers_summary, peers.size, online, peers.size)
+            listOfNotNull(
+                pluralStringResource(R.plurals.tailscale_peers_summary, peers.size, online, peers.size),
+                if (candidates.isNotEmpty()) stringResource(R.string.ssh_tailnet_add_host_hint) else null,
+            ).joinToString(" ")
         },
     ) {
-        peers.sortedForDisplay().forEach { peer -> TailscalePeerRow(peer) }
+        peers.sortedForDisplay().forEach { peer ->
+            TailscalePeerRow(peer, candidates[peer], onAddSshHost)
+        }
     }
 }
 
 @Composable
-private fun TailscalePeerRow(peer: TailnetPeer) {
+private fun TailscalePeerRow(peer: TailnetPeer, candidate: SshTailnetCandidate? = null, onAddSshHost: ((TailnetPeer) -> Unit)? = null) {
     val onlineText = stringResource(if (peer.online) R.string.tailscale_peer_online else R.string.tailscale_peer_offline)
     // 在线状态由图标角标表达，离线与不在白名单另在副标题写明；读屏通过 stateDescription 读出在线状态。
     val subtitle = listOfNotNull(
@@ -405,8 +432,32 @@ private fun TailscalePeerRow(peer: TailnetPeer) {
         enabled = peer.allowed,
         titleColor = if (peer.online) null else MaterialTheme.colorScheme.onSurfaceVariant,
         leadingContent = { TailscalePeerIcon(peer) },
-        modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = onlineText },
+        modifier = Modifier.semantics(mergeDescendants = candidate == null) { stateDescription = onlineText },
+        trailingContent = if (candidate == null || onAddSshHost == null) null else {
+            { TailscalePeerSshAction(peer, candidate.existingAlias) { onAddSshHost(peer) } }
+        },
     )
+}
+
+/** 设备行尾：已添加为 SSH 主机时显示主机 ID，否则显示“SSH”添加按钮。 */
+@Composable
+private fun TailscalePeerSshAction(peer: TailnetPeer, existingAlias: String?, onAdd: () -> Unit) {
+    if (existingAlias != null) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.XSmall)) {
+            Icon(Icons.Rounded.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            InfinityIdentifierText(existingAlias, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        return
+    }
+    val description = stringResource(R.string.ssh_tailnet_add_host_cd, peer.name)
+    TextButton(
+        onClick = onAdd,
+        modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag("tailscale_peer_add_ssh:${peer.name}")
+            .semantics { contentDescription = description },
+    ) {
+        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(InfinitySpacing.Large))
+        Text(stringResource(R.string.ssh_tailnet_add_host), modifier = Modifier.padding(start = InfinitySpacing.XSmall))
+    }
 }
 
 /** 设备类别图标，右下角小点表示是否在线；提供商表单的设备面板复用。 */

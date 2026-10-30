@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -37,18 +37,12 @@ import androidx.compose.ui.platform.testTag
 import com.promenar.infinity.ui.common.InfinitySettingsGroup
 import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import androidx.compose.material.icons.rounded.SwapHoriz
-import androidx.compose.material.icons.rounded.AddCircleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.WarningAmber
@@ -56,7 +50,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -67,11 +60,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -92,6 +85,7 @@ import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.data.security.SshCredential
 import com.promenar.infinity.data.ssh.SshAuthType
 import com.promenar.infinity.data.ssh.SshAgentPreferences
+import com.promenar.infinity.data.ssh.SshActiveConnection
 import com.promenar.infinity.data.ssh.SshHost
 import com.promenar.infinity.data.ssh.SshHostKey
 import com.promenar.infinity.data.ssh.SshKeyGenerator
@@ -118,27 +112,66 @@ import com.promenar.infinity.ui.ssh.safeSshError
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.forInput
 import com.promenar.infinity.ui.theme.infinityDomainColors
+import com.promenar.infinity.ui.common.InfinityStatusKind
+import com.promenar.infinity.ui.common.InfinityStatusStrip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.promenar.infinity.ui.common.InfinityMetaLine
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.TimerOff
+import androidx.compose.runtime.LaunchedEffect
+import com.promenar.infinity.data.ssh.SshTerminalIdlePolicy
+import com.promenar.infinity.data.tailnet.TailnetPeer
+import com.promenar.infinity.ui.common.InfinityDropdownMenu
+import com.promenar.infinity.ui.common.InfinityMenuItem
+import com.promenar.infinity.ui.ssh.SshHostEditorFieldsTarget
+import com.promenar.infinity.ui.ssh.SshTailnetAvailability
+import com.promenar.infinity.ui.ssh.SshTailnetCandidate
+import com.promenar.infinity.ui.ssh.SshTailnetPickerSheet
+import com.promenar.infinity.ui.ssh.applyTailnetCandidate
+import com.promenar.infinity.ui.ssh.sshTailnetAvailability
+import com.promenar.infinity.ui.ssh.sshTailnetCandidates
 
 private enum class SshPendingAction { VERIFY, TERMINAL, FORWARD }
 private data class SshTrustPrompt(val host: SshHost, val key: SshHostKey, val action: SshPendingAction)
 
+/**
+ * SSH 主机设置。[leadingContent] 插在列表最前，供会话“远程”面板放“智能体正在使用”；
+ * 嵌入面板时由 [com.promenar.infinity.ui.common.LocalInfinitySettingsEmbedded] 去掉顶栏。
+ */
 @Composable
-fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
+fun SshSettingsScreen(
+    onBack: () -> Unit,
+    onOpenTerminal: (String) -> Unit,
+    leadingContent: (LazyListScope.() -> Unit)? = null,
+    importPeer: TailnetPeer? = null,
+    onImportConsumed: () -> Unit = {},
+    onOpenTailscale: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val app = context.applicationContext as InfinityApplication
     val store = app.sshHostStore
     val runtime = app.sshRuntime
     val hosts by remember(store) { store.observeHosts() }.collectAsState(initial = emptyList())
     val forwards by runtime.forwardStates.collectAsState()
+    val activity by runtime.activity.collectAsState()
     val cleanupWarnings by runtime.cleanupWarnings.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<SshHost?>(null) }
     var showEditor by remember { mutableStateOf(false) }
+    // 从“远程 › Tailscale”带来的设备：打开新建面板并预填。
+    var editorPeer by remember { mutableStateOf<TailnetPeer?>(null) }
+    LaunchedEffect(importPeer) {
+        if (importPeer != null) {
+            editing = null
+            editorPeer = importPeer
+            showEditor = true
+            onImportConsumed()
+        }
+    }
     var deleting by remember { mutableStateOf<SshHost?>(null) }
     var trustPrompt by remember { mutableStateOf<SshTrustPrompt?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -146,6 +179,16 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     var statusIsError by remember { mutableStateOf(false) }
     val settingsPrefs = remember(context) { context.getSharedPreferences("infinity_settings", Context.MODE_PRIVATE) }
     var agentManagement by remember(settingsPrefs) { mutableStateOf(SshAgentPreferences.isHostManagementEnabled(settingsPrefs)) }
+    // 设置页与会话“远程”面板可能同时显示该开关，跟随偏好变化刷新。
+    DisposableEffect(settingsPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == SshAgentPreferences.HOST_MANAGEMENT_KEY) agentManagement = SshAgentPreferences.isHostManagementEnabled(prefs)
+        }
+        settingsPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { settingsPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val idlePolicy by remember(settingsPrefs) { SshTerminalIdlePolicy.observe(settingsPrefs) }
+        .collectAsState(initial = remember(settingsPrefs) { SshTerminalIdlePolicy.read(settingsPrefs) })
     val copiedMessage = stringResource(R.string.ssh_public_key_copied)
     val verifiedMessage = stringResource(R.string.ssh_fingerprint_matches)
 
@@ -172,7 +215,11 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 status = verifiedMessage
                 statusIsError = false
             }
-            SshPendingAction.TERMINAL -> onOpenTerminal(host.alias)
+            SshPendingAction.TERMINAL -> {
+                // 用户明确打开终端：已断开的终端在此重新连接，其余情况沿用正在运行的终端。
+                com.promenar.infinity.ui.ssh.SshUserTerminals.open(app, host.alias)
+                onOpenTerminal(host.alias)
+            }
             SshPendingAction.FORWARD -> withContext(Dispatchers.IO) { runtime.startForward(host.alias) }
         }
     }
@@ -196,17 +243,25 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 status = status,
                 statusIsError = statusIsError,
                 agentManagementEnabled = agentManagement,
+                activeConnections = activity.connections,
+                terminalIdlePolicy = idlePolicy,
             ),
+            leadingContent = leadingContent,
             actions = SshSettingsVisualActions(
+                onOpenConnectedTerminal = onOpenTerminal,
+                onDisconnect = { connection ->
+                    perform { withContext(Dispatchers.IO) { runtime.disconnect(connection.owner, connection.alias) } }
+                },
+                onTerminalIdlePolicyChange = { SshTerminalIdlePolicy.write(settingsPrefs, it) },
                 onAgentManagementChange = { value ->
                     settingsPrefs.edit().putBoolean(SshAgentPreferences.HOST_MANAGEMENT_KEY, value).apply()
                     agentManagement = value
                 },
                 onBack = onBack,
-                onAddHost = { editing = null; showEditor = true },
+                onAddHost = { editing = null; editorPeer = null; showEditor = true },
                 onTerminal = { verify(it, SshPendingAction.TERMINAL) },
                 onVerify = { verify(it, SshPendingAction.VERIFY) },
-                onEdit = { editing = it; showEditor = true },
+                onEdit = { editing = it; editorPeer = null; showEditor = true },
                 onDelete = { deleting = it },
                 onCopyPublicKey = { host ->
                     perform {
@@ -239,8 +294,10 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     if (showEditor) {
         SshHostEditorSheet(
             existing = editing,
-            takenAliases = hosts.mapTo(mutableSetOf()) { it.alias },
-            onDismiss = { showEditor = false; editing = null },
+            hosts = hosts,
+            initialPeer = editorPeer,
+            onOpenTailnetAllowlist = onOpenTailscale,
+            onDismiss = { showEditor = false; editing = null; editorPeer = null },
             onSave = { host, credential, generate ->
                 val publicKey = withContext(Dispatchers.IO) {
                     if (generate) {
@@ -266,6 +323,7 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 }
                 showEditor = false
                 editing = null
+                editorPeer = null
             },
         )
     }
@@ -347,7 +405,10 @@ internal data class SshSettingsVisualState(
     val cleanupWarning: Boolean = false,
     val status: String? = null,
     val statusIsError: Boolean = false,
-    val agentManagementEnabled: Boolean = false,
+    val agentManagementEnabled: Boolean = true,
+    /** 当前活动的 SSH 连接（终端、转发、智能体与后台命令）。 */
+    val activeConnections: List<SshActiveConnection> = emptyList(),
+    val terminalIdlePolicy: SshTerminalIdlePolicy = SshTerminalIdlePolicy.OFF,
 )
 
 internal data class SshSettingsVisualActions(
@@ -360,6 +421,10 @@ internal data class SshSettingsVisualActions(
     val onCopyPublicKey: (SshHost) -> Unit = {},
     val onToggleForward: (SshHost) -> Unit = {},
     val onAgentManagementChange: (Boolean) -> Unit = {},
+    val onTerminalIdlePolicyChange: (SshTerminalIdlePolicy) -> Unit = {},
+    val onDisconnect: (SshActiveConnection) -> Unit = {},
+    /** 回到已连接的终端，不再核验指纹。 */
+    val onOpenConnectedTerminal: (String) -> Unit = {},
 )
 
 @Composable
@@ -368,6 +433,7 @@ internal fun SshSettingsContent(
     actions: SshSettingsVisualActions,
     modifier: Modifier = Modifier,
     initialActionHostId: String? = null,
+    leadingContent: (LazyListScope.() -> Unit)? = null,
 ) {
     InfinitySettingsPageLayout(
         title = stringResource(R.string.ssh_settings_title),
@@ -379,6 +445,17 @@ internal fun SshSettingsContent(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            leadingContent?.invoke(this)
+            if (sortedActiveConnections(state.activeConnections).isNotEmpty()) {
+                item("active") {
+                    SshActiveConnectionsSection(
+                        connections = state.activeConnections,
+                        enabled = !state.busy,
+                        onOpenTerminal = actions.onOpenConnectedTerminal,
+                        onDisconnect = actions.onDisconnect,
+                    )
+                }
+            }
             item("manage") {
                 // 主机列表：每台主机一行，常用的“打开终端”在行尾，其余操作收进主机操作面板。
                 InfinitySettingsSection(
@@ -409,6 +486,9 @@ internal fun SshSettingsContent(
                         modifier = Modifier.testTag("ssh_add_host"),
                     )
                 }
+            }
+            item("terminal") {
+                SshTerminalIdleSection(state.terminalIdlePolicy, enabled = !state.busy, onChange = actions.onTerminalIdlePolicyChange)
             }
             item("agent") {
                 InfinitySettingsSection(
@@ -573,14 +653,13 @@ internal fun SshHostActionsContent(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = listOfNotNull(
-                    stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
-                    if (host.localForwardPort != null) stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0) else null,
-                ).joinToString("\n"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (host.localForwardPort != null) {
+                Text(
+                    text = stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         InfinitySettingsGroup {
             SshActionItem(Icons.Rounded.Terminal, stringResource(R.string.ssh_open_terminal), enabled, onTerminal,
@@ -670,15 +749,21 @@ private fun SshStatusTag(text: String, icon: ImageVector, color: Color) {
     }
 }
 
-/** 主机编辑表单的字段；密码与口令只在面板存续期间保留在内存。 */
+/**
+ * 主机编辑表单的字段；密码与口令只在面板存续期间保留在内存。
+ * 用户终端改为一直保持连接后，表单不再编辑“退出时保留终端”，已有主机的旧值原样保存。
+ */
 @Stable
-internal class SshHostEditorFields(existing: SshHost?) {
+internal class SshHostEditorFields(existing: SshHost?, initialCandidate: SshTailnetCandidate? = null) : SshHostEditorFieldsTarget {
     var alias by mutableStateOf(existing?.alias.orEmpty())
-    var hostname by mutableStateOf(existing?.hostname.orEmpty())
+    override var hostname by mutableStateOf(existing?.hostname.orEmpty())
+
+    /** 从 tailnet 选择的设备；主机名改成别的地址后清除。 */
+    override var tailnetPeer by mutableStateOf<TailnetPeer?>(null)
     var port by mutableStateOf((existing?.port ?: 22).toString())
     var username by mutableStateOf(existing?.username.orEmpty())
     var authType by mutableStateOf(existing?.authType ?: SshAuthType.KEY)
-    var keepTerminal by mutableStateOf(existing?.keepTerminal ?: false)
+    private val keepTerminal = existing?.keepTerminal ?: false
     var forwarding by mutableStateOf(existing?.localForwardPort != null)
     var localPort by mutableStateOf(existing?.localForwardPort?.toString().orEmpty())
     var forwardHost by mutableStateOf(existing?.forwardHost ?: "127.0.0.1")
@@ -686,9 +771,18 @@ internal class SshHostEditorFields(existing: SshHost?) {
     var password by mutableStateOf("")
     var passphrase by mutableStateOf("")
 
+    init {
+        initialCandidate?.let(::applyTailnetCandidate)
+    }
+
+    fun editHostname(value: String) {
+        hostname = value
+        if (tailnetPeer?.ips?.contains(value.trim()) != true) tailnetPeer = null
+    }
+
     fun draft() = SshHostDraft(
         alias, hostname, port, username, authType, keepTerminal, forwarding,
-        localPort, forwardHost, forwardPort,
+        localPort, forwardHost, forwardPort, aliasSeed = tailnetPeer?.name,
     )
 }
 
@@ -699,14 +793,25 @@ internal enum class SshKeySource { FILE, CLIPBOARD }
 @Composable
 private fun SshHostEditorSheet(
     existing: SshHost?,
-    takenAliases: Set<String>,
+    hosts: List<SshHost>,
+    initialPeer: TailnetPeer?,
+    onOpenTailnetAllowlist: (() -> Unit)?,
     onDismiss: () -> Unit,
     onSave: suspend (SshHost, SshCredential?, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    val fields = remember { SshHostEditorFields(existing) }
+    val takenAliases = remember(hosts) { hosts.mapTo(mutableSetOf()) { it.alias } }
+    val fields = remember {
+        SshHostEditorFields(existing, initialPeer?.let { sshTailnetCandidates(listOf(it), hosts).firstOrNull() })
+    }
+    val tailnetManager = (context.applicationContext as InfinityApplication).tailnetManager
+    val tailnet by tailnetManager.state.collectAsState()
+    // 只有新建主机时才提供从 tailnet 选择；编辑已有主机改地址仍手动输入。
+    val tailnetAvailability = if (existing == null) sshTailnetAvailability(tailnetManager.available, tailnet.phase)
+    else SshTailnetAvailability.HIDDEN
+    var showTailnetPicker by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     var privateKey by remember { mutableStateOf<ByteArray?>(null) }
     var keySource by remember { mutableStateOf<SshKeySource?>(null) }
@@ -825,7 +930,7 @@ private fun SshHostEditorSheet(
         SshHostEditorForm(
             fields = fields,
             existing = existing,
-            aliasSuggestion = if (existing == null) SshHostDraft.suggestAlias(fields.hostname, takenAliases) else null,
+            aliasSuggestion = if (existing == null) SshHostDraft.suggestAlias(fields.tailnetPeer?.name ?: fields.hostname, takenAliases) else null,
             busy = busy,
             keySource = keySource,
             errorCode = errorCode,
@@ -836,6 +941,21 @@ private fun SshHostEditorSheet(
             onGenerate = { save(true) },
             onCancel = onDismiss,
             onSave = { save(false) },
+            tailnet = tailnetAvailability,
+            onPickTailnet = { showTailnetPicker = true },
+            onOpenTailnetAllowlist = onOpenTailnetAllowlist?.let { open -> { onDismiss(); open() } },
+        )
+    }
+    if (showTailnetPicker) {
+        SshTailnetPickerSheet(
+            candidates = sshTailnetCandidates(tailnet.peers, hosts),
+            tailnetName = tailnet.summary?.tailnetName,
+            onPick = { candidate ->
+                fields.applyTailnetCandidate(candidate)
+                if (errorCode == "SSH_HOST_INVALID") errorCode = null
+                showTailnetPicker = false
+            },
+            onDismiss = { showTailnetPicker = false },
         )
     }
 }
@@ -856,6 +976,9 @@ internal fun SshHostEditorForm(
     onGenerate: () -> Unit,
     onCancel: () -> Unit,
     onSave: () -> Unit,
+    tailnet: SshTailnetAvailability = SshTailnetAvailability.HIDDEN,
+    onPickTailnet: () -> Unit = {},
+    onOpenTailnetAllowlist: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth().fillMaxHeight()) {
         Column(
@@ -878,7 +1001,17 @@ internal fun SshHostEditorForm(
                         isError = errorCode in SshErrorMessages.ALIAS_CODES,
                         testTag = "ssh_editor_alias",
                     )
-                    SshEditorField(fields.hostname, { fields.hostname = it }, R.string.ssh_hostname, enabled = !busy, isError = errorCode == "SSH_HOST_INVALID")
+                    SshEditorField(
+                        fields.hostname, fields::editHostname, R.string.ssh_hostname, enabled = !busy, isError = errorCode == "SSH_HOST_INVALID",
+                        supportingText = if (tailnet == SshTailnetAvailability.DISCONNECTED) stringResource(R.string.ssh_tailnet_disconnected) else null,
+                        trailing = if (tailnet == SshTailnetAvailability.HIDDEN) null else {
+                            { SshTailnetPickButton(enabled = !busy && tailnet == SshTailnetAvailability.CONNECTED, onClick = onPickTailnet) }
+                        },
+                        testTag = "ssh_editor_hostname",
+                    )
+                    fields.tailnetPeer?.takeIf { !it.allowed }?.let { peer ->
+                        SshTailnetBlockedNotice(peer.name, onOpenTailnetAllowlist)
+                    }
                     SshEditorField(fields.port, { fields.port = it }, R.string.ssh_port, keyboardType = KeyboardType.Number, enabled = !busy, isError = errorCode == "SSH_PORT_INVALID")
                     SshEditorField(fields.username, { fields.username = it }, R.string.ssh_username, enabled = !busy, isError = errorCode == "SSH_USERNAME_INVALID")
                 }
@@ -939,19 +1072,6 @@ internal fun SshHostEditorForm(
                         }
                     }
                 }
-            }
-            InfinitySettingsSection(
-                title = stringResource(R.string.ssh_visual_terminal_section),
-                footer = stringResource(R.string.ssh_keep_terminal_help),
-            ) {
-                SettingsToggle(
-                    title = stringResource(R.string.ssh_keep_terminal),
-                    description = stringResource(R.string.settings_batch1_ssh_keep_summary),
-                    checked = fields.keepTerminal,
-                    onCheckedChange = { fields.keepTerminal = it },
-                    icon = Icons.Rounded.Terminal,
-                    enabled = !busy,
-                )
             }
             InfinitySettingsSection(
                 title = stringResource(R.string.ssh_forward_configure),
@@ -1019,6 +1139,7 @@ private fun SshEditorField(
     placeholder: String? = null,
     isError: Boolean = false,
     testTag: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val field = @Composable {
         OutlinedTextField(
@@ -1026,6 +1147,7 @@ private fun SshEditorField(
             onValueChange = onValueChange,
             label = { Text(stringResource(label)) },
             placeholder = placeholder?.let { { Text(it) } },
+            trailingIcon = trailing,
             supportingText = supportingText?.let { { Text(it) } },
             isError = isError,
             enabled = enabled,
@@ -1044,6 +1166,76 @@ private fun SshEditorField(
     }
     if (secret) SecretTextInput(field) else field()
 }
+
+/** 主机名输入框行尾的“Tailscale”：打开 tailnet 设备选择；未连接时灰显，原因写在输入框下方。 */
+@Composable
+private fun SshTailnetPickButton(enabled: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.padding(end = InfinitySpacing.XSmall).heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag("ssh_editor_tailnet"),
+    ) {
+        Icon(Icons.Rounded.Hub, contentDescription = null, modifier = Modifier.size(InfinitySpacing.Large))
+        Text(stringResource(R.string.ssh_tailnet_pick_button), modifier = Modifier.padding(start = InfinitySpacing.XSmall))
+    }
+}
+
+/** 选中的设备不在 Tailscale 设备白名单内：保存不受影响，但连接前需先加入白名单。 */
+@Composable
+private fun SshTailnetBlockedNotice(name: String, onOpenAllowlist: (() -> Unit)?) {
+    Column(Modifier.fillMaxWidth().testTag("ssh_editor_tailnet_blocked")) {
+        InfinityStatusStrip(kind = InfinityStatusKind.Warning, message = stringResource(R.string.ssh_tailnet_blocked, name))
+        if (onOpenAllowlist != null) {
+            TextButton(
+                onClick = onOpenAllowlist,
+                modifier = Modifier.align(Alignment.End).heightIn(min = InfinitySpacing.MinimumTouchTarget),
+            ) { Text(stringResource(R.string.ssh_tailnet_open_allowlist)) }
+        }
+    }
+}
+
+/** “终端会话”分区：全局空闲自动断开，只作用于用户自己的终端。 */
+@Composable
+internal fun SshTerminalIdleSection(policy: SshTerminalIdlePolicy, enabled: Boolean, onChange: (SshTerminalIdlePolicy) -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    InfinitySettingsSection(
+        title = stringResource(R.string.ssh_visual_terminal_section),
+        footer = stringResource(R.string.ssh_idle_footer),
+    ) {
+        Box {
+            InfinitySettingsItem(
+                icon = Icons.Rounded.TimerOff,
+                title = stringResource(R.string.ssh_idle_title),
+                subtitle = stringResource(R.string.ssh_idle_summary),
+                onClick = { menuOpen = true },
+                enabled = enabled,
+                modifier = Modifier.testTag("ssh_terminal_idle"),
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(policy.label), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+            )
+            InfinityDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                SshTerminalIdlePolicy.entries.forEach { option ->
+                    InfinityMenuItem(
+                        text = { Text(stringResource(option.label)) },
+                        onClick = { onChange(option); menuOpen = false },
+                        selected = option == policy,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val SshTerminalIdlePolicy.label: Int
+    get() = when (this) {
+        SshTerminalIdlePolicy.OFF -> R.string.ssh_idle_off
+        SshTerminalIdlePolicy.MINUTES_30 -> R.string.ssh_idle_30m
+        SshTerminalIdlePolicy.HOURS_2 -> R.string.ssh_idle_2h
+    }
 
 private fun copySshPublicKey(context: Context, publicKey: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)

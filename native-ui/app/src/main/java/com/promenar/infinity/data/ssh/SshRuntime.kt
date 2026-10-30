@@ -5,6 +5,7 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.Session
+import com.promenar.infinity.data.exec.ToolLiveOutputStore
 import com.promenar.infinity.domain.tool.ToolLiveOutputSink
 import com.promenar.infinity.domain.tool.ToolOutputStream
 import java.io.ByteArrayInputStream
@@ -71,6 +72,9 @@ class SshRuntime(
     private val store: SshHostStore,
     private val idleTimeoutMs: Long = 600_000,
     private val onPersistentActivity: (Boolean) -> Unit = {},
+    private val uiIdleTimeoutMs: () -> Long? = { null },
+    private val liveOutput: ToolLiveOutputStore? = null,
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : AutoCloseable {
     internal val hostStore: SshHostStore get() = store
     private class HostSnapshot(val host: SshHost) : AbstractCoroutineContextElement(Key) {
@@ -80,15 +84,18 @@ class SshRuntime(
     internal suspend fun sessionSnapshot(owner: String, id: String): SshHost = terminal(owner, id).connection.host
     internal suspend fun <T> withHostSnapshot(snapshot: SshHost?, operation: suspend () -> T): T =
         if (snapshot == null) operation() else withContext(HostSnapshot(snapshot)) { operation() }
-    private data class PoolKey(val owner: String, val alias: String)
-    private class Connection(val key: PoolKey, val host: SshHost, val session: Session, val filter: SshOutputFilter) {
+    private data class PoolKey(val owner: String, val alias: String, val purpose: String = "")
+    private class Connection(@Volatile var key: PoolKey, val host: SshHost, val session: Session, val filter: SshOutputFilter, time: Long) {
+        val connectedAtMillis = System.currentTimeMillis()
         val lock = Mutex()
-        @Volatile var used = now()
+        @Volatile var used = time
     }
-    private class Pty(val id: String, val owner: String, val connection: Connection, val channel: ChannelShell, val input: OutputStream) {
+    private class Pty(val id: String, val owner: String, val connection: Connection, val channel: ChannelShell, val input: OutputStream, time: Long, val mirror: ToolLiveOutputSink?) {
+        val openedAtMillis = System.currentTimeMillis()
+        val liveOutputKey = "ssh_session:$id"
         val buffer = TextRing(65_536)
         val sendLock = Mutex()
-        @Volatile var used = now()
+        @Volatile var used = time
         var reader: Job? = null
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -100,7 +107,11 @@ class SshRuntime(
     private val pendingCleanup = ConcurrentHashMap<String, OwnedTemporary>()
     private val _cleanupWarnings = MutableStateFlow<Set<String>>(emptySet())
     val cleanupWarnings: StateFlow<Set<String>> = _cleanupWarnings.asStateFlow()
-    val hasPersistentResources: Boolean get() = terminals.values.any { it.owner == "ui" } || _forwards.value.isNotEmpty()
+    private data class RemoteJob(val sessionId: String, val id: String, val alias: String, val stop: () -> Unit)
+    private val remoteJobs = ConcurrentHashMap<String, RemoteJob>()
+    private val _activity = MutableStateFlow(SshRuntimeActivity())
+    val activity: StateFlow<SshRuntimeActivity> = _activity.asStateFlow()
+    val hasPersistentResources: Boolean get() = connections.keys.any { it.owner == "ui" } || _forwards.value.isNotEmpty() || remoteJobs.isNotEmpty()
     private val _forwards = MutableStateFlow<Map<String, Int>>(emptyMap())
     val forwardStates: StateFlow<Map<String, Int>> = _forwards.asStateFlow()
     private val serviceEpoch = AtomicLong()
@@ -130,10 +141,13 @@ class SshRuntime(
                 gate.withLock {
                     val time = now()
                     connections.values.filter { pausedOwners[it.key.owner]?.let { deadline -> time >= deadline } == true }.forEach(::drop)
-                    terminals.values.filter { !it.connection.session.isConnected || time - it.used >= idleTimeoutMs }.forEach { removePty(it) }
+                    terminals.values.filter { !it.connection.session.isConnected || it.channel.isClosed || idleExpired(it.owner, it.used, time) }.forEach { pty ->
+                        removePty(pty)
+                        if (!pty.connection.lock.isLocked && !remoteJobs.containsKey(pty.connection.key.owner) && terminals.values.none { it.connection === pty.connection }) drop(pty.connection)
+                    }
                     connections.values.filter { connection ->
                         !connection.session.isConnected || connection.key.owner != FORWARD_OWNER &&
-                            time - connection.used >= idleTimeoutMs && terminals.values.none { it.connection === connection }
+                            !connection.lock.isLocked && idleExpired(connection.key.owner, connection.used, time) && terminals.values.none { it.connection === connection }
                     }.forEach(::drop)
                     pausedOwners.entries.removeIf { time >= it.value }
                     publishPersistent()
@@ -170,6 +184,7 @@ class SshRuntime(
         timeoutSeconds: Int = 60,
         maxOutputChars: Int = 32_000,
         live: ToolLiveOutputSink = ToolLiveOutputSink.None,
+        control: SshExecControl? = null,
     ): SshExecOutput {
         SshPolicy.timeout(timeoutSeconds); SshPolicy.outputLimit(maxOutputChars)
         if (command.isBlank() || command.length > 65_536 || '\u0000' in command) throw SshFailure("INVALID_COMMAND")
@@ -178,17 +193,19 @@ class SshRuntime(
         val ref = AtomicReference<ChannelExec?>()
         val usedConnection = AtomicReference<Connection?>()
         // 停止只置位，由轮询线程断开通道，界面线程不做网络 IO。
-        val stopRequested = AtomicBoolean(false)
+        val stopRequested = control?.stopRequested ?: AtomicBoolean(false)
         val stoppedByUser = AtomicBoolean(false)
-        live.onStop { stopRequested.set(true) }
+        live.onStop { if (control == null) stopRequested.set(true) else control.requestStop() }
+        if (stopRequested.get()) return SshExecOutput(-1, "", "", false, false, stoppedByUser = true)
         val tees = mutableListOf<LiveTee>()
         val exit = try {
-            withTimeoutOrNull(timeoutSeconds * 1000L) {
-                val connection = connection(owner, alias).also(usedConnection::set)
-                connection.lock.withLock {
+            withTimeoutOrNull((if (control == null) timeoutSeconds else if (control.background) control.maxRuntimeSeconds else maxOf(timeoutSeconds, control.maxRuntimeSeconds)) * 1000L) {
+                withConnection(owner, alias, purpose = "exec") { connection ->
+                    usedConnection.set(connection)
                     verifyCurrentConnection(connection)
                     // 排队等待连接锁期间已请求停止，则不再在远端启动命令。
-                    if (stopRequested.get()) { stoppedByUser.set(true); return@withLock -1 }
+                    if (stopRequested.get()) { stoppedByUser.set(true); return@withConnection -1 }
+                    control?.promote = { jobId, sessionId -> promoteExec(connection, control, jobId, sessionId) }
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
                         try {
@@ -200,19 +217,29 @@ class SshRuntime(
                             channel.setOutputStream(sink(stdout, ToolOutputStream.STDOUT), true)
                             channel.setErrStream(sink(stderr, ToolOutputStream.STDERR), true)
                             channel.connect(CONNECT_TIMEOUT)
+                            control?.started?.complete(Unit)
+                            val startedAt = now()
+                            var expired = false
                             while (!channel.isClosed) {
                                 if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
                                 if (stopRequested.get()) { stoppedByUser.set(true); break }
+                                val limit = if (control?.background == true) control.maxRuntimeSeconds else timeoutSeconds
+                                if (now() - startedAt >= limit * 1000L) { expired = true; break }
+                                connection.used = now()
                                 Thread.sleep(10)
                             }
                             connection.used = now()
-                            channel.exitStatus
+                            if (stopRequested.get()) stoppedByUser.set(true)
+                            if (expired) null else channel.exitStatus
                         } finally { channel.disconnect(); tees.forEach(LiveTee::finish) }
                     }
                 }
             }
         } catch (failure: Throwable) { stdout.wipe(); stderr.wipe(); throw failure
-        } finally { withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() } }
+        } finally {
+            control?.finished?.set(true)
+            withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
+        }
         return io {
             try {
                 val rawOut = stdout.text()
@@ -254,9 +281,10 @@ class SshRuntime(
         if (command.isBlank() || command.length > 65_536 || '\u0000' in command) throw SshFailure("INVALID_COMMAND")
         val ref = AtomicReference<ChannelExec?>()
         val errors = ByteCapture(65_536)
+        var usedConnection: Connection? = null
         try {
-            val connection = connection(owner, alias)
-            val exit = connection.lock.withLock {
+            val exit = withConnection(owner, alias) { connection ->
+                usedConnection = connection
                 verifyCurrentConnection(connection)
                 io({ ref.get()?.disconnect() }) {
                     val channel = (connection.session.openChannel("exec") as ChannelExec).also(ref::set)
@@ -276,7 +304,7 @@ class SshRuntime(
             }
             val text = errors.text()
             if (text.isNotEmpty()) {
-                val bytes = connection.filter.whole(text).toByteArray(Charsets.UTF_8)
+                val bytes = checkNotNull(usedConnection).filter.whole(text).toByteArray(Charsets.UTF_8)
                 try { withContext(Dispatchers.IO) { stderr.write(bytes); stderr.flush() } } finally { bytes.fill(0) }
             }
             return exit
@@ -433,7 +461,12 @@ class SshRuntime(
                         val output = channel.inputStream
                         val input = channel.outputStream
                         channel.connect(CONNECT_TIMEOUT)
-                        Pty(UUID.randomUUID().toString(), owner, connection, channel, input).also { pty ->
+                        val id = UUID.randomUUID().toString()
+                        val mirror = if (owner.startsWith("agent:")) liveOutput?.open("ssh_session:$id")?.also {
+                            // 激活只读槽，不登记停止回调，误发的停止请求不会影响远端 PTY。
+                            it.replace(ToolOutputStream.STDOUT, "")
+                        } else null
+                        Pty(id, owner, connection, channel, input, now(), mirror).also { pty ->
                             created = pty
                             val filter = connection.filter.stream()
                             pty.reader = scope.launch {
@@ -444,12 +477,22 @@ class SshRuntime(
                                             while (isActive) {
                                                 val count = reader.read(chars)
                                                 if (count < 0) break
-                                                pty.buffer.append(filter.feed(String(chars, 0, count)))
+                                                val clean = filter.feed(String(chars, 0, count))
+                                                pty.buffer.append(clean)
+                                                pty.mirror?.emit(ToolOutputStream.STDOUT, clean)
                                                 pty.used = now()
+                                                connection.used = pty.used
                                             }
                                         } finally { chars.fill('\u0000') }
                                     }
-                                } catch (_: Exception) { } finally { pty.buffer.append(filter.feed("", end = true)); pty.buffer.closed = true }
+                                } catch (_: Exception) { } finally {
+                                    val tail = filter.feed("", end = true)
+                                    pty.buffer.append(tail)
+                                    pty.mirror?.emit(ToolOutputStream.STDOUT, tail)
+                                    pty.buffer.closed = true
+                                    pty.mirror?.let { liveOutput?.close(pty.liveOutputKey, it) }
+                                    scope.launch { gate.withLock { publishPersistent() } }
+                                }
                             }
                         }
                     } catch (failure: Exception) { channel.disconnect(); throw failure }
@@ -458,7 +501,7 @@ class SshRuntime(
                 publishPersistent()
                 SshSessionInfo(pty.id, alias)
             } catch (failure: Throwable) {
-                created?.let { terminals.remove(it.id); it.reader?.cancel() }
+                created?.let { removePty(it) }
                 withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
                 if (terminals.values.none { it.connection === connection }) drop(connection)
                 throw failure
@@ -483,6 +526,7 @@ class SshRuntime(
             io({ pty.channel.disconnect() }) {
                 pty.input.write(input.toByteArray(Charsets.UTF_8)); pty.input.flush()
                 pty.used = now()
+                pty.connection.used = pty.used
             }
         }
     }
@@ -501,12 +545,13 @@ class SshRuntime(
     suspend fun closeSession(owner: String, id: String) = withContext(Dispatchers.IO) { gate.withLock {
         val pty = terminals[id]?.takeIf { it.owner == owner } ?: return@withLock
         removePty(pty)
-        if (terminals.values.none { it.connection === pty.connection }) drop(pty.connection)
+        if (terminals.values.none { it.connection === pty.connection } && !remoteJobs.containsKey(pty.connection.key.owner)) drop(pty.connection)
         publishPersistent()
     }
     }
     fun sessionHost(owner: String, id: String): String? = terminals[id]?.takeIf { it.owner == owner }?.connection?.host?.alias
     suspend fun closeOwner(owner: String) = withContext(Dispatchers.IO) { gate.withLock {
+        terminals.values.filter { it.owner == owner }.forEach(::removePty)
         connections.values.filter { it.key.owner == owner }.forEach(::drop)
         pausedOwners.remove(owner)
         publishPersistent()
@@ -545,8 +590,7 @@ class SshRuntime(
     suspend fun closeForwards() = closeOwner(FORWARD_OWNER)
     suspend fun closePersistent(expectedEpoch: Long) = withContext(Dispatchers.IO) { gate.withLock {
         if (expectedEpoch != serviceEpoch.get()) return@withLock
-        connections.values.filter { it.key.owner == "ui" || it.key.owner == FORWARD_OWNER }.forEach(::drop)
-        publishPersistent()
+        disconnectPersistentLocked()
     } }
     suspend fun pauseOwner(owner: String) {
         if (connections.keys.any { it.owner == owner }) pausedOwners[owner] = now() + idleTimeoutMs else pausedOwners.remove(owner)
@@ -557,6 +601,77 @@ class SshRuntime(
         connections.values.toList().forEach(::drop)
         scope.cancel()
         runCatching { publishPersistent() }
+    }
+
+    private fun now() = monotonicMillis()
+    private fun idleExpired(owner: String, used: Long, time: Long): Boolean {
+        if (owner == FORWARD_OWNER || remoteJobs.containsKey(owner)) return false
+        val timeout = if (owner == "ui") uiIdleTimeoutMs() else idleTimeoutMs
+        return timeout != null && time - used >= timeout
+    }
+
+    /** 等待执行锁后重新核对归属；先前命令让出时，后续操作必须取得新的 Agent 连接。 */
+    private suspend fun <T> withConnection(owner: String, alias: String, purpose: String = "", block: suspend (Connection) -> T): T {
+        while (true) {
+            val connection = connection(owner, alias, purpose)
+            var locked = false
+            while (connection.key.owner == owner && connections[connection.key] === connection) {
+                if (connection.lock.tryLock()) { locked = true; break }
+                // 只检查内存中的归属，等待期间不反复查询主机数据库。
+                delay(25)
+            }
+            if (!locked) continue
+            try {
+                if (connection.key.owner == owner && connections[connection.key] === connection) return block(connection)
+            } finally { connection.lock.unlock() }
+        }
+    }
+
+    internal suspend fun registerJob(jobId: String, sessionId: String, alias: String, stop: () -> Unit) = withContext(Dispatchers.IO) {
+        gate.withLock {
+            if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
+            remoteJobs["job:$jobId"] = RemoteJob(sessionId, jobId, alias, stop)
+            try { publishPersistent() } catch (failure: Throwable) { remoteJobs.remove("job:$jobId"); throw failure }
+        }
+    }
+
+    private suspend fun promoteExec(connection: Connection, control: SshExecControl, jobId: String, sessionId: String): Boolean = withContext(Dispatchers.IO) {
+        gate.withLock {
+            if (control.finished.get() || control.stopRequested.get() || !connection.session.isConnected || connections[connection.key] !== connection) return@withLock false
+            val key = PoolKey("job:$jobId", connection.host.alias, "exec")
+            remoteJobs[key.owner] = RemoteJob(sessionId, jobId, key.alias, control::requestStop)
+            connections.remove(connection.key, connection)
+            connection.key = key
+            connections[key] = connection
+            control.background = true
+            publishPersistent()
+            true
+        }
+    }
+
+    /** exec 使用独立用途槽，结束后台任务不会触及 Agent 的 PTY 与文件通道。 */
+    internal suspend fun finishJob(jobId: String) = withContext(Dispatchers.IO) {
+        gate.withLock {
+            val owner = "job:$jobId"
+            remoteJobs.remove(owner)
+            connections.values.filter { it.key.owner == owner }.forEach(::drop)
+            publishPersistent()
+        }
+    }
+
+    suspend fun disconnect(owner: String, alias: String) = withContext(Dispatchers.IO) {
+        gate.withLock {
+            remoteJobs[owner]?.takeIf { it.alias == alias }?.stop?.invoke()
+            connections.values.filter { it.key.owner == owner && it.host.alias == alias }.forEach(::drop)
+            publishPersistent()
+        }
+    }
+
+    suspend fun disconnectAll() = withContext(Dispatchers.IO) { gate.withLock { disconnectPersistentLocked() } }
+    private fun disconnectPersistentLocked() {
+        remoteJobs.values.forEach { it.stop() }
+        connections.values.filter { it.key.owner == "ui" || it.key.owner == FORWARD_OWNER || remoteJobs.containsKey(it.key.owner) }.forEach(::drop)
+        publishPersistent()
     }
 
     private suspend fun host(alias: String): SshHost {
@@ -570,12 +685,12 @@ class SshRuntime(
         } catch (failure: SshFailure) { throw failure
         } catch (_: Exception) { throw SshFailure("HOST_UNAVAILABLE") }
     }
-    private suspend fun connection(owner: String, alias: String): Connection = withContext(Dispatchers.IO) {
+    private suspend fun connection(owner: String, alias: String, purpose: String = ""): Connection = withContext(Dispatchers.IO) {
         val host = host(alias)
         gate.withLock {
             if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
             if (host(alias) != host) throw SshFailure("HOST_CONFIGURATION_CHANGED")
-            val key = PoolKey(owner, alias)
+            val key = PoolKey(owner, alias, purpose)
             connections[key]?.let {
                 if (it.host == host && it.session.isConnected) { it.used = now(); return@withLock it }
                 drop(it)
@@ -617,11 +732,17 @@ class SshRuntime(
                     } finally { credential.close(); session.setPassword(null as ByteArray?); client.removeAllIdentity() }
                 }
                 if (host(alias) != host) throw SshFailure("HOST_CONFIGURATION_CHANGED")
-                Connection(key, host, session, requireNotNull(outputFilter)).also { connection ->
+                Connection(key, host, session, requireNotNull(outputFilter), now()).also { connection ->
                     connections[key] = connection
                     pendingCleanup.values.filter { it.host == host }.forEach { cleanupTemporary(connection, it.path) }
+                    publishPersistent()
                 }
-            } catch (failure: Throwable) { session.disconnect(); outputFilter?.close(); throw failure }
+            } catch (failure: Throwable) {
+                session.disconnect(); outputFilter?.close()
+                connections[key]?.takeIf { it.session === session }?.let { connections.remove(key, it) }
+                runCatching { publishPersistent() }
+                throw failure
+            }
         }
     }
     private suspend fun terminal(owner: String, id: String): Pty {
@@ -640,8 +761,7 @@ class SshRuntime(
         val ref = AtomicReference<ChannelSftp?>()
         return try {
             withTimeoutOrNull(60_000) {
-                val connection = connection(owner, alias)
-                connection.lock.withLock {
+                withConnection(owner, alias) { connection ->
                     verifyCurrentConnection(connection)
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("sftp") as ChannelSftp).also(ref::set)
@@ -674,6 +794,7 @@ class SshRuntime(
     private fun removePty(pty: Pty) {
         terminals.remove(pty.id, pty)
         pty.channel.disconnect(); pty.reader?.cancel(); pty.buffer.clear()
+        pty.mirror?.let { liveOutput?.close(pty.liveOutputKey, it) }
     }
     private fun drop(connection: Connection) {
         connections.remove(connection.key, connection)
@@ -683,6 +804,20 @@ class SshRuntime(
         if (connection.key.owner == FORWARD_OWNER) _forwards.value = _forwards.value - connection.host.alias
     }
     private fun publishPersistent() {
+        _activity.value = SshRuntimeActivity(
+            connections.values.filter { it.session.isConnected }.map { connection ->
+                val owner = connection.key.owner
+                val job = remoteJobs[owner]
+                SshActiveConnection(owner, connection.host.alias,
+                    when { job != null -> SshConnectionKind.JOB; owner == "ui" -> SshConnectionKind.TERMINAL; owner == FORWARD_OWNER -> SshConnectionKind.FORWARD; else -> SshConnectionKind.AGENT },
+                    job?.sessionId ?: owner.takeIf { it.startsWith("agent:") }?.removePrefix("agent:"),
+                    job?.id, connection.connectedAtMillis)
+            }.groupBy { it.owner to it.alias }.values.map { rows -> rows.minBy { it.connectedAtMillis } }
+                .sortedWith(compareBy({ it.connectedAtMillis }, { it.owner }, { it.alias })),
+            terminals.values.filter { it.owner.startsWith("agent:") && !it.buffer.closed }.map {
+                SshAgentPtySession(it.id, it.owner.removePrefix("agent:"), it.connection.host.alias, it.liveOutputKey, it.openedAtMillis)
+            }.sortedBy { it.openedAtMillis },
+        )
         val active = hasPersistentResources
         if (persistent == active) return
         try { onPersistentActivity(active); persistent = active } catch (_: Exception) { throw SshFailure("FOREGROUND_SERVICE_UNAVAILABLE") }
@@ -709,7 +844,6 @@ class SshRuntime(
         const val CONNECT_TIMEOUT = 15_000
         const val MAX_FILE_BYTES = 16_777_216L
         const val FORWARD_OWNER = "forward"
-        fun now() = System.nanoTime() / 1_000_000
         fun sha(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     }
 }

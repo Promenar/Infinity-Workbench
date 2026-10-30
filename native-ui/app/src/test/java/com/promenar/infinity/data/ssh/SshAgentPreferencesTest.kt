@@ -17,15 +17,18 @@ class SshAgentPreferencesTest {
     private fun preferences(enabled: Boolean?) = mockk<SharedPreferences>().also { prefs ->
         every { prefs.getStringSet(BuiltinToolPreferences.ENABLED_KEY, null) } returns null
         every { prefs.getStringSet(BuiltinToolPreferences.KNOWN_KEY, null) } returns null
-        every { prefs.getBoolean(SshAgentPreferences.HOST_MANAGEMENT_KEY, false) } returns (enabled ?: false)
+        // 未保存过开关时 SharedPreferences 返回调用方传入的默认值。
+        every { prefs.getBoolean(SshAgentPreferences.HOST_MANAGEMENT_KEY, any()) } answers { enabled ?: secondArg() }
     }
 
-    @Test fun `host management tools stay hidden until the user enables them`() {
+    @Test fun `host management tools are on by default and stay off once the user turns them off`() {
         SshAgentPreferences.HOST_MANAGEMENT_TOOLS.forEach { tool ->
-            assertThat(BuiltinToolPreferences.isEnabled(preferences(null), tool)).isFalse()
+            assertThat(BuiltinToolPreferences.isEnabled(preferences(null), tool)).isTrue()
             assertThat(BuiltinToolPreferences.isEnabled(preferences(true), tool)).isTrue()
+            assertThat(BuiltinToolPreferences.isEnabled(preferences(false), tool)).isFalse()
         }
-        assertThat(BuiltinToolPreferences.isEnabled(preferences(null), "ssh_exec")).isTrue()
+        assertThat(SshAgentPreferences.isHostManagementEnabled(preferences(null))).isTrue()
+        assertThat(BuiltinToolPreferences.isEnabled(preferences(false), "ssh_exec")).isTrue()
     }
 
     @Test fun `switch is device authorization and never restored from backup`() {

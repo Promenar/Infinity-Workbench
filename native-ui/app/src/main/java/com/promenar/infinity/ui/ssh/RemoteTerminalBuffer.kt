@@ -76,31 +76,3 @@ private object SilentTerminalClient : TerminalSessionClient {
     override fun logStackTraceWithMessage(tag: String?, message: String?, error: Exception?) = Unit
     override fun logStackTrace(tag: String?, error: Exception?) = Unit
 }
-
-/** 缓冲仅驻留进程内；保留会话重进时恢复画面，最多保留四份。 */
-internal object RetainedTerminalBuffers {
-    private data class Entry(val buffer: RemoteTerminalBuffer, val retainedAt: Long)
-    private val entries = LinkedHashMap<String, Entry>()
-
-    fun take(id: String): RemoteTerminalBuffer? {
-        prune()
-        return entries.remove(id)?.buffer
-    }
-
-    fun retain(id: String, buffer: RemoteTerminalBuffer) {
-        prune()
-        entries.remove(id)?.buffer?.takeUnless { it === buffer }?.clear()
-        entries[id] = Entry(buffer, android.os.SystemClock.elapsedRealtime())
-        while (entries.size > 4) {
-            val first = entries.entries.first()
-            entries.remove(first.key)
-            first.value.buffer.clear()
-        }
-    }
-
-    private fun prune() {
-        val now = android.os.SystemClock.elapsedRealtime()
-        val expired = entries.filterValues { now - it.retainedAt >= 10 * 60 * 1_000L }.keys.toList()
-        expired.forEach { entries.remove(it)?.buffer?.clear() }
-    }
-}

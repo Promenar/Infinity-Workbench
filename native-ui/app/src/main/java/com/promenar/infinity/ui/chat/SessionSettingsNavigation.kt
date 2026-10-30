@@ -13,6 +13,8 @@ class SessionSettingsNavigation(
     val openNetworkAccess: () -> Unit,
     /** 当前会话所属智能体的编辑页（S7）。 */
     val openAgentEdit: (agentId: String) -> Unit,
+    /** “远程”面板底部的 Linux 环境、Termux、后台与定时设置页；为 null 时不显示该行。 */
+    val openRemoteSettings: ((com.promenar.infinity.ui.remote.RemoteSettingsLink) -> Unit)? = null,
 )
 
 val LocalSessionSettingsNavigation = staticCompositionLocalOf<SessionSettingsNavigation?> { null }

@@ -414,6 +414,14 @@ private fun ChatHeroDestination(
             openSkills = { navController.navigate(NavDestinations.SKILLS_CONFIG) { launchSingleTop = true } },
             openNetworkAccess = { navController.navigate(NavDestinations.NETWORK_ACCESS) { launchSingleTop = true } },
             openAgentEdit = { agentId -> navController.navigate(NavDestinations.agentEdit(agentId)) { launchSingleTop = true } },
+            openRemoteSettings = { link ->
+                val route = when (link) {
+                    com.promenar.infinity.ui.remote.RemoteSettingsLink.LINUX -> NavDestinations.LINUX_ENVIRONMENT
+                    com.promenar.infinity.ui.remote.RemoteSettingsLink.TERMUX -> NavDestinations.TERMUX_CONFIG
+                    com.promenar.infinity.ui.remote.RemoteSettingsLink.BACKGROUND -> NavDestinations.BACKGROUND_ACTIVITY
+                }
+                navController.navigate(route) { launchSingleTop = true }
+            },
         )
     }
     CompositionLocalProvider(
@@ -681,6 +689,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
             com.promenar.infinity.ui.settings.SshSettingsScreen(
                 onBack = { navigator.back() },
                 onOpenTerminal = { alias -> navigator.open("ssh_terminal/${android.net.Uri.encode(alias)}") },
+                onOpenTailscale = { navigator.open(NavDestinations.TAILSCALE_CONFIG) },
             )
         }
     }

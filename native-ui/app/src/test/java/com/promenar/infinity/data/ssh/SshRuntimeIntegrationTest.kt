@@ -405,6 +405,250 @@ class SshRuntimeIntegrationTest {
         assertThat(startedCommands.get()).isEqualTo(before)
     }
 
+    @Test fun `用户默认不空闲回收而Agent仍按原超时回收`() = runBlocking {
+        trust()
+        runtime.close()
+        val clock = java.util.concurrent.atomic.AtomicLong(0)
+        runtime = SshRuntime(hostStore, idleTimeoutMs = 100, monotonicMillis = clock::get)
+        val user = runtime.openSession("ui", "termux")
+        val agent = runtime.openSession("agent:chat", "termux")
+        clock.set(1_000)
+        withTimeout(5_000) { while (runtime.sessionHost("agent:chat", agent.sessionId) != null) delay(10) }
+        assertThat(runtime.sessionHost("ui", user.sessionId)).isEqualTo("termux")
+    }
+
+    @Test fun `用户空闲策略按最后输入输出计时且可实时关闭`() = runBlocking {
+        trust()
+        runtime.close()
+        val clock = java.util.concurrent.atomic.AtomicLong(0)
+        val timeout = java.util.concurrent.atomic.AtomicReference<Long?>(1_800_000L)
+        runtime = SshRuntime(hostStore, idleTimeoutMs = 100, uiIdleTimeoutMs = timeout::get, monotonicMillis = clock::get)
+        val user = runtime.openSession("ui", "termux")
+        clock.set(1_700_000)
+        runtime.sendSession("ui", user.sessionId, "ping\n")
+        withTimeout(5_000) { while (!runtime.readSession("ui", user.sessionId).output.contains("echo:ping")) delay(10) }
+        clock.set(1_900_000)
+        delay(100)
+        assertThat(runtime.sessionHost("ui", user.sessionId)).isEqualTo("termux")
+        timeout.set(null)
+        clock.set(4_000_000)
+        delay(100)
+        assertThat(runtime.sessionHost("ui", user.sessionId)).isEqualTo("termux")
+        timeout.set(1_800_000L)
+        withTimeout(5_000) { while (runtime.sessionHost("ui", user.sessionId) != null) delay(10) }
+    }
+
+    @Test fun `Agent镜像只读不清空而用户终端不开槽关闭时撤销镜像`() = runBlocking {
+        trust()
+        runtime.close()
+        val live = com.promenar.infinity.data.exec.ToolLiveOutputStore()
+        runtime = SshRuntime(hostStore, liveOutput = live)
+        val user = runtime.openSession("ui", "termux")
+        assertThat(live.snapshot("ssh_session:${user.sessionId}")).isNull()
+        val agent = runtime.openSession("agent:chat", "termux")
+        val key = "ssh_session:${agent.sessionId}"
+        assertThat(runtime.activity.value.agentSessions.single().liveOutputKey).isEqualTo(key)
+        runtime.sendSession("agent:chat", agent.sessionId, "synthetic-password hello\n")
+        withTimeout(5_000) { while (live.snapshot(key)?.text?.contains("hello") != true) delay(10) }
+        val mirror = live.snapshot(key)!!
+        assertThat(mirror.stoppable).isFalse()
+        assertThat(mirror.text).doesNotContain("synthetic-password")
+        assertThat(runtime.readSession("agent:chat", agent.sessionId).output).contains("hello")
+        assertThat(runtime.readSession("agent:chat", agent.sessionId).output).isEmpty()
+        assertThat(live.snapshot(key)?.text).isEqualTo(mirror.text)
+        live.requestStop(key)
+        assertThat(runtime.sessionHost("agent:chat", agent.sessionId)).isEqualTo("termux")
+        runtime.closeSession("agent:chat", agent.sessionId)
+        assertThat(live.snapshot(key)).isNull()
+        assertThat(runtime.activity.value.agentSessions).isEmpty()
+    }
+
+    @Test fun `活动清单和按连接断开覆盖终端转发而全部断开保留Agent`() = runBlocking {
+        trust()
+        hostStore.host = hostStore.host.copy(localForwardPort = ServerSocket(0).use { it.localPort }, forwardPort = server.port)
+        val user = runtime.openSession("ui", "termux")
+        runtime.openSession("agent:chat", "termux")
+        runtime.startForward("termux")
+        assertThat(runtime.activity.value.connections.map { it.kind }).containsExactly(SshConnectionKind.TERMINAL, SshConnectionKind.AGENT, SshConnectionKind.FORWARD)
+        runtime.disconnect("ui", "termux")
+        assertThat(runtime.sessionHost("ui", user.sessionId)).isNull()
+        runtime.disconnectAll()
+        assertThat(runtime.forwardStates.value).isEmpty()
+        assertThat(runtime.activity.value.connections.single().owner).isEqualTo("agent:chat")
+        assertThat(runtime.hasPersistentResources).isFalse()
+    }
+
+    @Test fun `SSH前台同步返回且后台停止关闭通道并拒绝输入`() = sshJobs { jobs ->
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val context = sshContext()
+        val quick = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"zero","on_exit":"none"}""").jsonObject, context)
+        assertThat(Json.parseToJsonElement(quick.content).jsonObject["job_id"]).isNull()
+        assertThat(quick.status).isEqualTo("success")
+        val result = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"stream","background":true,"on_exit":"none"}""").jsonObject, context)
+        val id = Json.parseToJsonElement(result.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        assertThat(jobs.status("chat", id).record.running).isTrue()
+        // 与本地后台任务同一列表，靠运行环境与主机 ID 区分。
+        val listed = jobs.list("chat").single { it.id == id }.job()
+        assertThat(listed.runner).isEqualTo(com.promenar.infinity.domain.jobs.BackgroundJobRunner.SSH)
+        assertThat(listed.remoteHost).isEqualTo("termux")
+        runtime.closeOwner("agent:chat")
+        withTimeout(5_000) { while (jobs.status("chat", id).tail.text.contains("tail").not()) delay(10) }
+        assertThat(jobs.status("chat", id).tail.text).doesNotContain("synthetic-password")
+        val input = runCatching { jobs.input("chat", id, "answer") }.exceptionOrNull()
+        assertThat((input as com.promenar.infinity.data.jobs.JobAccessException).code).isEqualTo("JOB_INPUT_UNSUPPORTED")
+        val stopped = jobs.stop("chat", id)
+        assertThat(stopped.record.state).isEqualTo("STOPPED")
+        assertThat(stopped.record.guidance).contains("远端进程可能仍在运行")
+        withTimeout(5_000) { while (commands.get() != 0) delay(10) }
+        assertThat(runtime.activity.value.connections.none { it.kind == SshConnectionKind.JOB }).isTrue()
+    }
+
+    @Test fun `SSH让出转交连接在轮次关闭后继续且按连接断开记停止`() = sshJobs { jobs ->
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val context = sshContext()
+        val invalid = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"zero","timeout_seconds":1,"yield_after_seconds":2}""").jsonObject, context)
+        assertThat(invalid.status).isEqualTo("error")
+        val result = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"sleep","timeout_seconds":2,"yield_after_seconds":1,"on_exit":"none"}""").jsonObject, context)
+        val id = Json.parseToJsonElement(result.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        assertThat(Json.parseToJsonElement(result.content).jsonObject.getValue("yielded_after_seconds").jsonPrimitive.int).isEqualTo(1)
+        runtime.closeOwner("agent:chat")
+        delay(1_200)
+        assertThat(jobs.status("chat", id).record.running).isTrue()
+        val connection = runtime.activity.value.connections.single { it.jobId == id }
+        assertThat(connection.sessionId).isEqualTo("chat")
+        runtime.disconnect(connection.owner, connection.alias)
+        withTimeout(5_000) { while (jobs.status("chat", id).record.running) delay(10) }
+        assertThat(jobs.status("chat", id).record.state).isEqualTo("STOPPED")
+        val status = com.promenar.infinity.ui.chat.manager.skills.backgroundJobTools(jobs).single { it.name == "job_status" }
+            .execute(Json.parseToJsonElement("""{"job_id":"$id"}""").jsonObject, context)
+        assertThat(Json.parseToJsonElement(status.content).jsonObject.getValue("guidance").jsonPrimitive.content).contains("远端进程可能仍在运行")
+        assertThat(Json.parseToJsonElement(status.content).jsonObject.getValue("exit_code")).isEqualTo(JsonNull)
+    }
+
+    @Test fun `让出完成保留同会话的AgentPTY`() = sshJobs { jobs ->
+        val pty = runtime.openSession("agent:chat", "termux")
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val response = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"delayed-zero","yield_after_seconds":1,"on_exit":"none"}""").jsonObject, sshContext())
+        val id = Json.parseToJsonElement(response.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        val ended = jobs.waitFor("chat", id, 5)
+        assertThat(ended.record.state).isEqualTo("EXITED")
+        runtime.sendSession("agent:chat", pty.sessionId, "alive\n")
+        withTimeout(5_000) { while (!runtime.readSession("agent:chat", pty.sessionId).output.contains("echo:alive")) delay(10) }
+        assertThat(runtime.activity.value.connections.none { it.kind == SshConnectionKind.JOB }).isTrue()
+    }
+
+    @Test fun `SSH后台时限使用max_runtime而非timeout且全部断开停止任务`() = sshJobs { jobs ->
+        runtime.close()
+        val clock = java.util.concurrent.atomic.AtomicLong(0)
+        runtime = SshRuntime(hostStore, monotonicMillis = clock::get)
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val response = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"stream","background":true,"timeout_seconds":600,"max_runtime_minutes":1,"on_exit":"none"}""").jsonObject, sshContext())
+        val id = Json.parseToJsonElement(response.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        withTimeout(5_000) { while (!jobs.status("chat", id).tail.text.contains("tail")) delay(10) }
+        clock.set(61_000)
+        assertThat(jobs.waitFor("chat", id, 5).record.state).isEqualTo("TIMED_OUT")
+        val next = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"sleep","background":true,"on_exit":"none"}""").jsonObject, sshContext())
+        val nextId = Json.parseToJsonElement(next.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        runtime.disconnectAll()
+        assertThat(jobs.waitFor("chat", nextId, 5).record.state).isEqualTo("STOPPED")
+    }
+
+    @Test fun `全部断开SSH后台任务保留同会话AgentPTY`() = sshJobs { jobs ->
+        val pty = runtime.openSession("agent:chat", "termux")
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val response = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"sleep","yield_after_seconds":1,"on_exit":"none"}""").jsonObject, sshContext())
+        val id = Json.parseToJsonElement(response.content).jsonObject.getValue("job_id").jsonPrimitive.content
+        runtime.disconnectAll()
+        assertThat(jobs.waitFor("chat", id, 5).record.state).isEqualTo("STOPPED")
+        runtime.sendSession("agent:chat", pty.sessionId, "preserved\n")
+        withTimeout(5_000) { while (!runtime.readSession("agent:chat", pty.sessionId).output.contains("echo:preserved")) delay(10) }
+        assertThat(runtime.activity.value.agentSessions.single().id).isEqualTo(pty.sessionId)
+    }
+
+    @Test fun `等待Agent连接锁的任务可以停止且不启动第二条远端命令`() = sshJobs { jobs ->
+        val first = async(Dispatchers.IO) { runtime.exec("agent:chat", "termux", "sleep") }
+        try {
+            withTimeout(5_000) { while (startedCommands.get() < 1) delay(10) }
+            val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+            val queued = async {
+                exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"zero","yield_after_seconds":1,"on_exit":"none"}""").jsonObject, sshContext())
+            }
+            val job = withTimeout(5_000) {
+                while (jobs.list("chat").isEmpty()) delay(10)
+                jobs.list("chat").single()
+            }
+            val stopped = withTimeout(5_000) { jobs.stop("chat", job.id) }
+            assertThat(stopped.record.state).isEqualTo("STOPPED")
+            val response = queued.await()
+            assertThat(response.status).isEqualTo("error")
+            assertThat(Json.parseToJsonElement(response.content).jsonObject.getValue("error_code").jsonPrimitive.content).isEqualTo("SSH_STOPPED")
+            assertThat(startedCommands.get()).isEqualTo(1)
+        } finally { first.cancelAndJoin() }
+    }
+
+    @Test fun `后台和让出各通知一次而前台同步结果不通知`() {
+        val notifications = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+        sshJobs(com.promenar.infinity.data.jobs.BackgroundJobCompletion(notify = { notifications.send(it.id) })) { jobs ->
+            val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+            val quick = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"zero"}""").jsonObject, sshContext())
+            assertThat(quick.status).isEqualTo("success")
+            for (extra in listOf("\"background\":true", "\"yield_after_seconds\":1")) {
+                val response = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"delayed-zero",$extra}""").jsonObject, sshContext())
+                val id = Json.parseToJsonElement(response.content).jsonObject.getValue("job_id").jsonPrimitive.content
+                assertThat(jobs.waitFor("chat", id, 5).record.state).isEqualTo("EXITED")
+                assertThat(withTimeout(5_000) { notifications.receive() }).isEqualTo(id)
+            }
+            assertThat(notifications.tryReceive().isFailure).isTrue()
+        }
+        notifications.close()
+    }
+
+    @Test fun `后台命令的审批快照变化在创建任务之前拒绝`() = sshJobs { jobs ->
+        val args = Json.parseToJsonElement("""{"host":"termux","command":"zero","background":true}""").jsonObject
+        val exec = sshTools(runtime, jobs).single { it.name == "ssh_exec" }
+        val target = requireNotNull(com.promenar.infinity.data.generation.resolveSessionToolTarget(
+            com.promenar.infinity.data.model.Session(id = "chat", agentId = "agent"),
+            com.promenar.infinity.data.remote.protocol.ProtocolTool(
+                function = com.promenar.infinity.data.remote.protocol.ProtocolToolFunction("ssh_exec", "测试", exec.parametersSchema),
+                risk = com.promenar.infinity.domain.tool.ToolRisk.PROCESS,
+            ), args.toString(), null, sshHostStore = hostStore,
+        ))
+        val context = object : SkillExecutionContext by sshContext() {
+            override val approvedExecutionTarget = target
+            override val isApprovalBoundExecution = true
+        }
+        hostStore.host = hostStore.host.copy(username = "changed-user")
+        val result = exec.execute(args, context)
+        assertThat(result.status).isEqualTo("error")
+        assertThat(result.content).contains("HOST_AUTHORIZATION_CHANGED")
+        assertThat(jobs.list("chat")).isEmpty()
+        assertThat(startedCommands.get()).isEqualTo(0)
+    }
+
+    private fun sshContext() = object : SkillExecutionContext {
+        override val sessionId = "chat"
+        override val agentId = "agent"
+        override val workspacePath: String? = null
+        override val workspaceRootUuid = "root"
+    }
+
+    private fun sshJobs(
+        completion: com.promenar.infinity.data.jobs.BackgroundJobCompletion = com.promenar.infinity.data.jobs.BackgroundJobCompletion(),
+        block: suspend kotlinx.coroutines.CoroutineScope.(com.promenar.infinity.data.jobs.BackgroundJobManager) -> Unit,
+    ) = runBlocking {
+        trust()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+        val directory = root.resolve("jobs-test").toFile()
+        val jobs = com.promenar.infinity.data.jobs.BackgroundJobManager(
+            scope, com.promenar.infinity.data.jobs.BackgroundJobStore(java.io.File(directory, "store")), java.io.File(directory, "runs"),
+            // SSH 任务不经本机命令执行器，这里只为满足构造参数。
+            com.promenar.infinity.data.exec.BuiltinCommandRunner(listOf("/bin/sh"), "/bin/sh", { _, _ -> }, { java.io.File(directory, "scratch") }),
+            prepareWorkspace = { error("SSH 不准备本机工作区") }, prepareCommand = { _, _, _, _, _ -> error("SSH 不运行本机命令") },
+            completion = completion,
+        )
+        try { block(jobs) } finally { runtime.disconnectAll(); scope.coroutineContext[kotlinx.coroutines.Job]?.cancelAndJoin() }
+    }
+
     private suspend fun trust() {
         val key = runtime.probe("termux")
         hostStore.host = hostStore.host.copy(trustedKeyType = key.type, trustedFingerprint = key.fingerprint)
@@ -539,13 +783,14 @@ private class TestCommand(private val command: String, private val shell: Boolea
                         output.write(byteArrayOf("半".toByteArray(Charsets.UTF_8).last()) + " tail\n".toByteArray()); output.flush()
                         Thread.sleep(30_000)
                     }
+                    command == "delayed-zero" -> { Thread.sleep(1_500); output.write("done".toByteArray()) }
                     command == "large" -> output.write("x".repeat(100_000).toByteArray())
                     command == "unicode-secret" -> output.write("合成口令-只用于测试".toByteArray())
                     command == "zero" -> output.write("zero-ok".toByteArray())
                     command == "noisy-fail" -> { output.write("x".repeat(100_000).toByteArray()); error.write("fatal: boom".toByteArray()) }
                     else -> { output.write("stdout-ok synthetic-password".toByteArray()); error.write("stderr-ok".toByteArray()) }
                 }
-                output.flush(); error.flush(); callback.onExit(if (command == "zero") 0 else 7)
+                output.flush(); error.flush(); callback.onExit(if (command == "zero" || command == "delayed-zero") 0 else 7)
             } catch (_: Exception) { } finally { active.decrementAndGet() }
         }.apply { isDaemon = true; start() }
     }

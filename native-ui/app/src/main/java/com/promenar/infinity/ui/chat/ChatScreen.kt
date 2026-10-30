@@ -82,6 +82,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Lan
 import androidx.compose.material.icons.rounded.Add
 import com.promenar.infinity.ui.common.ModelBrandIcon
 import com.promenar.infinity.ui.common.InfinityBackButton
@@ -304,6 +305,10 @@ data class ChatScreenState(
     val inspectorPages: List<ChatPage> = emptyList(),
     /** 本会话 Agent 浏览器的页面与操作权状态；还没有打开网页时为 null，入口仍常驻并进入空状态。 */
     val browser: com.promenar.infinity.data.browser.BrowserUiState? = null,
+    /** 远程页签与菜单项的圆点：智能体正在使用 SSH 或 Tailscale 需要处理；都没有时为 null。 */
+    val remote: RemoteDot? = null,
+    /** 远程面板等处请求打开后台任务列表的次数；每次加一，打开运行详情的“后台”页。 */
+    val backgroundJobsRequest: Int = 0,
 )
 
 data class ChatScreenActions(
@@ -317,6 +322,8 @@ data class ChatScreenActions(
     val onOpenWorkspaceStatus: () -> Unit = {},
     /** 窄窗口打开 Agent 浏览器整页；宽窗口由检视器页签承载。 */
     val onOpenBrowser: () -> Unit = {},
+    /** 窄窗口打开“远程”整页；宽窗口由检视器页签承载。 */
+    val onOpenRemote: () -> Unit = {},
     /** 宽窗口检视器：替换整个层级（打开页签、收起）。 */
     val onSetInspectorPages: (List<ChatPage>) -> Unit = {},
     /** 宽窗口检视器的返回：弹出最上层，只剩根层时收起。 */
@@ -746,6 +753,7 @@ fun ChatScreenContent(
                         open = inspectorRoot == ChatPage.Browser,
                         onOpen = actions.onOpenBrowser,
                     ),
+                    remote = if (inspectorMode) null else ChatTopBarRemote(state.remote, actions.onOpenRemote),
                     isBranch = uiState.session?.parentSessionId != null || uiState.session?.parentSessionDeleted == true,
                     branchOpenParent = branchAccess?.parentSessionId?.let { parent -> { branchAccess.onOpenSession(parent) } },
                 )
@@ -789,6 +797,19 @@ fun ChatScreenContent(
             // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
             var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.infinity.ui.chat.components.RunDetailTab?>(null) }
             var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
+            // 后台任务只有运行详情“后台”页一份列表：宽窗口切到检视器“运行”页签，窄窗口打开运行详情。
+            // 记下已处理的请求，重新进入组合时不再重复打开。
+            var handledJobsRequest by remember { mutableIntStateOf(state.backgroundJobsRequest) }
+            LaunchedEffect(state.backgroundJobsRequest) {
+                if (state.backgroundJobsRequest == handledJobsRequest) return@LaunchedEffect
+                handledJobsRequest = state.backgroundJobsRequest
+                if (inspectorMode) {
+                    actions.onSetInspectorPages(openChatPageRoot(ChatPage.Run))
+                } else {
+                    runSheetTab = com.promenar.infinity.ui.chat.components.RunDetailTab.BACKGROUND
+                    runSheetOpen = true
+                }
+            }
             val agentActivity = com.promenar.infinity.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen || inspectorRoot == ChatPage.Run)
             val activitySummary = agentActivity?.summary
             val boardTitle = state.stateBoard?.board?.title
@@ -834,6 +855,7 @@ fun ChatScreenContent(
                 canvases = sideArtifacts.size,
                 browser = state.browser?.mode,
                 browserEntry = true,
+                remote = state.remote,
             )
             var inspectorWidened by rememberSaveable { mutableStateOf(false) }
             // 浏览器页签加宽时铺满会话区，只留左侧一条边距，再按一次恢复。
@@ -1438,8 +1460,9 @@ fun ChatScreenContent(
                                     },
                                     hasRunContent = hasRunContent,
                                 ) {
+                                    key(state.backgroundJobsRequest) {
                                     com.promenar.infinity.ui.chat.components.RunDetailContent(
-                                        initialTab = null,
+                                        initialTab = com.promenar.infinity.ui.chat.components.RunDetailTab.BACKGROUND.takeIf { state.backgroundJobsRequest > 0 },
                                         plan = sidePlan,
                                         isGenerating = uiState.isGenerating,
                                         turnStartedAt = turnStartedAt,
@@ -1454,6 +1477,7 @@ fun ChatScreenContent(
                                         onRemoveState = actions.onRemoveState,
                                         modifier = Modifier.fillMaxSize(),
                                     )
+                                    }
                                 }
                                 ChatPage.Canvas -> if (sideArtifacts.isEmpty() && sideCandidates.isEmpty()) {
                                     ChatInspectorCanvasEmpty()
@@ -1467,7 +1491,7 @@ fun ChatScreenContent(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
-                                ChatPage.Explorer, ChatPage.Git, ChatPage.Browser -> inspectorPageContent()
+                                ChatPage.Explorer, ChatPage.Git, ChatPage.Browser, ChatPage.Remote -> inspectorPageContent()
                             }
                             }
                             }
@@ -2077,6 +2101,8 @@ fun ChatTopBar(
     inspector: ChatTopBarInspector? = null,
     /** 本会话已打开 Agent 浏览器时的地球入口；为 null 时不显示。 */
     browser: ChatTopBarBrowser? = null,
+    /** 窄窗口菜单中的“远程”；宽窗口由检视器页签承载，传 null。 */
+    remote: ChatTopBarRemote? = null,
     /** 分支会话：标题前显示分支标记；主会话仍在时点按回到主会话。 */
     branchOpenParent: (() -> Unit)? = null,
     isBranch: Boolean = false,
@@ -2325,6 +2351,32 @@ fun ChatTopBar(
                             },
                         )
                     }
+                    remote?.let { entry ->
+                        val dot = when (entry.dot) {
+                            RemoteDot.AGENT -> MaterialTheme.colorScheme.primary
+                            RemoteDot.ATTENTION -> MaterialTheme.colorScheme.tertiary
+                            null -> null
+                        }
+                        InfinityMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Lan,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            },
+                            text = { Text(stringResource(R.string.remote_panel_title), style = InfinityTypography.labelLarge) },
+                            trailingIcon = dot?.let { color ->
+                                { Box(Modifier.size(8.dp).background(color, CircleShape)) }
+                            },
+                            modifier = Modifier.testTag(UiTags.CHAT_MENU_REMOTE),
+                            onClick = {
+                                showMenu = false
+                                entry.onClick()
+                            },
+                        )
+                    }
                     if (inspector == null) {
                         InfinityMenuItem(
                             leadingIcon = {
@@ -2477,6 +2529,9 @@ data class ChatTopBarInspector(
 
 /** 顶栏的 Agent 浏览器入口：Agent 操作时挂主色圆点，需要用户处理时挂橙色圆点。 */
 @Immutable
+/** 窄窗口菜单的“远程”入口与圆点。 */
+data class ChatTopBarRemote(val dot: RemoteDot?, val onClick: () -> Unit)
+
 data class ChatTopBarBrowser(
     val mode: com.promenar.infinity.data.browser.BrowserMode,
     val open: Boolean,

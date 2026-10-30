@@ -2,6 +2,7 @@ package com.promenar.infinity.data.jobs
 
 import com.promenar.infinity.data.exec.*
 import com.promenar.infinity.data.termux.*
+import com.promenar.infinity.data.ssh.*
 import com.promenar.infinity.domain.jobs.*
 import com.promenar.infinity.domain.tool.ToolLiveOutputSink
 import com.promenar.infinity.domain.tool.ToolOutputStream
@@ -87,6 +88,7 @@ class BackgroundJobManager(
         var sink: ToolLiveOutputSink = ToolLiveOutputSink.None
         var lastTail: String = ""
         @Volatile var suppressCompletion: Boolean = false
+        var sshControl: SshExecControl? = null
     }
     private val gate = Mutex()
     private val refreshGate = Mutex()
@@ -126,6 +128,10 @@ class BackgroundJobManager(
         store.prune()
         for (record in store.all()) {
             if (!record.running || record.runnerKind == BackgroundJobRunner.TERMUX) continue
+            if (record.runnerKind == BackgroundJobRunner.SSH) {
+                store.put(record.copy(state = "INTERRUPTED", endedAtMillis = now(), guidance = SSH_DISCONNECTED_GUIDANCE))
+                continue
+            }
             val cleaned=runner.interruptBackground(File(record.runDirectory,"pgid"))
             val reconcileWarning = try { reconcile(record, false, true) } catch (_: Exception) { "工作区恢复失败；任务副本和日志已保留。" }
             val warning=listOfNotNull(reconcileWarning,if(cleaned)null else "应用重启后无法核验旧进程组身份，未发送信号；请确认旧命令已停止。").joinToString(" ").ifEmpty{null}
@@ -152,7 +158,7 @@ class BackgroundJobManager(
         }
         return if(executionGate==null) checked() else executionGate.withNewSessionAdmission(sessionId) {checked()}
     }
-    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = gate.withLock {
+    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null):BackgroundJobRecord = gate.withLock {
         com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root, subsystem = com.promenar.infinity.startup.StartupSubsystem.BACKGROUND_JOBS)
         executionGate?.requireSessionWritable(sessionId)
         require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
@@ -161,13 +167,13 @@ class BackgroundJobManager(
         if(running.count{it.sessionId==sessionId} >= 3) throw JobAccessException("JOB_SESSION_LIMIT","本会话已有 3 个运行中任务，请先用 job_wait 等待或用 job_stop 停止。")
         if(running.size >= 6) throw JobAccessException("JOB_GLOBAL_LIMIT","全局已有 6 个运行中任务，请先结束部分后台任务。")
         val id="job-${UUID.randomUUID()}"
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path).also {
-            store.put(it); active[id]=Active(); publish()
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost).also {
+            store.put(it); active[id]=Active().also { handle -> handle.sshControl = sshControl }; publish()
         }
     }
     suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction, expectedMode: com.promenar.infinity.domain.model.SessionRunMode? = null):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
-        require(kind != BackgroundJobRunner.TERMUX)
+        require(kind != BackgroundJobRunner.TERMUX && kind != BackgroundJobRunner.SSH)
         val mode = sessionMode(sessionId) ?: throw JobAccessException("EXEC_RUN_MODE_REQUIRED", messages(RunModeMessage.MODE_REQUIRED))
         if (expectedMode != null && mode != expectedMode) throw JobAccessException("EXEC_MODE_CHANGED", messages(RunModeMessage.MODE_CHANGED))
         val linux = mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX
@@ -345,9 +351,145 @@ class BackgroundJobManager(
         }
     }
 
+    /** 前台复用 Agent 连接；让出后通道所在连接归任务持有，不受生成结束影响。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun runSsh(
+        runtime: SshRuntime, snapshot: SshHost, sessionId: String, root: String, source: String,
+        timeoutSeconds: Int, maxOutputChars: Int, yieldSeconds: Int, background: Boolean,
+        minutes: Int, action: BackgroundJobExitAction, live: ToolLiveOutputSink,
+    ): SshJobRunResult = withContext(Dispatchers.IO) {
+        require(timeoutSeconds in 1..600 && yieldSeconds in 0..timeoutSeconds && minutes in 1..1440)
+        SshPolicy.outputLimit(maxOutputChars)
+        if (source.isBlank() || source.length > 65_536 || '\u0000' in source) throw SshFailure("INVALID_COMMAND")
+        val result = CompletableDeferred<com.promenar.infinity.domain.tool.CommandToolResult>()
+        val ownership = CompletableDeferred<Boolean>()
+        val control = SshExecControl(minutes * 60, background)
+        var ownedRecord: BackgroundJobRecord? = null
+        var ownedHandle: Active? = null
+        var detached = false
+        try {
+            withContext(NonCancellable) {
+                initialize()
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias) }
+                ownedRecord = record
+                val handle = active.getValue(record.id)
+                ownedHandle = handle
+                handle.sshControl = control
+                control.cancelPending = { if (!control.started.isCompleted) handle.worker?.cancel() }
+                if (background) runtime.registerJob(record.id, sessionId, snapshot.alias, control::requestStop)
+                val release = live.retain()
+                val sink = liveOutput.open("job:${record.id}")
+                handle.sink = sink
+                sink.onStop(control::requestStop)
+                handle.worker = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
+                    try {
+                        val value = RotatingJobLog(logFile(record)).use { log ->
+                            val tee = object : ToolLiveOutputSink by live {
+                                override fun emit(stream: ToolOutputStream, text: String) {
+                                    log.write(text.toByteArray(Charsets.UTF_8))
+                                    sink.emit(stream, text)
+                                    live.emit(stream, text)
+                                }
+                                override fun onStop(stop: () -> Unit) { sink.onStop(stop); live.onStop(stop) }
+                            }
+                            runtime.withHostSnapshot(snapshot) {
+                                runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
+                                    timeoutSeconds, maxOutputChars, tee, control)
+                            }.commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
+                        }
+                        withContext(NonCancellable) {
+                            val settled = if (control.stopRequested.get()) value.copy(
+                                errorCode = "SSH_STOPPED", guidance = SSH_DISCONNECTED_GUIDANCE, exitCode = null, timedOut = false,
+                            ) else value
+                            val terminal = record.copy(
+                                state = when { settled.errorCode == "SSH_STOPPED" -> "STOPPED"; settled.timedOut -> "TIMED_OUT"; settled.errorCode != null -> "FAILED"; else -> "EXITED" },
+                                exitCode = settled.exitCode, endedAtMillis = now(), commandResult = settled.toJson(),
+                                guidance = settled.guidance,
+                            )
+                            runtime.finishJob(record.id)
+                            store.put(terminal); publish(); handle.terminal.complete(Unit); result.complete(settled)
+                            if (ownership.await() && sessionAllowed(record) && !handle.suppressCompletion) {
+                                try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
+                            }
+                        }
+                    } catch (failure: Throwable) {
+                        withContext(NonCancellable) {
+                            val stoppedResult = if (control.stopRequested.get()) com.promenar.infinity.domain.tool.CommandToolResult(
+                                errorCode = "SSH_STOPPED", guidance = SSH_DISCONNECTED_GUIDANCE,
+                            ) else null
+                            val terminal = record.copy(
+                                state = if (control.stopRequested.get()) "STOPPED" else if (failure is CancellationException) "INTERRUPTED" else "FAILED",
+                                endedAtMillis = now(), guidance = if (control.stopRequested.get() || failure is CancellationException) SSH_DISCONNECTED_GUIDANCE
+                                    else "SSH 后台命令无法执行，请检查主机配置和网络；不要自动重试。",
+                                commandResult = stoppedResult?.toJson(),
+                            )
+                            runtime.finishJob(record.id)
+                            store.put(terminal); publish(); handle.terminal.complete(Unit)
+                            if (stoppedResult != null) result.complete(stoppedResult) else result.completeExceptionally(failure)
+                            if (ownership.await() && sessionAllowed(record) && !handle.suppressCompletion) {
+                                try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
+                            }
+                        }
+                    } finally {
+                        withContext(NonCancellable) {
+                            try { runtime.finishJob(record.id) } finally {
+                                handle.terminal.complete(Unit); active.remove(record.id, handle)
+                                control.cancelPending = null
+                                release(); liveOutput.close("job:${record.id}", sink)
+                            }
+                        }
+                    }
+                }
+            }
+            val record = checkNotNull(ownedRecord)
+            if (background) {
+                detached = true
+                ownership.complete(true)
+                return@withContext SshJobRunResult(job = record)
+            }
+            // 建连与等待连接锁不消耗让出阈值；执行超时仍由 SSH 运行时约束。
+            kotlinx.coroutines.selects.select<Unit> { result.onAwait { }; control.started.onAwait { } }
+            val completed = if (yieldSeconds == 0) result.await() else withTimeoutOrNull(yieldSeconds * 1_000L) { result.await() }
+            if (completed != null) {
+                ownership.complete(false)
+                return@withContext SshJobRunResult(command = completed)
+            }
+            currentCoroutineContext().ensureActive()
+            val promoted = withContext(NonCancellable) {
+                checkNotNull(control.promote).invoke(record.id, sessionId).also { transferred ->
+                    if (transferred) { detached = true; ownership.complete(true) }
+                }
+            }
+            if (!promoted) {
+                ownership.complete(false)
+                return@withContext SshJobRunResult(command = result.await())
+            }
+            // 与取消清理串行交接；一旦归属已转移，调用者取消不再终止任务。
+            detached = true
+            ownership.complete(true)
+            SshJobRunResult(job = record, yieldedAfterSeconds = yieldSeconds)
+        } catch (failure: Throwable) {
+            if (!detached) withContext(NonCancellable) {
+                ownership.complete(false)
+                control.requestStop()
+                val handle = ownedHandle
+                if (handle?.worker != null) handle.worker?.cancelAndJoin() else {
+                    ownedRecord?.let { record ->
+                        store.put(record.copy(state = "FAILED", endedAtMillis = now(), guidance = "SSH 任务启动未完成。"))
+                        runtime.finishJob(record.id)
+                        active.remove(record.id)
+                        publish()
+                    }
+                }
+            }
+            throw failure
+        }
+    }
+
     suspend fun input(sessionId: String, id: String, text: String, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus = withContext(Dispatchers.IO) {
         require(text.length <= 32_000 && '\u0000' !in text) { "text 应为不含 NUL 的字符串，最多32000字符。" }
         val record = owned(sessionId, id)
+        if (record.runnerKind == BackgroundJobRunner.SSH) throw JobAccessException("JOB_INPUT_UNSUPPORTED", "SSH 后台命令不支持输入；交互式程序请使用 ssh_session_*。")
         if (!record.running) throw JobAccessException("JOB_NOT_RUNNING", "任务已经结束，不能写入输入。")
         val handle = active[id] ?: throw JobAccessException("JOB_INPUT_UNAVAILABLE", "任务输入不可用，请查询任务状态。")
         if (handle.control.input == null) throw JobAccessException("JOB_INPUT_UNAVAILABLE", "该任务没有交互输入；需要交互的 Linux shell 命令不要传 stdin。")
@@ -510,7 +652,7 @@ class BackgroundJobManager(
             catch(_:Exception) { /* 完成通知失败不能改写真实进程终态。 */ }
         }
     }
-    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,when(record.runnerKind) { BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON; BackgroundJobRunner.LINUX -> ExecRunKind.LINUX; else -> ExecRunKind.SHELL },record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true)
+    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,execRunKind(record.runnerKind),record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true,host=record.remoteHost)
     private fun logFile(record:BackgroundJobRecord):File =
         if (record.logMigrationDeferred) BackgroundJobLogs.legacyFile(record) ?: BackgroundJobLogs.file(record, runRoot)
         else BackgroundJobLogs.file(record, runRoot)
@@ -530,7 +672,7 @@ class BackgroundJobManager(
         var record=owned(sessionId,id)
         var warning: String? = null
         val tail=if(record.runnerKind==BackgroundJobRunner.TERMUX) refreshTermux(record) else {
-            warning=if (record.directWorkspace) null else reconcile(record,false,false)
+            warning=if (record.directWorkspace || record.runnerKind == BackgroundJobRunner.SSH) null else reconcile(record,false,false)
             val migration = if (record.logMigrationDeferred) null else runCatching { BackgroundJobLogs.migrate(record, runRoot) }.exceptionOrNull()
             if (migration != null) warning = listOfNotNull(warning, "日志迁移未完成（${migration::class.java.simpleName}），旧日志已保留。").joinToString(" ")
             val snapshot = active[id]?.control?.outputSnapshot
@@ -556,7 +698,9 @@ class BackgroundJobManager(
         initialize()
         val record=store.all().find{it.id==jobId && it.running} ?: return@withContext false
         val handle=active[jobId]
-        if(record.runnerKind==BackgroundJobRunner.TERMUX) {
+        if (record.runnerKind == BackgroundJobRunner.SSH) {
+            handle?.sshControl?.requestStop()
+        } else if(record.runnerKind==BackgroundJobRunner.TERMUX) {
             refreshGate.withLock {
                 val latest=store.all().find{it.id==jobId} ?: return@withLock
                 if(!latest.running) return@withLock
@@ -613,4 +757,12 @@ class BackgroundJobManager(
             }
         }
     }
+}
+
+/** 后台任务在运行通知与运行详情中的类型；SSH 有自己的类型，不当作本机 shell 显示。 */
+internal fun execRunKind(runner: BackgroundJobRunner): ExecRunKind = when (runner) {
+    BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON
+    BackgroundJobRunner.LINUX -> ExecRunKind.LINUX
+    BackgroundJobRunner.SSH -> ExecRunKind.SSH
+    BackgroundJobRunner.SHELL, BackgroundJobRunner.TERMUX -> ExecRunKind.SHELL
 }

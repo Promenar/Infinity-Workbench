@@ -17,9 +17,11 @@ internal data class SshHostDraft(
     val localPort: String,
     val forwardHost: String,
     val forwardPort: String,
+    /** 从 tailnet 选择设备时为设备名：主机 ID 留空时按它生成，而不是按填入的 IP。 */
+    val aliasSeed: String? = null,
 ) {
     /**
-     * 新建主机且主机 ID 留空时按主机名生成；[takenAliases] 为已有主机 ID，新建时不得重复。
+     * 新建主机且主机 ID 留空时按 [aliasSeed]（没有时按主机名）生成；[takenAliases] 为已有主机 ID，新建时不得重复。
      * 主机 ID 规则不放宽，生成值本身满足同一规则。
      */
     fun toHost(
@@ -30,7 +32,7 @@ internal data class SshHostDraft(
         takenAliases: Set<String> = emptySet(),
     ): SshHost {
         val safeAlias = alias.trim().ifEmpty {
-            if (existing == null) suggestAlias(hostname, takenAliases).orEmpty() else ""
+            if (existing == null) suggestAlias(aliasSeed ?: hostname, takenAliases).orEmpty() else ""
         }
         val safeHost = hostname.trim()
         val safeUsername = username.trim()

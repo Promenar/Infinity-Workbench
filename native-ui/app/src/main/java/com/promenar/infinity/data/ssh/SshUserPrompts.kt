@@ -8,13 +8,43 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** Agent 管理 SSH 主机的设备级授权；默认关闭，不随备份迁移。 */
 object SshAgentPreferences {
     const val HOST_MANAGEMENT_KEY = "ssh_agent_host_management"
     val HOST_MANAGEMENT_TOOLS = setOf("ssh_host_list", "ssh_host_save", "ssh_host_delete", "ssh_host_install_key")
 
-    fun isHostManagementEnabled(settings: SharedPreferences): Boolean = settings.getBoolean(HOST_MANAGEMENT_KEY, false)
+    /** 默认开启：主机变更每次仍需用户审批；用户显式关闭后保留其选择。 */
+    fun isHostManagementEnabled(settings: SharedPreferences): Boolean = settings.getBoolean(HOST_MANAGEMENT_KEY, true)
+}
+
+/** 用户终端的全局空闲策略；只在最后输入或输出后计时。 */
+enum class SshTerminalIdlePolicy(val wireName: String, val timeoutMillis: Long?) {
+    OFF("off", null), MINUTES_30("30m", 30 * 60_000L), HOURS_2("2h", 2 * 60 * 60_000L);
+
+    companion object {
+        const val PREFERENCES_NAME = "infinity_settings"
+        const val KEY = "ssh_terminal_idle_disconnect"
+        fun read(settings: SharedPreferences): SshTerminalIdlePolicy {
+            val value = try { settings.getString(KEY, "off") } catch (_: ClassCastException) { null }
+            return entries.firstOrNull { it.wireName == value } ?: OFF
+        }
+        fun write(settings: SharedPreferences, policy: SshTerminalIdlePolicy) {
+            settings.edit().putString(KEY, policy.wireName).apply()
+        }
+        fun observe(settings: SharedPreferences): Flow<SshTerminalIdlePolicy> = callbackFlow {
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key == KEY || key == null) trySend(read(settings))
+            }
+            settings.registerOnSharedPreferenceChangeListener(listener)
+            trySend(read(settings))
+            awaitClose { settings.unregisterOnSharedPreferenceChangeListener(listener) }
+        }.distinctUntilChanged()
+    }
 }
 
 /** 需要用户在应用内亲自完成的 SSH 步骤；内容只含主机配置，不含任何凭据。 */

@@ -2,7 +2,7 @@ package com.promenar.infinity.domain.jobs
 
 import kotlinx.coroutines.flow.Flow
 
-enum class BackgroundJobRunner { SHELL, PYTHON, LINUX, TERMUX }
+enum class BackgroundJobRunner { SHELL, PYTHON, LINUX, TERMUX, SSH }
 
 enum class BackgroundJobState {
     RUNNING,
@@ -49,6 +49,8 @@ data class BackgroundJob(
     val logWorkspacePath: String?,
     /** 实时输出在 `ToolLiveOutputStore` 中的键，供界面复用实时输出面板。 */
     val liveOutputKey: String,
+    /** [BackgroundJobRunner.SSH] 任务所在的主机 ID，与运行环境标签一起显示；本地任务为 null。 */
+    val remoteHost: String? = null,
 )
 
 data class BackgroundJobLog(val text: String, val truncated: Boolean)

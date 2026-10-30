@@ -116,6 +116,8 @@ internal fun advanceChatOverlay(
 
 private const val TRUNCATE_OVERLAY_PREFIX = "truncate:"
 private const val TURN_MEMORY_OVERLAY_PREFIX = "turn_memory:"
+/** 运行中的 ssh_exec 只会出现在最近几条消息里；只扫描这一段，避免长会话每次重组都遍历全部步骤。 */
+private const val REMOTE_USAGE_MESSAGE_WINDOW = 8
 
 internal fun saveChatOverlay(overlay: ChatOverlay?): String? = when (overlay) {
     null -> null
@@ -376,6 +378,8 @@ fun ChatRoute(
     val chatPages = restoreChatPages(chatPagesToken)
     // 二级页面由检视器还是整页承载，以会话宿主自身的宽度为准：内屏三列的会话列虽在宽窗口里，自身仍是窄窗口。
     var paneInspector by remember { mutableStateOf(wideWindow) }
+    // 远程面板请求打开后台任务列表的次数，交给会话页打开运行详情的“后台”页。
+    var backgroundJobsRequest by remember(sessionId) { mutableIntStateOf(0) }
     // 窄窗口整页与检视器“文件”“Git”页签共用的层级；收起时仍按最后的层级渲染，退场动画期间内容不消失。
     val pageStack = chatPageStack(chatPages, paneInspector)
     var lastPageStack by remember { mutableStateOf(pageStack) }
@@ -746,7 +750,24 @@ fun ChatRoute(
     val browserState by produceState<com.promenar.infinity.data.browser.BrowserUiState?>(null, browserFlow) {
         if (browserFlow == null) value = null else browserFlow.collect { value = it }
     }
-    // 资源管理器、Git 变更与浏览器的层级：窄窗口整页覆盖会话，宽窗口作为检视器页签的内容。
+    // 远程面板：智能体正在使用的 SSH（运行中的 ssh_exec、交互会话与 SSH 后台命令）与 Tailscale 状态决定页签圆点。
+    val liveOutputKeys by application.toolLiveOutputStore.activeKeys.collectAsStateWithLifecycle()
+    val recentMessages = uiState.messages.takeLast(REMOTE_USAGE_MESSAGE_WINDOW)
+    val remoteExecs = remember(recentMessages, liveOutputKeys, uiState.isGenerating) {
+        com.promenar.infinity.ui.remote.runningSshExecs(recentMessages.map { it.executionSteps.orEmpty() }, liveOutputKeys, uiState.isGenerating)
+    }
+    val sshActivity by application.sshRuntime.activity.collectAsStateWithLifecycle()
+    val sessionJobs by remember(application, sessionId) { application.backgroundJobController.observe(sessionId) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val remoteUsage = com.promenar.infinity.ui.remote.RemoteAgentUsage(
+        execs = remoteExecs,
+        sessions = sshActivity.agentSessions.filter { it.sessionId == sessionId },
+        jobs = com.promenar.infinity.ui.remote.runningSshJobs(sessionJobs, sessionId),
+    )
+    val tailnetState by application.tailnetManager.state.collectAsStateWithLifecycle()
+    val remoteDotState = remoteDot(remoteUsage.active, com.promenar.infinity.ui.remote.tailscaleNeedsAttention(tailnetState.phase))
+    val settingsNavigation = LocalSessionSettingsNavigation.current
+    // 资源管理器、Git 变更、浏览器与远程的层级：窄窗口整页覆盖会话，宽窗口作为检视器页签的内容。
     val chatPageLevels: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         // 检视器根层由页签与收起按钮离开，不再显示返回。
         val inInspector = com.promenar.infinity.ui.common.LocalInfinityPanePresentation.current ==
@@ -793,6 +814,18 @@ fun ChatRoute(
                             ChatPage.Browser -> com.promenar.infinity.ui.browser.BrowserPage(
                                 sessionId = sessionId,
                                 onBack = closeTopChatPage.takeUnless { inInspector },
+                            )
+                            ChatPage.Remote -> com.promenar.infinity.ui.remote.RemotePage(
+                                sessionId = sessionId,
+                                usage = remoteUsage,
+                                linuxMode = runModeStatus?.mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX,
+                                onBack = closeTopChatPage.takeUnless { inInspector },
+                                onOpenSettings = settingsNavigation?.openRemoteSettings,
+                                onOpenBackgroundJobs = {
+                                    // 窄窗口先收起整页远程面板；宽窗口由会话页把检视器切到“运行”页签。
+                                    if (!inInspector) closeTopChatPage()
+                                    backgroundJobsRequest++
+                                },
                             )
                             ChatPage.Canvas -> com.promenar.infinity.ui.canvas.CanvasListPage(
                                 onBack = closeTopChatPage.takeUnless { inInspector },
@@ -878,6 +911,8 @@ fun ChatRoute(
                 },
                 inspectorPages = chatPages,
                 browser = browserState,
+                remote = remoteDotState,
+                backgroundJobsRequest = backgroundJobsRequest,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },
@@ -900,6 +935,7 @@ fun ChatRoute(
                 },
                 onOpenGit = { openChatPage(ChatPage.Git) },
                 onOpenBrowser = { openChatPage(ChatPage.Browser) },
+                onOpenRemote = { openChatPage(ChatPage.Remote) },
                 onSetInspectorPages = setChatPages,
                 onInspectorBack = closeTopChatPage,
                 onLocateWorkspacePath = { path ->
