@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.exec
 
 import com.promenar.infinity.data.git.remote.GitRemoteSessions
+import com.promenar.infinity.data.git.remote.LinuxGitEnvironment
 import com.promenar.infinity.data.repository.WorkspaceChangeReport
 import com.promenar.infinity.data.repository.WorkspaceCommandHost
 import com.promenar.infinity.data.repository.WorkspaceCommandOutcome
@@ -173,7 +174,7 @@ class BuiltinExecService(
                 val title = titleOrNull(resolvedSessionId)
                 val before = packageProvenance.before()
                 return com.promenar.infinity.data.jobs.PreparedBackgroundCommand(
-                    request.copy(environment = request.environment + lease.environment), lease::close,
+                    request.copy(environment = request.environment + lease.environment + LinuxGitEnvironment.from(lease.environment)), lease::close,
                     afterRun = { packageProvenance.after(before, resolvedSessionId, title) },
                 )
             }
@@ -233,7 +234,8 @@ class BuiltinExecService(
             val base = if (kind == ExecRunKind.LINUX) {
                 linuxRequest(root, workspaceKind, sessionId, source, stdin, timeoutSeconds, target)
             } else request(root, workspaceKind)
-            val commandRequest = base.copy(environment = base.environment + lease.environment)
+            val commandRequest = base.copy(environment = base.environment + lease.environment +
+                if (kind == ExecRunKind.LINUX) LinuxGitEnvironment.from(lease.environment) else emptyMap())
             val linux = runtime == "linux"
             val title = if (linux) titleOrNull(sessionId) else null
             val packagesBefore = if (linux) packageProvenance.before() else null

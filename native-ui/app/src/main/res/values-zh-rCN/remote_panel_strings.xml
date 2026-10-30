@@ -7,7 +7,7 @@
     <string name="remote_segment_git">Git 凭据</string>
     <string name="remote_segment_tailscale">Tailscale</string>
     <string name="remote_segment_network">网络</string>
-    <string name="remote_linux_git_hint">本会话在 Linux 中运行。Alpine 原生 git 不使用这里的凭据；需要认证的推拉可切到内置模式，或在 Linux 中用 gh 登录。</string>
+    <string name="remote_linux_git_hint">本会话在 Linux 中运行。原生 git 的 HTTPS 推拉使用这里保存的凭据，与内置模式共用；git@主机: / ssh:// 远端在 Linux 中不经 SSH 桥，需要时切到内置模式。</string>
     <string name="remote_linux_network_hint">Linux 环境中的命令可直接访问局域网，不受此白名单限制。</string>
     <string name="remote_more_settings">更多设置</string>
     <string name="remote_link_linux">Linux 环境</string>

@@ -2,6 +2,10 @@ package com.promenar.infinity.data.exec
 
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.jobs.*
+import com.promenar.infinity.data.git.remote.GitRemoteBroker
+import com.promenar.infinity.data.git.remote.GitRemoteLease
+import com.promenar.infinity.data.git.remote.GitRemoteSessions
+import com.promenar.infinity.data.git.remote.LinuxGitEnvironment
 import com.promenar.infinity.data.repository.*
 import com.promenar.infinity.data.storage.ExternalMountPaths
 import com.promenar.infinity.domain.jobs.*
@@ -28,6 +32,56 @@ import org.junit.Before
 import org.junit.Test
 
 class LinuxExecIntegrationTest {
+    @Test fun `前后台Linux都追加git配置且内置命令不追加`() = runBlocking<Unit> {
+        val leaseEnvironment = mapOf(
+            GitRemoteBroker.ENV_HTTP_PROXY to "127.0.0.1:43123",
+            GitRemoteBroker.ENV_NONCE to "synthetic-exec-command",
+            GitRemoteBroker.ENV_CREDENTIAL_HOSTS to "git.test",
+        )
+        var closed = 0
+        val remote = GitRemoteSessions {
+            object : GitRemoteLease {
+                override val environment = leaseEnvironment
+                override fun close() { closed++ }
+            }
+        }
+        val exec = service(gitRemote = remote)
+        val printEnvironment = "printf '%s|%s' \"\$GIT_CONFIG_COUNT\" \"\$GIT_TERMINAL_PROMPT\""
+        val linux = shell(exec, printEnvironment)
+        assertThat(linux.exitCode).isEqualTo(0)
+        assertThat(linux.stdout).isEqualTo("3|0")
+        assertThat(closed).isEqualTo(1)
+        val location = BackgroundJobLocation(workspace, workspace, true, false, sessionId = "s")
+        val backgroundLinux = exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "true", null, location, 1, "s")
+        try {
+            (leaseEnvironment + LinuxGitEnvironment.from(leaseEnvironment)).forEach { (key, value) ->
+                assertThat(backgroundLinux.request.environment[key]).isEqualTo(value)
+            }
+        } finally { backgroundLinux.close() }
+        assertThat(closed).isEqualTo(2)
+        mode = SessionRunMode.BUILTIN
+        val builtin = shell(exec, printEnvironment)
+        assertThat(builtin.exitCode).isEqualTo(0)
+        assertThat(builtin.stdout).isEqualTo("|")
+        val backgroundBuiltin = exec.prepareBackgroundCommand(BackgroundJobRunner.SHELL, "true", null, location, 1, "s")
+        try {
+            assertThat(backgroundBuiltin.request.environment.keys.none { it.startsWith("GIT_") }).isTrue()
+            assertThat(backgroundBuiltin.request.environment[GitRemoteBroker.ENV_NONCE]).isEqualTo(leaseEnvironment[GitRemoteBroker.ENV_NONCE])
+        } finally { backgroundBuiltin.close() }
+        assertThat(closed).isEqualTo(4)
+    }
+
+    @Test fun `无凭据的前后台Linux也禁用git交互提示`() = runBlocking<Unit> {
+        val exec = service()
+        assertThat(shell(exec, "printf '%s' \"\$GIT_TERMINAL_PROMPT\"").stdout).isEqualTo("0")
+        val prepared = exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "true", null,
+            BackgroundJobLocation(workspace, workspace, true, false, sessionId = "s"), 1, "s")
+        try {
+            assertThat(prepared.request.environment["GIT_TERMINAL_PROMPT"]).isEqualTo("0")
+            assertThat(prepared.request.environment).doesNotContainKey("GIT_CONFIG_COUNT")
+        } finally { prepared.close() }
+    }
+
     @Test fun `前台与后台Linux命令都传递会话唤醒收件箱`() = runBlocking<Unit> {
         val box = File(root, "wake-box").apply { mkdirs() }
         val exec = service(wakeInbox = { assertThat(it).isEqualTo("s"); box })
@@ -95,7 +149,7 @@ class LinuxExecIntegrationTest {
 
     private fun service(provenance: LinuxPackageProvenance? = null, mounts: List<ExternalMount> = emptyList(), host: WorkspaceCommandHost? = null, selected: com.promenar.infinity.data.workspace.SessionWorkspace = com.promenar.infinity.data.workspace.SessionWorkspace.Private,
         resolveSelected: suspend () -> com.promenar.infinity.data.workspace.SessionWorkspace = { selected },
-        wakeInbox: suspend (String) -> File? = { null }) = BuiltinExecService(
+        wakeInbox: suspend (String) -> File? = { null }, gitRemote: GitRemoteSessions = GitRemoteSessions.None) = BuiltinExecService(
         workspace = host ?: object : WorkspaceCommandHost {
             override suspend fun <T> runCommandInWorkspace(workspaceRootUuid: String, sessionId: String?, block: suspend (File) -> T): WorkspaceCommandOutcome<T> {
                 val result = block(workspace)
@@ -107,7 +161,7 @@ class LinuxExecIntegrationTest {
         environment = BuiltinExecEnvironment(PackagedPython(File(root, "absent")), File(root, "home"), File(root, "tmp"), { null }, inherited = mapOf("PATH" to "/usr/bin:/bin")),
         shell = "/bin/sh", keepAlive = keepAlive, linuxRuntime = runtime, linuxProvenance = provenance, sessionWorkspace = { resolveSelected() },
         visibleMounts = { assertThat(it).isEqualTo("s"); mounts }, sessionTitle = { "会话标题" }, sessionMode = { mode }, sessionHome = { homeResolutions++; workspace },
-        wakeInbox = wakeInbox,
+        wakeInbox = wakeInbox, gitRemote = gitRemote,
     )
 
     private suspend fun shell(service: BuiltinExecService, command: String, timeout: Int = 3, live: ToolLiveOutputSink = ToolLiveOutputSink.None) =

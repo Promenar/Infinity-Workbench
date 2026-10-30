@@ -7,7 +7,7 @@
     <string name="remote_segment_git">Git credentials</string>
     <string name="remote_segment_tailscale">Tailscale</string>
     <string name="remote_segment_network">Network</string>
-    <string name="remote_linux_git_hint">This session runs in Linux. Alpine\'s native git does not use these credentials; for authenticated push and pull, switch to built-in mode or sign in with gh inside Linux.</string>
+    <string name="remote_linux_git_hint">This session runs in Linux. Native git uses the credentials saved here for HTTPS push and pull, shared with built-in mode. git@host: and ssh:// remotes do not use the SSH bridge in Linux; switch to built-in mode when needed.</string>
     <string name="remote_linux_network_hint">Commands in the Linux environment can reach the local network directly and are not limited by this allowlist.</string>
     <string name="remote_more_settings">More settings</string>
     <string name="remote_link_linux">Linux environment</string>
