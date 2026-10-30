@@ -27,6 +27,8 @@ object SystemPromptSections {
         "/home/session 保存在 rootfs 之外，重置 Linux 不删除它；/root 不进入备份，重置会清空。文件元数据密集操作较慢。" +
         "Linux 不可用时返回错误，请用户在会话中处理环境，不能自动改用系统 sh、打包 Python 或其它运行环境。" +
         "Linux 命令以本应用的 Android 用户运行，工作区档逐条审批，完全访问档免批。" +
+        "原生 git 访问 HTTPS 远端时自动使用用户在设置中保存的 Git 凭据，与内置模式共用，无需在 Linux 中登录或配置凭据助手。" +
+        "git@主机: 与 ssh:// 远端在 Linux 中不经 SSH 桥，需要时请用户切到内置模式。" +
         "shell_exec 在伪终端运行（TERM=xterm-256color，120列×40行，stderr合并到stdout）。默认15秒让出为后台任务，yield_after_seconds=0 等待到 timeout_seconds；background:true 立即返回任务号。" +
         "命令输出实时显示给用户，模型仅在工具返回或查询任务时看到输出。交互命令让出后，应立即把已有输出中需用户操作的登录链接、验证码转告用户，再用 job_wait 等待或 job_input 回答提示。" +
         "需要交互的命令不要传 stdin；job_input 可发送文本、回车和EOF。不要在前台命令中用 nohup … & 后台化，工具调用结束时进程组会被结束。" +
