@@ -4,6 +4,8 @@ import com.promenar.infinity.domain.jobs.SftpTransferFailure
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -22,8 +24,54 @@ interface SftpLocalFile {
     suspend fun write(size: Long, overwrite: Boolean, expected: SftpLocalStat?, check: () -> Unit = {}, beforeCommit: () -> Unit = {}, onCommitted: (String) -> Unit = {}, writer: (OutputStream) -> String): String
 }
 
-data class SftpTransferResult(val bytes: Long, val sha256: String, val elapsedSeconds: Double) {
-    fun toJson() = buildJsonObject { put("bytes", bytes); put("sha256", sha256); put("elapsed_seconds", elapsedSeconds) }
+data class SftpTransferResult(
+    val bytes: Long, val sha256: String, val elapsedSeconds: Double,
+    val timingsMs: Map<String, Double> = emptyMap(), val connectionSource: String = "unknown",
+) {
+    fun toJson() = buildJsonObject {
+        put("bytes", bytes); put("sha256", sha256); put("elapsed_seconds", elapsedSeconds)
+        put("timings_ms", buildJsonObject { timingsMs.forEach { (stage, ms) -> put(stage, ms) } })
+        put("connection_source", connectionSource)
+    }
+}
+
+/** 通过协程上下文共享给后台任务与传输工作线程；只记录单调耗时和固定阶段名。 */
+internal class SftpTransferTrace(private val queuedAt: Long = System.nanoTime()) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<SftpTransferTrace>
+    private val nanos = linkedMapOf<String, Long>()
+    private var stage: String? = null
+    private var stageStarted = queuedAt
+    @Volatile var connectionSource = "unknown"
+
+    @Synchronized fun next(name: String?) {
+        val time = System.nanoTime()
+        stage?.let { nanos[it] = (nanos[it] ?: 0L) + (time - stageStarted).coerceAtLeast(0) }
+        stage = name
+        stageStarted = time
+    }
+    @Synchronized fun workerStarted() {
+        nanos["queue_prepare"] = (System.nanoTime() - queuedAt).coerceAtLeast(0)
+    }
+    @Synchronized fun snapshot(): Map<String, Double> = nanos.mapValues { it.value / 1_000_000.0 }
+    fun fields() = buildJsonObject {
+        put("timings_ms", buildJsonObject { snapshot().forEach { (stage, ms) -> put(stage, ms) } })
+        put("connection_source", connectionSource)
+    }
+    fun summary() = "SFTP 分段耗时（ms，连接=$connectionSource）：" + snapshot().entries.joinToString(" · ") {
+        "${it.key}=%.1f".format(java.util.Locale.ROOT, it.value)
+    }
+}
+
+internal fun sftpProgressText(total: Long?, done: Long = 0, speed: Long? = null): String {
+    fun amount(bytes: Long): String {
+        val units = listOf("B", "KiB", "MiB", "GiB")
+        var value = bytes.toDouble()
+        var unit = 0
+        while (value >= 1024 && unit < units.lastIndex) { value /= 1024; unit++ }
+        return if (unit == 0) "$bytes B" else "%.1f %s".format(java.util.Locale.ROOT, value, units[unit])
+    }
+    return "\r已传 ${amount(done)} / ${total?.let(::amount) ?: "未知"}" +
+        (speed?.takeIf { it > 0 }?.let { " · ${amount(it)}/s" } ?: "")
 }
 
 internal fun requireSftpSize(size: Long) {
