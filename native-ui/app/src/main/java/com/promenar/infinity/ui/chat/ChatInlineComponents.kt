@@ -57,6 +57,7 @@ import com.promenar.infinity.data.model.RagPhase
 import com.promenar.infinity.data.model.RagProgress
 import com.promenar.infinity.data.model.RagReference
 import com.promenar.infinity.data.model.RagRetrievalTrace
+import com.promenar.infinity.domain.jobs.SftpTransferDirection
 import com.promenar.infinity.domain.tool.CommandToolBackend
 import com.promenar.infinity.domain.tool.CommandToolClassification
 import com.promenar.infinity.domain.tool.ToolExecutionTargets
@@ -914,13 +915,8 @@ internal fun ApprovalKindBand(
     executionTarget: String? = null,
 ) {
     val backend = CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))
-    val label = when (backend) {
-        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command
-        CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command
-        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command
-        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command
-        null -> R.string.chat_approval_kind_tool
-    }
+    val label = approvalKindLabel(toolName, executionTarget)
+    val transfer = sftpTransferDirection(toolName) != null
     val scheme = MaterialTheme.colorScheme
     val accent = if (backend != null) scheme.primary else scheme.onSurfaceVariant
     val band = if (backend != null) scheme.primary.copy(alpha = 0.10f).compositeOver(scheme.surfaceContainerLow) else scheme.surfaceContainerHigh
@@ -936,6 +932,7 @@ internal fun ApprovalKindBand(
     ) {
         Icon(
             imageVector = when {
+                transfer -> Icons.Rounded.ImportExport
                 backend != null -> Icons.Rounded.Terminal
                 toolName == REQUEST_KNOWLEDGE_ACCESS_TOOL -> Icons.Rounded.Key
                 else -> Icons.Rounded.Extension
@@ -1005,18 +1002,45 @@ internal fun ApprovalCallTitle(name: String, pending: Boolean) {
     }
 }
 
-/** 类别说明：命令写清以什么身份运行、能触及哪些范围；内置工具说明由 Infinity Workbench 按固定规则执行。 */
-@Composable
-internal fun ApprovalKindDetail(toolName: String, executionTarget: String? = null) {
-    val detail = when (CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))) {
+/**
+ * 类别条文案。SFTP 传输与远程命令同走 SSH 后端（路由、风险与后台任务归类不变），这里只把显示类别写成“文件传输”。
+ */
+internal fun approvalKindLabel(toolName: String, executionTarget: String?): Int =
+    if (sftpTransferDirection(toolName) != null) R.string.chat_approval_kind_file_transfer
+    else when (CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))) {
+        CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command
+        CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command
+        CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command
+        CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command
+        null -> R.string.chat_approval_kind_tool
+    }
+
+/** 待本地化的类别说明：资源 ID 与格式参数。 */
+internal data class ApprovalKindDetailText(val resId: Int, val args: List<Any> = emptyList())
+
+/** 类别说明文案；传输写成“上传到 / 从 主机 下载”，取不到主机时不显示。 */
+internal fun approvalKindDetail(toolName: String, executionTarget: String?): ApprovalKindDetailText? {
+    sftpTransferDirection(toolName)?.let { direction ->
+        val host = sftpTransferHost(executionTarget) ?: return null
+        val resId = if (direction == SftpTransferDirection.UPLOAD) R.string.chat_approval_kind_upload_detail
+        else R.string.chat_approval_kind_download_detail
+        return ApprovalKindDetailText(resId, listOf(host))
+    }
+    return ApprovalKindDetailText(when (CommandToolClassification.backendFor(toolName, ToolExecutionTargets.runsInLinux(executionTarget))) {
         CommandToolBackend.BUILTIN_SHELL, CommandToolBackend.BUILTIN_PYTHON -> R.string.chat_approval_kind_builtin_command_detail
         CommandToolBackend.LINUX -> R.string.chat_approval_kind_linux_command_detail
         CommandToolBackend.TERMUX -> R.string.chat_approval_kind_termux_command_detail
         CommandToolBackend.SSH -> R.string.chat_approval_kind_ssh_command_detail
         null -> R.string.chat_approval_kind_tool_detail
-    }
+    })
+}
+
+/** 类别说明：命令写清以什么身份运行、能触及哪些范围；内置工具说明由 Infinity Workbench 按固定规则执行；传输写明方向与主机。 */
+@Composable
+internal fun ApprovalKindDetail(toolName: String, executionTarget: String? = null) {
+    val detail = approvalKindDetail(toolName, executionTarget) ?: return
     Text(
-        stringResource(detail),
+        stringResource(detail.resId, *detail.args.toTypedArray()),
         style = MaterialTheme.typography.bodySmall.forReading(),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

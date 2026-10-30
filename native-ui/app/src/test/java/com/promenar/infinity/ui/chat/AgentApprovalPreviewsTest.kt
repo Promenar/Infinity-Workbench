@@ -94,4 +94,39 @@ class AgentApprovalPreviewsTest {
         assertThat(sftpTransferApprovalPreview("sftp_upload", json("""{"local_path":"/a"}"""))).isNull()
         assertThat(sftpTransferApprovalPreview("sftp_write", json("""{"local_path":"/a","remote_path":"/b"}"""))).isNull()
     }
+
+    @Test
+    fun `传输审批类别写成文件传输而远程命令不变`() {
+        val target = """["remote_path","nas","/srv/a.tar",{"sshHostId":"h","sshIdentity":"d","oneShot":true,"direction":"upload","host":"nas"}]"""
+        assertThat(approvalKindLabel("sftp_upload", target)).isEqualTo(com.promenar.infinity.R.string.chat_approval_kind_file_transfer)
+        assertThat(approvalKindLabel("sftp_download", null)).isEqualTo(com.promenar.infinity.R.string.chat_approval_kind_file_transfer)
+        assertThat(approvalKindLabel("ssh_exec", null)).isEqualTo(com.promenar.infinity.R.string.chat_approval_kind_ssh_command)
+        assertThat(approvalKindLabel("read_file", null)).isEqualTo(com.promenar.infinity.R.string.chat_approval_kind_tool)
+        // 显示特判不改变后端归类：传输仍按 SSH 后端参与路由与风险判断。
+        assertThat(com.promenar.infinity.domain.tool.CommandToolClassification.backendFor("sftp_upload"))
+            .isEqualTo(com.promenar.infinity.domain.tool.CommandToolBackend.SSH)
+    }
+
+    @Test
+    fun `传输审批说明按方向写明主机且取不到主机时不显示`() {
+        val upload = """["remote_path","nas","/srv/a.tar",{"oneShot":true,"host":"nas"}]"""
+        assertThat(approvalKindDetail("sftp_upload", upload))
+            .isEqualTo(ApprovalKindDetailText(com.promenar.infinity.R.string.chat_approval_kind_upload_detail, listOf("nas")))
+        assertThat(approvalKindDetail("sftp_download", """["remote_path","fnos","/var/dump.sql",{}]"""))
+            .isEqualTo(ApprovalKindDetailText(com.promenar.infinity.R.string.chat_approval_kind_download_detail, listOf("fnos")))
+        assertThat(approvalKindDetail("sftp_upload", null)).isNull()
+        assertThat(approvalKindDetail("sftp_upload", "不是 JSON")).isNull()
+        assertThat(approvalKindDetail("ssh_exec", null))
+            .isEqualTo(ApprovalKindDetailText(com.promenar.infinity.R.string.chat_approval_kind_ssh_command_detail))
+    }
+
+    @Test
+    fun `传输主机优先取元数据并剥离控制字符`() {
+        assertThat(sftpTransferHost("""["remote_path","alias",{"host":"nas"}]""")).isEqualTo("nas")
+        assertThat(sftpTransferHost("""["ssh_host","nas"]""")).isEqualTo("nas")
+        assertThat(sftpTransferHost("""["process","nas","ls"]""")).isNull()
+        assertThat(sftpTransferHost("""["remote_path","",{}]""")).isNull()
+        assertThat(sftpTransferHost("""["remote_path","na\u202es",{}]""")).isEqualTo("nas")
+        assertThat(sftpTransferDirection("sftp_write")).isNull()
+    }
 }

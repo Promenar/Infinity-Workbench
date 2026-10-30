@@ -241,11 +241,12 @@ fun PipelineBubble(
         return
     }
 
-    val renderPlan = remember(group.messages, isGenerating, streamingContent.isNotEmpty()) {
+    val renderPlan = remember(group.messages, isGenerating, streamingContent.isNotEmpty(), hasPendingApproval) {
         buildPipelineRenderPlan(
             messages = group.messages,
             isGenerating = isGenerating,
-            hasStreamingContent = streamingContent.isNotEmpty()
+            hasStreamingContent = streamingContent.isNotEmpty(),
+            hasPendingApproval = hasPendingApproval,
         )
     }
     val allSteps = renderPlan.steps
@@ -320,7 +321,7 @@ fun PipelineBubble(
                         val hidden = asks.hidden + branches.hidden + remember(step.steps) { sessionSendHiddenSteps(step.steps) }
                         val toolSteps = if (hidden.isEmpty()) step.steps else step.steps.filterNot { it.id in hidden }
                         if (toolSteps.isNotEmpty()) InlineToolRow(
-                            steps = toolSteps, isExecuting = step.isExecuting, fontSize = fontSize,
+                            steps = toolSteps, isExecuting = step.isExecuting, fontSize = fontSize, turnActive = step.isTurnActive,
                             commandOutputTarget = { callStepId -> commandOutputTarget(group.messages, callStepId) },
                         )
                         asks.answered.forEach { AskUserAnsweredCard(it) }
@@ -567,7 +568,9 @@ internal sealed class PipelineStep {
 
     data class ToolExec(
         val steps: List<ExecutionStep>,
-        val isExecuting: Boolean
+        val isExecuting: Boolean,
+        /** 本轮是否仍在进行（生成中或等待审批）；结束后未完成的调用显示为已中断。 */
+        val isTurnActive: Boolean = true,
     ) : PipelineStep()
 
     data class Content(
@@ -592,7 +595,8 @@ internal data class PipelineRenderPlan(
 internal fun buildPipelineRenderPlan(
     messages: List<Message>,
     isGenerating: Boolean,
-    hasStreamingContent: Boolean
+    hasStreamingContent: Boolean,
+    hasPendingApproval: Boolean = false,
 ): PipelineRenderPlan {
     val finalAssistant = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
     val steps = buildPipelineSteps(messages).map { step ->
@@ -601,6 +605,8 @@ internal fun buildPipelineRenderPlan(
                 !invocation.complete && (invocation.call?.timestamp ?: 0) > 0 &&
                     invocation.call?.id?.startsWith("${finalAssistant.id}::") == true
             },
+            // 审批通过后的调用在生成任务外执行，审批请求清除前本轮仍算进行中。
+            isTurnActive = isGenerating || hasPendingApproval,
         ) else step
     }.toMutableList()
     val finalAssistantIsPlaceholder = finalAssistant != null && finalAssistant.content.isBlank()
@@ -618,10 +624,11 @@ internal fun buildPipelineRenderPlan(
 }
 
 // ── 工具内容嗅探：覆盖 JSON 代码块、裸 JSON、分隔符文本、XML 四种格式 ──
+// 只认工具信封字段；name、query 等普通数据字段很常见，按它们嗅探会把正文里的 JSON 删掉并虚构出成批未完成调用。
 private val TOOL_CONTENT_SNIFFER = Regex(
     """(?:
-        ```(?:json)?\s*\n?\{[\s\S]*?"(?:query|name|tool|function)"[\s\S]*?\}\s*\n?```
-        |\{[^}]*"(?:tool_name|tool_call_id|query|search|top_n|top_k)"[^}]*\}
+        ```(?:json)?\s*\n?\{[\s\S]*?"(?:tool_name|tool_call_id|tool|function|arguments)"[\s\S]*?\}\s*\n?```
+        |\{[^}]*"(?:tool_name|tool_call_id)"[^}]*\}
         |---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]
         |<(?:tool_call|function_call|function_name)[\s\S]*?/>
     )""",
@@ -675,7 +682,7 @@ private fun buildSyntheticExecutionSteps(
 }
 
 private fun extractSyntheticExecutionSteps(content: String): List<ExecutionStep> {
-    val jsonPattern = Regex("""\{[^{}]*"(?:tool_name|tool_call_id|query|name|function)"[^{}]*\}""")
+    val jsonPattern = Regex("""\{[^{}]*"(?:tool_name|tool_call_id|tool|function|arguments)"[^{}]*\}""")
     val separatorPattern = Regex("""---\s*(?:工具|tool|search)?\s*(?:调用|执行)?\s*结果\s*[：:]""", RegexOption.IGNORE_CASE)
 
     val toolCalls = jsonPattern.findAll(content).map { it.value }.toList()
@@ -1130,6 +1137,9 @@ internal fun toolGroupSummaryText(summary: ToolGroupSummary): String {
     if (summary.status == ToolSummaryStatus.PENDING) {
         return pluralStringResource(R.plurals.chat_step_pending_count, summary.pendingCount, summary.pendingCount)
     }
+    if (summary.status == ToolSummaryStatus.INTERRUPTED) {
+        return pluralStringResource(R.plurals.chat_step_interrupted_count, summary.pendingCount, summary.pendingCount)
+    }
     summary.runningAction?.let { action ->
         return stringResource(when (action) {
             ToolSummaryAction.COMMAND -> R.string.chat_step_command_running
@@ -1187,6 +1197,8 @@ internal fun InlineToolRow(
     initiallyExpanded: Boolean = false,
     /** 由调用步骤 id 取回完整输出页所需的 (消息 id, 工具调用 id)；取不到时不显示入口。 */
     commandOutputTarget: (callStepId: String) -> Pair<String, String>? = { null },
+    /** 本轮是否仍在进行；为 false 时未完成的调用显示为已中断而不是等待处理。 */
+    turnActive: Boolean = true,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val linuxNavigation = com.promenar.infinity.ui.linux.LocalLinuxNavigation.current
@@ -1196,11 +1208,12 @@ internal fun InlineToolRow(
     val liveInvocations = activeToolOutputs(invocations, liveKeys)
     val liveRunning = liveInvocations.isNotEmpty()
     val executing = isExecuting || liveRunning
-    val summary = remember(invocations, executing) { toolGroupDisplaySummary(invocations, executing) }
+    val summary = remember(invocations, executing, turnActive) { toolGroupDisplaySummary(invocations, executing, turnActive) }
     val fileChanges = remember(invocations) { toolGroupFileChanges(invocations) }
     val runtimeChanges = remember(invocations) { toolGroupRuntimeChanges(invocations) }
     var openedChange by remember { mutableStateOf<com.promenar.infinity.data.model.FileChangeSummary?>(null) }
-    val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null && summary.status != ToolSummaryStatus.PENDING
+    val showFileTitle = fileChanges.isNotEmpty() && summary.runningAction == null &&
+        summary.status != ToolSummaryStatus.PENDING && summary.status != ToolSummaryStatus.INTERRUPTED
     val stateSummaries = invocations.mapNotNull(::stateToolSummary).map { stateToolSummaryText(it) }
     val stateOnly = stateSummaries.size == invocations.size && stateSummaries.isNotEmpty()
     val memoryChanges = remember(invocations) { invocations.mapNotNull(::memoryChange) }

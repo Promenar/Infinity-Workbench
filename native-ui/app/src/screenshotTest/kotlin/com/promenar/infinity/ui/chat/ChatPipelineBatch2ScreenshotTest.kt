@@ -55,13 +55,14 @@ fun chatBatch2AssistantActionsDarkPreview() = PipelinePreviewFrame {
 }
 
 @PreviewTest
-@Preview(name = "步骤行 思考与工具各状态", widthDp = 411, heightDp = 660, locale = "zh-rCN")
+@Preview(name = "步骤行 思考与工具各状态", widthDp = 411, heightDp = 720, locale = "zh-rCN")
 @Composable
 fun chatBatch2StepStatesDarkPreview() = PipelinePreviewFrame {
     ThinkingTrace("先核对输入，再分析各个方案的边界和执行条件。", true, 15, elapsedMs = 6_000)
     ThinkingTrace("已经完成分析。", false, 15, elapsedMs = 6_000)
     InlineToolRow(listOf(ExecutionStep("running", "tool_call", "web_search", "{\"query\":\"资料\"}", "active", timestamp = 1_000)), true, 15)
     InlineToolRow(listOf(ExecutionStep("pending", "tool_call", "web_search", "{\"query\":\"资料\"}", "pending", timestamp = 1_000)), false, 15)
+    InlineToolRow(listOf(ExecutionStep("stopped", "tool_call", "web_search", "{\"query\":\"资料\"}", "stopped", timestamp = 1_000)), false, 15, turnActive = false)
     InlineToolRow(previewToolSteps("ssh_exec", "exec_js"), false, 15)
     InlineToolRow(previewToolSteps("ssh_exec", "read_file", "list_files"), false, 15)
     InlineToolRow(previewToolSteps("ssh_exec", "read_file", "web_search"), false, 15)
