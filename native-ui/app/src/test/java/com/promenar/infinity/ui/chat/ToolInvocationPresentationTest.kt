@@ -8,17 +8,37 @@ import org.junit.jupiter.api.Test
 
 class ToolInvocationPresentationTest {
     @Test
-    fun `停止生成后未完成工具展示等待而非运行或成功`() {
+    fun `本轮仍在进行时未完成工具展示等待而非运行或成功`() {
         val invocations = toolInvocations(listOf(
             call("a", "1", "web_search", 1_000),
             call("b", "2", "read_file", 1_100), result("br", "2", 1_500),
         ))
-        val display = toolGroupDisplaySummary(invocations, isExecuting = false)
+        val display = toolGroupDisplaySummary(invocations, isExecuting = false, turnActive = true)
         assertThat(display.status).isEqualTo(ToolSummaryStatus.PENDING)
         assertThat(display.pendingCount).isEqualTo(1)
         assertThat(display.runningAction).isNull()
         assertThat(display.durationMs).isNull()
         assertThat(toolGroupSummary(invocations).status).isEqualTo(ToolSummaryStatus.RUNNING)
+    }
+
+    @Test
+    fun `本轮结束后未完成工具展示已中断且只计未完成调用`() {
+        val invocations = toolInvocations(listOf(
+            call("a", "1", "web_search", 1_000),
+            call("b", "2", "read_file", 1_100), result("br", "2", 1_500),
+            call("c", "3", "ssh_exec", 1_600),
+        ))
+        val display = toolGroupDisplaySummary(invocations, isExecuting = false, turnActive = false)
+        assertThat(display.status).isEqualTo(ToolSummaryStatus.INTERRUPTED)
+        assertThat(display.pendingCount).isEqualTo(2)
+        assertThat(display.runningAction).isNull()
+        // 正在执行时仍是运行态，不受本轮状态影响。
+        assertThat(toolGroupDisplaySummary(invocations, isExecuting = true, turnActive = false).status)
+            .isEqualTo(ToolSummaryStatus.RUNNING)
+        // 全部完成的组不会显示为中断。
+        val done = toolInvocations(listOf(call("d", "4", "read_file", 1_000), result("dr", "4", 1_100)))
+        assertThat(toolGroupDisplaySummary(done, isExecuting = false, turnActive = false).status)
+            .isEqualTo(ToolSummaryStatus.COMPLETED)
     }
 
     @Test

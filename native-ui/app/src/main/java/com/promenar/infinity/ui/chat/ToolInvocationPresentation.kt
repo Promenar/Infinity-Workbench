@@ -160,7 +160,11 @@ internal enum class ToolSummaryAction(val category: ToolSummaryCategory) {
     OTHER(ToolSummaryCategory.OTHER),
 }
 
-internal enum class ToolSummaryStatus { EMPTY, RUNNING, PENDING, COMPLETED, FAILED }
+/**
+ * [PENDING]：本轮仍在进行（生成中或等待审批），调用还会有结果；
+ * [INTERRUPTED]：本轮已结束（停止、暂停、出错或应用被杀），未拿到结果的调用不会再有结果。
+ */
+internal enum class ToolSummaryStatus { EMPTY, RUNNING, PENDING, INTERRUPTED, COMPLETED, FAILED }
 
 internal data class ToolSummaryPart(val action: ToolSummaryAction, val count: Int)
 
@@ -244,13 +248,18 @@ internal fun toolGroupSummary(invocations: List<ToolInvocationPresentation>): To
     )
 }
 
+/** 未完成且不在执行的调用：本轮仍在进行时是“等待处理”，本轮已结束时是“已中断”。 */
 internal fun toolGroupDisplaySummary(
     invocations: List<ToolInvocationPresentation>,
     isExecuting: Boolean,
+    turnActive: Boolean = true,
 ): ToolGroupSummary {
     val summary = toolGroupSummary(invocations)
     return if (!isExecuting && summary.status == ToolSummaryStatus.RUNNING) {
-        summary.copy(status = ToolSummaryStatus.PENDING, runningAction = null)
+        summary.copy(
+            status = if (turnActive) ToolSummaryStatus.PENDING else ToolSummaryStatus.INTERRUPTED,
+            runningAction = null,
+        )
     } else summary
 }
 

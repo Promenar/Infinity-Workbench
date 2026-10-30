@@ -42,6 +42,9 @@ import com.promenar.infinity.ui.chat.components.intervalUnit
 import com.promenar.infinity.ui.chat.components.triggerText
 import com.promenar.infinity.ui.common.ChannelLimitChip
 import com.promenar.infinity.ui.testing.UiTags
+import com.promenar.infinity.domain.tool.ToolExecutionTargets
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -114,12 +117,24 @@ data class SftpTransferApprovalPreview(
     val overwrite: Boolean,
 )
 
+internal fun sftpTransferDirection(toolName: String?): SftpTransferDirection? = when (toolName) {
+    "sftp_upload" -> SftpTransferDirection.UPLOAD
+    "sftp_download" -> SftpTransferDirection.DOWNLOAD
+    else -> null
+}
+
+/** 传输授权目标中的主机别名：先取元数据 host，再取 `remote_path` / `ssh_host` 元组的第二项；取不到时为 null。仅用于显示。 */
+internal fun sftpTransferHost(executionTarget: String?): String? = runCatching {
+    val parts = Json.parseToJsonElement(executionTarget ?: return null) as? JsonArray ?: return null
+    val metadataHost = ((parts.lastOrNull() as? JsonObject)?.get("host") as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val tupleHost = (parts.getOrNull(1) as? JsonPrimitive)?.takeIf {
+        it.isString && (parts.firstOrNull() as? JsonPrimitive)?.content in setOf("remote_path", "ssh_host")
+    }?.content
+    metadataHost ?: tupleHost
+}.getOrNull()?.takeIf(String::isNotBlank)?.let { ToolExecutionTargets.display(it, maxChars = 64) }
+
 internal fun sftpTransferApprovalPreview(toolName: String, args: JsonObject): SftpTransferApprovalPreview? {
-    val direction = when (toolName) {
-        "sftp_upload" -> SftpTransferDirection.UPLOAD
-        "sftp_download" -> SftpTransferDirection.DOWNLOAD
-        else -> return null
-    }
+    val direction = sftpTransferDirection(toolName) ?: return null
     fun text(key: String) = (args[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf(String::isNotBlank)
     val local = text("local_path") ?: return null
     val remote = text("remote_path") ?: return null

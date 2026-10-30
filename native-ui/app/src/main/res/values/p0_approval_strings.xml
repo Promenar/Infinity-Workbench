@@ -18,6 +18,9 @@
     <string name="chat_approval_kind_termux_command_detail">Runs as Termux and reaches only Termux files and shared storage it was granted.</string>
     <string name="chat_approval_kind_ssh_command">Remote command</string>
     <string name="chat_approval_kind_ssh_command_detail">Runs on the remote host with the signed-in account\'s permissions.</string>
+    <string name="chat_approval_kind_file_transfer">File transfer</string>
+    <string name="chat_approval_kind_upload_detail">Uploads to %1$s.</string>
+    <string name="chat_approval_kind_download_detail">Downloads from %1$s.</string>
     <string name="chat_approval_kind_tool">Built-in tool</string>
     <string name="chat_approval_kind_tool_detail">&brand; carries it out under fixed rules; it doesn\'t run arbitrary commands.</string>
     <string name="chat_approval_title_required">Needs approval: %1$s</string>

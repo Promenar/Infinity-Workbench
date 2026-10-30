@@ -51,6 +51,7 @@
     <string name="chat_step_skill_name">Activate skill</string>
     <string name="chat_step_other_name">Other tool</string>
     <plurals name="chat_step_pending_count"><item quantity="one">%1$d tool is waiting</item><item quantity="other">%1$d tools are waiting</item></plurals>
+    <plurals name="chat_step_interrupted_count"><item quantity="one">Interrupted · %1$d tool unfinished</item><item quantity="other">Interrupted · %1$d tools unfinished</item></plurals>
     <string name="chat_tool_error_title">Failed</string>
     <plurals name="chat_step_schedule_done"><item quantity="one">Updated %1$d scheduled task</item><item quantity="other">Updated scheduled tasks %1$d times</item></plurals>
     <string name="chat_step_schedule_running">Setting up a scheduled task…</string>

@@ -210,4 +210,64 @@ class PipelineBubbleTest {
         assertThat(ToolInvocationPresentation(listOf(call, result("{\"exit_code\":0,\"stdout\":\"Linux\"}"))).ranInLinux).isFalse()
         assertThat(ToolInvocationPresentation(listOf(call, result("{\"exit_code\":0,\"stdout\":\"Linux\"}"))).isCommand).isTrue()
     }
+
+    private fun toolTurn(id: String, vararg steps: ExecutionStep) = Message(id, MessageRole.ASSISTANT, "", executionSteps = steps.toList())
+
+    private fun toolSummaries(plan: PipelineRenderPlan) = plan.steps.filterIsInstance<PipelineStep.ToolExec>().map { step ->
+        toolGroupDisplaySummary(toolInvocations(step.steps), step.isExecuting, step.isTurnActive)
+    }
+
+    @Test
+    fun `最终正文里的普通 JSON 不会被当成成批未完成工具也不会被删掉`() {
+        val tools = toolTurn("tools",
+            ExecutionStep("c", "tool_call", "read_file", "{}", "t1", timestamp = 1_000),
+            ExecutionStep("r", "tool_result", "read_file", toolCallId = "t1", content = "完成", timestamp = 1_200),
+        )
+        val items = (1..33).joinToString(",\n") { """  {"name": "pkg$it", "version": "1.0.$it"}""" }
+        val variants = listOf(
+            "依赖如下：\n```json\n{\"deps\": [\n$items\n]}\n```\n完毕",
+            "接口示例：" + (1..33).joinToString(" ") { """{"query": "q$it", "top_k": $it}""" },
+        )
+        variants.forEach { text ->
+            val plan = buildPipelineRenderPlan(listOf(tools, Message("answer", MessageRole.ASSISTANT, text)), false, false)
+            val summary = toolSummaries(plan).single()
+            assertThat(summary.status).isEqualTo(ToolSummaryStatus.COMPLETED)
+            assertThat(summary.count).isEqualTo(1)
+            assertThat(plan.steps.filterIsInstance<PipelineStep.Content>().single().content).isEqualTo(text)
+        }
+    }
+
+    @Test
+    fun `本轮结束后未拿到结果的调用跨轮合并计为已中断`() {
+        // 两轮工具各有一个调用被停止，合并成同一工具行；第三个调用已完成，不计入。
+        val first = toolTurn("m1",
+            ExecutionStep("c1", "tool_call", "ssh_exec", "{}", "t1", timestamp = 1_000),
+            ExecutionStep("c2", "tool_call", "read_file", "{}", "t2", timestamp = 1_100),
+            ExecutionStep("r2", "tool_result", "read_file", toolCallId = "t2", content = "完成", timestamp = 1_200),
+        )
+        val second = toolTurn("m2", ExecutionStep("c3", "tool_call", "web_search", "{}", "t1", timestamp = 2_000))
+        val messages = listOf(first, second)
+
+        val stopped = toolSummaries(buildPipelineRenderPlan(messages, isGenerating = false, hasStreamingContent = false)).single()
+        assertThat(stopped.status).isEqualTo(ToolSummaryStatus.INTERRUPTED)
+        assertThat(stopped.pendingCount).isEqualTo(2)
+
+        val awaitingApproval = toolSummaries(buildPipelineRenderPlan(messages, false, false, hasPendingApproval = true)).single()
+        assertThat(awaitingApproval.status).isEqualTo(ToolSummaryStatus.PENDING)
+        assertThat(awaitingApproval.pendingCount).isEqualTo(2)
+
+        // 生成中：最后一轮的调用正在执行。
+        val generating = toolSummaries(buildPipelineRenderPlan(messages, isGenerating = true, hasStreamingContent = false)).single()
+        assertThat(generating.status).isEqualTo(ToolSummaryStatus.RUNNING)
+    }
+
+    @Test
+    fun `带工具信封字段的旧版正文仍按工具调用嗅探`() {
+        val legacy = Message("legacy", MessageRole.ASSISTANT,
+            """{"tool_name":"web_search","query":"资料"}\n--- 工具结果：找到 3 条""")
+        val plan = buildPipelineRenderPlan(listOf(legacy), false, false)
+        val summary = toolSummaries(plan).single()
+        assertThat(summary.count).isEqualTo(1)
+        assertThat(summary.status).isEqualTo(ToolSummaryStatus.COMPLETED)
+    }
 }
