@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0-beta] - 2026-10-30
+
 ### 新增
 
 - 会话内“远程”面板：宽窗口在检视器“远程”页签、窄窗口从菜单进入，汇集 SSH、Git 凭据、Tailscale 与网络四个分段。智能体正在用 SSH 时 SSH 分段最前显示“智能体正在使用”：命令带实时输出与停止，交互会话可在终端的只读页签查看；SSH 后台命令只显示一行计数，点按打开运行详情的“后台”页。SSH 终端在面板内打开，离开面板不断开；“活动连接”列出终端、转发与智能体连接，可逐条断开。
@@ -3256,6 +3258,8 @@ All notable changes to this project will be documented in this file.
 - 移除占位用的“工作台”功能。
 
 ## [Unreleased]
+
+## [0.6.0-beta] - 2026-10-30
 
 ### 新增
 - **智能上下文管理**:
