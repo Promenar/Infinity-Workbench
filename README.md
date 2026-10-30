@@ -71,7 +71,7 @@
 
 **Install:** Download the APK and its `.sha256` file from [GitHub Releases](https://github.com/Promenar/Infinity-Workbench/releases), check the SHA-256 and install it. Public releases can lag behind the source tree. Do not install CI artifacts, debug APKs or repackaged builds from other sources.
 
-The source tree is at `v0.8.0-beta` (versionCode `23`). See the [changelog](CHANGELOG.md) for what changed.
+The source tree is at `v0.8.0-beta` (versionCode `24`). See the [changelog](CHANGELOG.md) for what changed.
 
 ## Build from source
 
