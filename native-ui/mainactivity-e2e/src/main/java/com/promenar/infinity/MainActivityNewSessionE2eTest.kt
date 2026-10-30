@@ -4,11 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -69,17 +65,11 @@ class MainActivityNewSessionE2eTest {
     }
 
     @Test
-    fun 新建会话从展开列表进入聊天且状态可恢复(): Unit = runBlocking {
-        compose.onNode(hasText("New Session E2E Agent") and hasClickAction()).assertIsDisplayed().performClick()
-
-        val createLabel = app.getString(R.string.sessions_btn_new)
-        compose.waitUntil(15_000) {
-            runCatching {
-                compose.onAllNodesWithText(createLabel)
-                    .fetchSemanticsNodes().isNotEmpty()
-            }.getOrDefault(false)
-        }
-        compose.onNodeWithText(createLabel).assertIsDisplayed().performClick()
+    fun 新建会话从新会话菜单进入聊天且状态可恢复(): Unit = runBlocking {
+        // 智能体卡片只负责展开会话列表；新建会话的入口是助手页顶部的“新会话”菜单。
+        compose.onNodeWithTag(UiTags.HUB_NEW_CHAT).assertIsDisplayed().performClick()
+        waitForNode(UiTags.hubNewChatAgent(agentId))
+        compose.onNodeWithTag(UiTags.hubNewChatAgent(agentId)).performClick()
 
         compose.waitUntil(15_000) {
             app.createdChatViewModel?.uiState?.value?.session

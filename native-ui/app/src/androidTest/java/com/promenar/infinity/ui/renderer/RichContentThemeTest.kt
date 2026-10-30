@@ -30,6 +30,9 @@ class RichContentThemeTest {
                 preferences = InfinityThemePreferences(
                     mode = if (darkTheme.value) InfinityThemeMode.DARK else InfinityThemeMode.LIGHT,
                     colorSource = InfinityColorSource.INFINITY,
+                    // 固定内置淡紫配色且关闭纯黑，使期望底色与默认偏好的变化无关。
+                    primaryColor = null,
+                    pureBlack = false,
                 ),
             ) {
                 RichContentWebView(

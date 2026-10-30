@@ -255,21 +255,22 @@ class OnboardingAndroidEndToEndTest {
 
         rule.onNodeWithTag("main_navigation_tab_settings").performClick()
         rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
-        val ragConfigLabel = rule.activity.getString(R.string.settings_rag_config)
+        // 设置页“知识”分组：资料库设置与知识图谱，各以只在目标页出现的分组/条目确认已进入。
+        val knowledgeBaseLabel = rule.activity.getString(R.string.settings_ia_kb_settings_title)
         rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
-            .performScrollToNode(hasText(ragConfigLabel))
-        rule.onNodeWithText(ragConfigLabel)
+            .performScrollToNode(hasText(knowledgeBaseLabel))
+        rule.onNodeWithText(knowledgeBaseLabel)
             .performClick()
-        rule.onNodeWithText(rule.activity.getString(R.string.rag_config_title)).assertIsDisplayed()
+        rule.onNodeWithText(rule.activity.getString(R.string.settings_ia_new_session_section)).assertIsDisplayed()
 
         rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.onNodeWithTag(UiTags.SETTINGS_ROOT).assertIsDisplayed()
-        val advancedRetrievalLabel = rule.activity.getString(R.string.settings_advanced_retrieval)
+        val knowledgeGraphLabel = rule.activity.getString(R.string.settings_ia_kg_title)
         rule.onNodeWithTag(UiTags.SETTINGS_APP_LIST)
-            .performScrollToNode(hasText(advancedRetrievalLabel))
-        rule.onNodeWithText(advancedRetrievalLabel)
+            .performScrollToNode(hasText(knowledgeGraphLabel))
+        rule.onNodeWithText(knowledgeGraphLabel)
             .performClick()
-        rule.onNodeWithText(rule.activity.getString(R.string.retrieval_title)).assertIsDisplayed()
+        rule.onNodeWithText(rule.activity.getString(R.string.settings_ia_kg_extraction_model)).assertIsDisplayed()
     }
 
     @Test

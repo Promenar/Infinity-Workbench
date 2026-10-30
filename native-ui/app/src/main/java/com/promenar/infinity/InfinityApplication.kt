@@ -16,27 +16,8 @@ import com.promenar.infinity.data.local.inference.LocalInferenceEngine
 import com.promenar.infinity.data.local.inference.LocalInferenceRuntimeGate
 import com.promenar.infinity.data.local.inference.SlotType
 import com.promenar.infinity.data.local.db.InfinityDatabase
-import com.promenar.infinity.data.local.db.MIGRATION_1_2
-import com.promenar.infinity.data.local.db.MIGRATION_2_3
-import com.promenar.infinity.data.local.db.MIGRATION_3_4
-import com.promenar.infinity.data.local.db.MIGRATION_4_5
-import com.promenar.infinity.data.local.db.MIGRATION_5_18
-import com.promenar.infinity.data.local.db.MIGRATION_18_19
-import com.promenar.infinity.data.local.db.MIGRATION_19_20
-import com.promenar.infinity.data.local.db.MIGRATION_20_21
-import com.promenar.infinity.data.local.db.MIGRATION_21_22
-import com.promenar.infinity.data.local.db.MIGRATION_22_23
 import com.promenar.infinity.data.memory.isEnabledForToolAdvertisement
-import com.promenar.infinity.data.local.db.MIGRATION_28_29
-import com.promenar.infinity.data.local.db.MIGRATION_30_31
-import com.promenar.infinity.data.local.db.MIGRATION_29_30
-import com.promenar.infinity.data.local.db.MIGRATION_27_28
-import com.promenar.infinity.data.local.db.MIGRATION_26_27
-import com.promenar.infinity.data.local.db.MIGRATION_25_26
 import com.promenar.infinity.data.local.db.SessionMountNormalizationCallback
-import com.promenar.infinity.data.local.db.MIGRATION_24_25
-import com.promenar.infinity.data.local.db.MIGRATION_23_24
-import com.promenar.infinity.data.local.db.MIGRATION_17_18
 import com.promenar.infinity.data.local.db.LegacyDatabasePromoter
 import com.promenar.infinity.data.backup.BackupRuntime
 import com.promenar.infinity.data.backup.BackupStartupState
@@ -308,7 +289,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
     val database: InfinityDatabase by lazy {
         LegacyDatabasePromoter.promote(this)
         Room.databaseBuilder(this, InfinityDatabase::class.java, "infinity_v2.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+            .addMigrations(*com.promenar.infinity.data.local.db.INFINITY_DATABASE_MIGRATIONS)
             .addCallback(SessionMountNormalizationCallback { InfinityLogger.logError("SessionMountNormalization", it) })
             .setQueryCallback(
                 androidx.room.RoomDatabase.QueryCallback { sqlQuery, bindArgs ->

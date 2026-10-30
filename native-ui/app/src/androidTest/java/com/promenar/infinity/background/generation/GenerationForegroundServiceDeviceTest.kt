@@ -66,7 +66,7 @@ class GenerationForegroundServiceDeviceTest {
     fun cleanup() {
         context.stopService(Intent(context, GenerationForegroundService::class.java))
         if (runtimeReady) {
-            mutableSessionState().value = null
+            publish(null)
             app.generationCoordinator.release(sessionId, discardTerminal = true)
         }
         val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -90,7 +90,7 @@ class GenerationForegroundServiceDeviceTest {
             generatedChars = 73,
             startedAt = System.currentTimeMillis(),
         )
-        mutableSessionState().value = snapshot
+        publish(snapshot)
 
         ContextCompat.startForegroundService(
             context,
@@ -113,6 +113,8 @@ class GenerationForegroundServiceDeviceTest {
 
         val staleStopAction = notification.actions.single().actionIntent
         staleStopAction.send()
+        // 停止动作交给协调器取消任务，服务在协调器发布任务结束后才收尾；注入的快照没有真实任务，这里代为发布结束。
+        publish(null)
 
         assertThat(waitUntil(timeoutMillis = 10_000) { !isServiceRunning() }).isTrue()
         assertThat(waitUntil(timeoutMillis = 10_000) {
@@ -130,10 +132,14 @@ class GenerationForegroundServiceDeviceTest {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun mutableSessionState(): MutableStateFlow<GenerationTaskSnapshot?> {
+    /** 同时写入按会话观察的快照与前台服务订阅的会话表，模拟协调器发布一轮生成。 */
+    private fun publish(snapshot: GenerationTaskSnapshot?) {
         val state = app.generationCoordinator.observe(sessionId)
         assertThat(state).isInstanceOf(MutableStateFlow::class.java)
-        return state as MutableStateFlow<GenerationTaskSnapshot?>
+        (state as MutableStateFlow<GenerationTaskSnapshot?>).value = snapshot
+        val field = app.generationCoordinator.javaClass.getDeclaredField("mutableSessions").apply { isAccessible = true }
+        val sessions = field.get(app.generationCoordinator) as MutableStateFlow<Map<String, GenerationTaskSnapshot>>
+        sessions.value = if (snapshot == null) sessions.value - sessionId else sessions.value + (sessionId to snapshot)
     }
 
     @Suppress("DEPRECATION")

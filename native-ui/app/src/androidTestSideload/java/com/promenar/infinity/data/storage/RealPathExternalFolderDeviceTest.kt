@@ -136,25 +136,36 @@ class RealPathExternalFolderDeviceTest {
 
     /** 只在系统调用边界安排目录交换，所有读写与目录 fd 均委托真实 Android 实现。 */
     private class HookedAndroidFileSystem(private val before: (String, Path) -> Unit) : RealPathFileSystem {
-        override fun openFileSystemRoot(): BoundRealPathDirectory = wrap(AndroidRealPathFileSystem.openFileSystemRoot(), File("/").toPath())
-        private fun wrap(directory: BoundRealPathDirectory, path: Path): BoundRealPathDirectory = object : BoundRealPathDirectory by directory {
-            override fun openDirectory(name: String): BoundRealPathDirectory = wrap(directory.openDirectory(name), path.resolve(name))
+        override fun openFileSystemRoot(): BoundRealPathDirectory = HookedDirectory(AndroidRealPathFileSystem.openFileSystemRoot(), File("/").toPath())
+
+        private inner class HookedDirectory(val delegate: BoundRealPathDirectory, private val path: Path) : BoundRealPathDirectory by delegate {
+            override fun openDirectory(name: String): BoundRealPathDirectory = HookedDirectory(delegate.openDirectory(name), path.resolve(name))
             override fun openRead(name: String): BoundRealPathRead {
                 before("read", path.resolve(name))
-                return directory.openRead(name)
+                return delegate.openRead(name)
             }
             override fun atomicReplace(source: String, target: String) {
                 val operation = if (target.startsWith(".infinity-delete-")) "delete" else "replace"
                 before(operation, path.resolve(if (source.startsWith(".infinity")) target else source))
-                directory.atomicReplace(source, target)
+                delegate.atomicReplace(source, target)
+            }
+            // 覆盖写入与删除先把用户文件移入内部隔离区；按隔离名区分操作，并把真实目录句柄交给生产实现。
+            override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+                val operation = when {
+                    target.startsWith(".infinity-delete-") -> "delete"
+                    target.startsWith(".infinity-replace-") -> "replace"
+                    else -> "move"
+                }
+                before(operation, path.resolve(source))
+                delegate.moveNew(source, (targetDirectory as? HookedDirectory)?.delegate ?: targetDirectory, target)
             }
             override fun deleteFile(name: String) {
                 before("delete", path.resolve(name))
-                directory.deleteFile(name)
+                delegate.deleteFile(name)
             }
             override fun names(): List<String> {
                 before("list", path)
-                return directory.names()
+                return delegate.names()
             }
         }
     }

@@ -119,16 +119,17 @@ for tag in \
     assert_contains "${UI_TAGS}" "const val ${tag}"
 done
 assert_contains "${SHARE_SHEET}" '.testTag(UiTags.SHARE_IMPORT_SHEET)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_ITEM)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_STATUS)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_KNOWLEDGE_BASE_TARGET)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_LATER)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_CANCEL)'
-assert_contains "${SHARE_SHEET}" 'Modifier.testTag(UiTags.SHARE_IMPORT_ACTION)'
+# 其余标签可经参数传给行组件；是否真的出现在无障碍树里由黑盒冒烟的 UI dump 断言。
+for tag in \
+    SHARE_IMPORT_ITEM SHARE_IMPORT_STATUS SHARE_IMPORT_KNOWLEDGE_BASE_TARGET \
+    SHARE_IMPORT_LATER SHARE_IMPORT_CANCEL SHARE_IMPORT_ACTION; do
+    assert_contains "${SHARE_SHEET}" "UiTags.${tag}"
+done
 assert_contains "${MAIN_ACTIVITY}" 'testTagsAsResourceId = true'
 assert_contains "${SHARE_SHEET}" 'import androidx.compose.ui.semantics.semantics'
 assert_contains "${SHARE_SHEET}" 'import androidx.compose.ui.semantics.testTagsAsResourceId'
-modal_sheet_block="$(sed -n '/^[[:space:]]*ModalBottomSheet(/,/^[[:space:]]*) {/p' "${SHARE_SHEET}")"
+# 分享面板经 InfinityModalSheet 包装 ModalBottomSheet；两种写法都按同一语义根约束检查。
+modal_sheet_block="$(sed -En '/^[[:space:]]*(ModalBottomSheet|InfinityModalSheet)\(/,/^[[:space:]]*\) \{/p' "${SHARE_SHEET}")"
 grep -Eq '^[[:space:]]*modifier = Modifier$' <<<"${modal_sheet_block}" ||
     fail "ModalBottomSheet modifier 必须建立独立语义根"
 grep -Eq '^[[:space:]]*\.testTag\(UiTags\.SHARE_IMPORT_SHEET\)$' <<<"${modal_sheet_block}" ||
@@ -424,7 +425,7 @@ assert_contains "${RELEASE_WORKFLOW}" 'Release 等价 minifiedTest 黑盒回归'
 assert_contains "${RELEASE_WORKFLOW}" 'scripts/ci/android-minified-blackbox-smoke.sh'
 assert_contains "${RELEASE_WORKFLOW}" 'release-minified-blackbox-api-${{ matrix.api-level }}-${{ github.run_attempt }}'
 assert_contains "${RELEASE_WORKFLOW}" 'artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/'
-assert_contains "${RELEASE_WORKFLOW}" 'needs: [device-e2e, minified-blackbox]'
+assert_contains "${RELEASE_WORKFLOW}" 'needs: [validate-release-inputs, device-e2e, minified-blackbox]'
 assert_not_contains "${RELEASE_WORKFLOW}" 'INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest'
 
 echo "minified release-equivalent black-box 架构契约通过。"

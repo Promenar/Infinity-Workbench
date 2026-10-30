@@ -7,7 +7,7 @@ DEVICE_SCRIPT="${REPO_ROOT}/scripts/ci/android-device-core-e2e.sh"
 APP_BUILD="${REPO_ROOT}/native-ui/app/build.gradle.kts"
 MAIN_ACTIVITY_E2E_BUILD="${REPO_ROOT}/native-ui/mainactivity-e2e/build.gradle.kts"
 ONBOARDING_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/onboarding/OnboardingAndroidEndToEndTest.kt"
-WELCOME_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/onboarding/WelcomeScreenLayoutTest.kt"
+ONBOARDING_LAYOUT_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/onboarding/OnboardingScreenLayoutTest.kt"
 RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/data/backup/AndroidRestoreRelayEndToEndTest.kt"
 NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNotificationE2eTest.kt"
 NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNewSessionE2eTest.kt"
@@ -111,7 +111,7 @@ assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.hub.AgentHubScreenC
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.exec.PackagedPythonDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.exec.BuiltinExecDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.git.remote.GitRemoteAuthDeviceTest'
-assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.onboarding.WelcomeScreenLayoutTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.onboarding.OnboardingScreenLayoutTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.TextWrappingDeviceTest'
 assert_contains "${DEVICE_SCRIPT}" 'run_test document-parser-fixtures "${APP_RUNNER}"'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.rag.DocumentParserDeviceE2eTest'
@@ -258,10 +258,10 @@ assert_contains "${NEW_SESSION_E2E_TEST}" 'LoopStatus.COMPLETED'
 assert_contains "${NEW_SESSION_E2E_TEST}" 'app.sessionRepository.getById(sessionId)'
 
 # 欢迎页压力测试必须在 Compose 内覆盖窗口/字体配置，不能旋转真实宿主 Activity。
-assert_contains "${WELCOME_LAYOUT_TEST}" 'createComposeRule()'
-assert_contains "${WELCOME_LAYOUT_TEST}" 'DeviceConfigurationOverride.WindowSize'
-assert_contains "${WELCOME_LAYOUT_TEST}" 'DeviceConfigurationOverride.FontScale(2f)'
-assert_not_contains "${WELCOME_LAYOUT_TEST}" 'requestedOrientation'
+assert_contains "${ONBOARDING_LAYOUT_TEST}" 'createComposeRule()'
+assert_contains "${ONBOARDING_LAYOUT_TEST}" 'DeviceConfigurationOverride.WindowSize'
+assert_contains "${ONBOARDING_LAYOUT_TEST}" 'DeviceConfigurationOverride.FontScale(2f)'
+assert_not_contains "${ONBOARDING_LAYOUT_TEST}" 'requestedOrientation'
 
 python3 "${REPO_ROOT}/scripts/ci/run-with-timeout.py" 1 /usr/bin/true
 

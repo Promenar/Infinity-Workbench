@@ -417,8 +417,10 @@ root = ET.parse(sys.argv[1]).getroot()
 tag, expected = sys.argv[2], sys.argv[3]
 for node in root.iter("node"):
     resource_id = node.attrib.get("resource-id", "")
-    text = node.attrib.get("text", "")
-    if (resource_id == tag or resource_id.endswith("/" + tag) or resource_id.endswith(":" + tag)) and expected in text:
+    if not (resource_id == tag or resource_id.endswith("/" + tag) or resource_id.endswith(":" + tag)):
+        continue
+    # 标签节点可能是容器，文字落在子节点上（如分享导入状态行拆成格式、大小与状态三段）。
+    if any(expected in child.attrib.get("text", "") for child in node.iter("node")):
         raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -707,7 +709,8 @@ wait_for_initial_launcher_ui() {
             recover_host_system_anr_once "${xml}" "${deadline}" || return 1
             continue
         fi
-        if grep -Fq 'INFINITY' "${xml}" && \
+        # 字标是不进入无障碍树的灯珠动画，以语言选择区判定欢迎页已稳定。
+        if grep -Fq 'Choose language' "${xml}" && \
             grep -Fq 'English' "${xml}" && \
             grep -Fq '中文 (简体)' "${xml}"; then
             LAST_WINDOW_XML="${xml}"
@@ -715,7 +718,7 @@ wait_for_initial_launcher_ui() {
         fi
         sleep 0.5
     done
-    echo "首次冷启动未出现稳定的 INFINITY/English/中文 (简体) UI" >&2
+    echo "首次冷启动未出现稳定的语言选择欢迎页（Choose language/English/中文 (简体)）" >&2
     return 1
 }
 

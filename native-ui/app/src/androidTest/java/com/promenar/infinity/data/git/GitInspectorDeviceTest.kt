@@ -105,12 +105,13 @@ class GitInspectorDeviceTest {
         assertThat(status.detached).isFalse()
         assertThat(status.branch).isNotEmpty()
         assertThat(status.head).isNotNull()
-        assertThat(status.staged.entries).containsExactly(GitFileChange("a.txt", GitChangeKind.MODIFIED))
+        // 已跟踪改动带行数统计：每个文件都是一行替换为另一行。
+        assertThat(status.staged.entries).containsExactly(GitFileChange("a.txt", GitChangeKind.MODIFIED, addedLines = 1, removedLines = 1))
         assertThat(status.unstaged.entries).containsExactly(
-            GitFileChange("a.txt", GitChangeKind.MODIFIED),
-            GitFileChange("src/b.txt", GitChangeKind.MODIFIED),
+            GitFileChange("a.txt", GitChangeKind.MODIFIED, addedLines = 1, removedLines = 1),
+            GitFileChange("src/b.txt", GitChangeKind.MODIFIED, addedLines = 1, removedLines = 1),
         )
-        assertThat(status.untracked.entries).containsExactly(GitFileChange("notes/新文件.txt", GitChangeKind.ADDED))
+        assertThat(status.untracked.entries.map { it.path to it.kind }).containsExactly("notes/新文件.txt" to GitChangeKind.ADDED)
 
         val contents = inspector.read(
             target,

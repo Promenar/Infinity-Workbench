@@ -10,7 +10,9 @@ import kotlinx.serialization.Serializable
  * 输入：Agent 调用 `request_secret`，用户在保密输入卡里填写，值由应用直接写入 [SecretDestination]，
  * Agent 只拿到 [SecretInputOutcome]。输出：命令以 `capture_secret` 把输出存进本会话保密库，
  * Agent 调用 `show_secret` 后用户在保密输出卡里验证查看、复制、另存或销毁。
- * 任何保密值都不进入消息表、工具账本、日志、诊断导出与备份。
+ * 任何保密值都不进入消息表、工具账本、日志与诊断导出；会话保密库只在内存，不进入备份。
+ * 写入持久去向（Git 凭据、SSH 主机、服务商密钥）后，值遵循该去向既有的存储与备份策略，
+ * 与用户在设置里直接填写相同。
  */
 object SecretIoLimits {
     const val REQUEST_TOOL_NAME = "request_secret"

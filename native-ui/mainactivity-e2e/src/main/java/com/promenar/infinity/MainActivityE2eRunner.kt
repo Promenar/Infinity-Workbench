@@ -58,6 +58,7 @@ class RecordingGenerationCoordinator(
     private val application: InfinityApplication,
 ) : GenerationCoordinator {
     private val mutableActive = MutableStateFlow<GenerationTaskSnapshot?>(null)
+    override val sessions: StateFlow<Map<String, GenerationTaskSnapshot>> = MutableStateFlow(emptyMap())
     override val active: StateFlow<GenerationTaskSnapshot?> = mutableActive
     val requests = mutableListOf<GenerationRequest>()
     val selectedModelsAtStart = mutableListOf<String?>()
@@ -70,9 +71,13 @@ class RecordingGenerationCoordinator(
         return StartGenerationResult.Rejected(GenerationError("e2e_recorded_without_network"))
     }
 
+    override suspend fun start(request: GenerationRequest, onAdmission: (String) -> Boolean): StartGenerationResult =
+        start(request)
+
     override fun cancel(taskId: String, reason: CancellationReason): Boolean = false
     override fun acknowledgeTerminal(taskId: String): Boolean = false
     override fun release(sessionId: String, discardTerminal: Boolean) = Unit
+    override fun release(sessionId: String, expectedTaskId: String, discardTerminal: Boolean) = Unit
 
     fun reset() {
         requests.clear()

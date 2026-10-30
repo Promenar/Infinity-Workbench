@@ -113,10 +113,14 @@ class AndroidSecureWorkspaceCreationRaceTest {
         claim(ops, root)
         try {
             val failure = runCatching { ops.createDirectory(root, listOf("docs")) }.exceptionOrNull()
-            // O_NOFOLLOW 在真实 Android 上以 ELOOP 拒绝已替换为符号链接的根。
+            // 创建前先建工作区内部目录：其根身份校验先发现根已换成符号链接；
+            // 否则由 O_NOFOLLOW 在真实 Android 上以 ELOOP 拒绝。两条路径都必须失败关闭。
             assertThat(swapped).isTrue()
-            assertThat(failure).isInstanceOf(ErrnoException::class.java)
-            assertThat((failure as ErrnoException).errno).isEqualTo(OsConstants.ELOOP)
+            when (failure) {
+                is ErrnoException -> assertThat(failure.errno).isEqualTo(OsConstants.ELOOP)
+                is SecurityException -> assertThat(failure).hasMessageThat().isEqualTo("工作区根目录身份无效")
+                else -> throw AssertionError("根被替换后应拒绝创建", failure)
+            }
             assertThat(Files.list(outside).use { it.count() }).isEqualTo(0L)
             assertThat(Files.exists(base.resolve("claimed-root/docs"))).isFalse()
         } finally {

@@ -1517,11 +1517,14 @@ fun UserMessageBubble(
     val legacyAttachments by produceState(
         initialValue = emptyList(), key1 = message.legacyAttachmentsPayload, key2 = message.userImages,
     ) {
-        value = withContext(Dispatchers.Default) {
+        val parsed = withContext(Dispatchers.Default) {
             LegacyAttachmentCodec.parse(message.legacyAttachmentsPayload).filterNot { item ->
                 item.type == "IMAGE" && item.uri in message.userImages.orEmpty()
             }
         }
+        // 回到主线程再写状态：效果协程的调度器不保证切回主线程（测试环境为非受限调度器），
+        // 后台线程的写入若恰好落在组合读取之间，变更通知会丢失，附件区永远停在空列表。
+        withContext(Dispatchers.Main.immediate) { value = parsed }
     }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val bubbleMaxWidth = maxWidth * 0.82f

@@ -121,7 +121,7 @@ class MainActivityNotificationE2eTest {
         }
         attempt {
             if (productionGenerationStateTouched) {
-                mutableProductionGenerationState(targetSessionId)?.value = null
+                publishProductionGeneration(targetSessionId, null)
                 app.generationCoordinator.release(targetSessionId, discardTerminal = true)
             }
         }
@@ -199,9 +199,8 @@ class MainActivityNotificationE2eTest {
             generatedChars = 17,
             startedAt = System.currentTimeMillis(),
         )
-        val productionState = requireNotNull(mutableProductionGenerationState(targetSessionId))
         productionGenerationStateTouched = true
-        productionState.value = snapshot
+        publishProductionGeneration(targetSessionId, snapshot)
         val notificationManager = app.getSystemService(NotificationManager::class.java)
         notificationManager.notify(
             GenerationNotificationFactory.NOTIFICATION_ID,
@@ -239,9 +238,8 @@ class MainActivityNotificationE2eTest {
             generatedChars = 73,
             startedAt = System.currentTimeMillis(),
         )
-        val productionState = requireNotNull(mutableProductionGenerationState(targetSessionId))
         productionGenerationStateTouched = true
-        productionState.value = snapshot
+        publishProductionGeneration(targetSessionId, snapshot)
         ContextCompat.startForegroundService(
             app,
             GenerationForegroundService.trackIntent(app, snapshot),
@@ -292,6 +290,8 @@ class MainActivityNotificationE2eTest {
         val stopAction = requireNotNull(notification.actions) { "前台生成通知缺少停止动作" }
             .single().actionIntent
         sendAndAwaitPendingIntent(stopAction)
+        // 停止动作交给协调器取消任务，服务在协调器发布任务结束后才收尾；注入的快照没有真实任务，这里代为发布结束。
+        publishProductionGeneration(targetSessionId, null)
         requireDeviceCondition("首次停止动作后服务或通知仍存在") {
             !isGenerationServiceRunning() && generationNotifications().isEmpty()
         }
@@ -465,6 +465,16 @@ class MainActivityNotificationE2eTest {
         GENERATION_NOTIFICATION_PERMISSION_PREFS,
         Context.MODE_PRIVATE,
     ).getBoolean(GENERATION_NOTIFICATION_PERMISSION_ASKED, false)
+
+    /** 同时写入按会话观察的快照与前台服务订阅的会话表，模拟生产协调器发布一轮生成。 */
+    @Suppress("UNCHECKED_CAST")
+    private fun publishProductionGeneration(sessionId: String, snapshot: GenerationTaskSnapshot?) {
+        requireNotNull(mutableProductionGenerationState(sessionId)).value = snapshot
+        val coordinator = app.generationCoordinator
+        val field = coordinator.javaClass.getDeclaredField("mutableSessions").apply { isAccessible = true }
+        val sessions = field.get(coordinator) as MutableStateFlow<Map<String, GenerationTaskSnapshot>>
+        sessions.value = if (snapshot == null) sessions.value - sessionId else sessions.value + (sessionId to snapshot)
+    }
 
     @Suppress("UNCHECKED_CAST")
     private fun mutableProductionGenerationState(

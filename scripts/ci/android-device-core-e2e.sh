@@ -243,8 +243,8 @@ run_layout_and_accessibility_contracts() {
         -e class com.promenar.infinity.ui.AccessibilitySmokeTest || status=$?
     run_test adaptive-navigation "${APP_RUNNER}" \
         -e class com.promenar.infinity.ui.AdaptiveNavigationTest || status=$?
-    run_test welcome-layout "${APP_RUNNER}" \
-        -e class com.promenar.infinity.onboarding.WelcomeScreenLayoutTest || status=$?
+    run_test onboarding-layout "${APP_RUNNER}" \
+        -e class com.promenar.infinity.onboarding.OnboardingScreenLayoutTest || status=$?
     run_test text-wrapping "${APP_RUNNER}" \
         -e class com.promenar.infinity.ui.TextWrappingDeviceTest || status=$?
 

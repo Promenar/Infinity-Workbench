@@ -36,7 +36,7 @@ class DocumentParserDeviceE2eTest {
 
         assertThat(extracted.truncated).isFalse()
         assertThat(extracted.chunks).isNotEmpty()
-        assertThat(extracted.graphText).contains("INFINITY_DOCX_PATH_OK")
+        assertThat(extracted.graphText).contains("NEXARA_DOCX_PATH_OK")
         assertThat(extracted.graphText).contains("中文验证：发行解析链路正常。")
     }
 
@@ -63,7 +63,7 @@ class DocumentParserDeviceE2eTest {
 
         assertThat(extracted.truncated).isFalse()
         assertThat(extracted.chunks).isNotEmpty()
-        assertThat(extracted.graphText).contains("INFINITY_PDF_PATH_OK")
+        assertThat(extracted.graphText).contains("NEXARA_PDF_PATH_OK")
     }
 
     private fun productionExtractor() = DocumentReferenceExtractor(

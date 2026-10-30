@@ -101,6 +101,19 @@ public final class ExternalFolderDeviceDocumentsProvider extends DocumentsProvid
         return id(target);
     }
 
+    /** 与系统本地存储提供商一致：同名移入目标目录；产品覆盖写入经内部暂存目录换入时依赖此能力。 */
+    @Override
+    public String moveDocument(String sourceDocumentId, String sourceParentDocumentId, String targetParentDocumentId)
+            throws FileNotFoundException {
+        File file = resolve(sourceDocumentId);
+        if (!file.getParentFile().equals(resolve(sourceParentDocumentId))) throw new IllegalArgumentException("源父目录不匹配");
+        File targetParent = resolve(targetParentDocumentId);
+        if (!targetParent.isDirectory()) throw new IllegalArgumentException("目标不是目录");
+        File target = new File(targetParent, file.getName());
+        if (target.exists() || !file.renameTo(target)) throw new IllegalStateException("无法移动测试文档");
+        return id(target);
+    }
+
     @Override
     public void deleteDocument(String documentId) throws FileNotFoundException {
         if ("root".equals(documentId)) throw new IllegalArgumentException("不能删除测试根目录");
@@ -152,7 +165,7 @@ public final class ExternalFolderDeviceDocumentsProvider extends DocumentsProvid
 
     private void addFile(MatrixCursor cursor, File file) {
         int flags = (file.isDirectory() ? Document.FLAG_DIR_SUPPORTS_CREATE : Document.FLAG_SUPPORTS_WRITE)
-                | Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_RENAME;
+                | Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_RENAME | Document.FLAG_SUPPORTS_MOVE;
         Map<String, Object> values = new HashMap<>();
         values.put(Document.COLUMN_DOCUMENT_ID, id(file));
         values.put(Document.COLUMN_DISPLAY_NAME, file.getName());

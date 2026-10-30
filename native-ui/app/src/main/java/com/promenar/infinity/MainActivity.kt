@@ -124,7 +124,7 @@ open class MainActivity : ComponentActivity() {
             },
             indexQueueState = (application as InfinityApplication).vectorizationQueueState,
             retryIndex = { root, fileUuid ->
-                (application as InfinityApplication).awaitVectorizationQueue().retryDocumentReference(root, fileUuid)
+                (application as InfinityApplication).awaitVectorizationQueue().retryDocumentReferenceTask(root, fileUuid)
             },
         )
     }

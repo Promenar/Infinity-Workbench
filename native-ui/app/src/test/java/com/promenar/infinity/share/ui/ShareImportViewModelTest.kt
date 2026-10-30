@@ -215,6 +215,61 @@ class ShareImportViewModelTest {
     }
 
     @Test
+    fun `索引重试换用新任务后跟踪新任务结果，不把旧任务消失当作完成`() = runTest(dispatcher) {
+        val retried = mutableListOf<Pair<String, String>>()
+        lateinit var fixture: Fixture
+        fixture = fixture(null, retryIndex = { root, file ->
+            retried += root to file
+            // 队列在重试调用返回前就发布快照：旧任务已被新标识替换，新任务正在排队。
+            fixture.indexState.value = indexState(indexTask(RETRY_TASK, "pending"))
+            // 真实重试在 IO 线程挂起，界面线程会在返回前处理这份快照。
+            kotlinx.coroutines.yield()
+            RETRY_TASK
+        })
+        fixture.viewModel.presentNext()
+        fixture.viewModel.importAll()
+        fixture.indexState.value = indexState(indexTask(TASK, "failed"))
+        assertThat(fixture.viewModel.state.value.items.single().indexStatus).isEqualTo(ShareIndexStatus.Failed)
+
+        fixture.viewModel.retryRejected()
+
+        assertThat(retried).containsExactly(ROOT to FILE)
+        // 队列为重试换了新标识，旧任务从快照里消失；新任务仍在排队。
+        fixture.indexState.value = indexState(indexTask(RETRY_TASK, "pending"))
+        assertThat(fixture.viewModel.state.value.items.single().indexStatus).isEqualTo(ShareIndexStatus.Pending)
+        fixture.indexState.value = indexState(indexTask(RETRY_TASK, "failed"))
+        assertThat(fixture.viewModel.state.value.items.single().indexStatus).isEqualTo(ShareIndexStatus.Failed)
+    }
+
+    @Test
+    fun `索引任务无法重试时保留失败状态并报告重试失败`() = runTest(dispatcher) {
+        val fixture = fixture(null, retryIndex = { _, _ -> null })
+        fixture.viewModel.presentNext()
+        fixture.viewModel.importAll()
+        fixture.indexState.value = indexState(indexTask(TASK, "failed"))
+
+        fixture.viewModel.retryRejected()
+
+        assertThat(fixture.viewModel.state.value.error).isEqualTo(ShareImportErrorCode.INDEX_RETRY_FAILED)
+        assertThat(fixture.viewModel.state.value.items.single().indexStatus).isEqualTo(ShareIndexStatus.Failed)
+    }
+
+    private fun indexTask(id: String, status: String) = VectorizationTask(
+        id = id,
+        type = VectorizationQueue.TYPE_DOCUMENT_REFERENCE,
+        docId = FILE,
+        workspaceRootUuid = ROOT,
+        status = status,
+    )
+
+    private fun indexState(task: VectorizationTask) = VectorizationQueue.QueueState(
+        queue = listOf(task),
+        currentTask = task,
+        isProcessing = task.status == "pending",
+        restored = true,
+    )
+
+    @Test
     fun `有当前会话时默认选当前会话，没有时选资料库根目录`() = runTest(dispatcher) {
         val withSession = selectionFixture(FakeTargets(options = { WITH_SESSION }))
         withSession.viewModel.presentNext()
@@ -401,7 +456,10 @@ class ShareImportViewModelTest {
             ShareImportDestination.SessionFolder(sessionId, "root-$sessionId", current)
     }
 
-    private fun fixture(failurePoint: FailurePoint?): Fixture {
+    private fun fixture(
+        failurePoint: FailurePoint?,
+        retryIndex: suspend (String, String) -> String? = { _, _ -> null },
+    ): Fixture {
         val uri = Uri.parse("content://fixture/shared.txt")
         val request = ShareRequest(
             uris = listOf(uri),
@@ -447,6 +505,7 @@ class ShareImportViewModelTest {
             importer,
             targets = FakeTargets(),
             indexQueueState = indexState,
+            retryIndex = retryIndex,
         )
         return Fixture(viewModel, queue, importer, indexState)
     }
@@ -472,6 +531,7 @@ class ShareImportViewModelTest {
         val FINANCE = ShareKnowledgeFolder("kb-finance", "财务", "/资料/财务")
         const val FILE = "11111111-1111-1111-1111-111111111111"
         const val TASK = "doc-ref-fixture"
+        const val RETRY_TASK = "doc-ref-fixture-retry"
     }
 
     @Test

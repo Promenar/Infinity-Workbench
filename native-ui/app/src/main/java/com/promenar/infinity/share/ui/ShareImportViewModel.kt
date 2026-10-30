@@ -95,7 +95,7 @@ class ShareImportViewModel(
     private val importer: SharedFileImporter,
     private val targets: ShareImportTargetSource,
     private val indexQueueState: StateFlow<VectorizationQueue.QueueState>? = null,
-    private val retryIndex: suspend (String, String) -> Boolean = { _, _ -> false },
+    private val retryIndex: suspend (String, String) -> String? = { _, _ -> null },
 ) : ViewModel() {
     private val _state = MutableStateFlow(ShareImportUiState())
     val state: StateFlow<ShareImportUiState> = _state.asStateFlow()
@@ -369,13 +369,24 @@ class ShareImportViewModel(
                         is ShareImportDestination.KnowledgeFolder -> destination.workspaceRootUuid
                         is ShareImportDestination.LinuxDirectory, null -> throw ShareImportPersistenceException("落点没有索引")
                     }
-                    val retried = failedIndexes.all { item -> retryIndex(root, item.fileUuid!!) }
-                    if (!retried) throw ShareImportPersistenceException("索引任务暂时无法重试")
+                    // 队列为重试换用新的任务标识，旧标识随即从快照中消失；重试挂起期间先解除对旧标识的跟踪，
+                    // 否则界面线程处理到这份快照时会把它误判为已完成。
+                    val retrying = failedIndexes.mapTo(mutableSetOf()) { it.fileUuid!! }
                     _state.value = _state.value.copy(
                         items = _state.value.items.map { item ->
-                            if (item in failedIndexes) item.copy(indexStatus = ShareIndexStatus.Pending) else item
+                            if (item.fileUuid in retrying) item.copy(indexStatus = ShareIndexStatus.Pending, indexTaskId = null) else item
                         },
                     )
+                    val retriedTasks = retrying.associateWith { fileUuid -> retryIndex(root, fileUuid) }
+                    _state.value = _state.value.copy(
+                        items = _state.value.items.map { item ->
+                            val fileUuid = item.fileUuid?.takeIf { it in retrying } ?: return@map item
+                            val taskId = retriedTasks[fileUuid]
+                            if (taskId != null) item.copy(indexTaskId = taskId)
+                            else failedIndexes.first { it.fileUuid == fileUuid }
+                        },
+                    )
+                    if (retriedTasks.values.any { it == null }) throw ShareImportPersistenceException("索引任务暂时无法重试")
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -535,7 +546,7 @@ class ShareImportViewModel(
             importer: SharedFileImporter,
             targets: ShareImportTargetSource,
             indexQueueState: StateFlow<VectorizationQueue.QueueState>? = null,
-            retryIndex: suspend (String, String) -> Boolean = { _, _ -> false },
+            retryIndex: suspend (String, String) -> String? = { _, _ -> null },
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =

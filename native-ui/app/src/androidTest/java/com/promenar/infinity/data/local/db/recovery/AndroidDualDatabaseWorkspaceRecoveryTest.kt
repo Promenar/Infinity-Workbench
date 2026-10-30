@@ -13,12 +13,7 @@ import com.promenar.infinity.data.backup.BackupPreferenceSnapshot
 import com.promenar.infinity.data.backup.RoomBackupDataSource
 import com.promenar.infinity.data.backup.TransactionalBackupPreferenceStore
 import com.promenar.infinity.data.backup.TransactionalBackupSecretStore
-import com.promenar.infinity.data.local.db.MIGRATION_18_19
-import com.promenar.infinity.data.local.db.MIGRATION_19_20
-import com.promenar.infinity.data.local.db.MIGRATION_20_21
-import com.promenar.infinity.data.local.db.MIGRATION_21_22
-import com.promenar.infinity.data.local.db.MIGRATION_22_23
-import com.promenar.infinity.data.local.db.MIGRATION_23_24
+import com.promenar.infinity.data.local.db.INFINITY_DATABASE_MIGRATIONS
 import com.promenar.infinity.data.local.db.InfinityDatabase
 import com.promenar.infinity.data.repository.WorkspaceRepository
 import com.promenar.infinity.data.security.SecretId
@@ -87,8 +82,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                 assertThat(digest(archivedLegacy)).isEqualTo(legacySourceHash)
 
                 val database = Room.databaseBuilder(context, InfinityDatabase::class.java, CURRENT_DATABASE_NAME)
-                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
-                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    // 恢复候选冻结为 v18，打开当前库需经应用注册的全部前进迁移。
+                    .addMigrations(*INFINITY_DATABASE_MIGRATIONS)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -148,8 +143,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, InfinityDatabase::class.java, CURRENT_DATABASE_NAME)
-                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
-                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    // 恢复候选冻结为 v18，打开当前库需经应用注册的全部前进迁移。
+                    .addMigrations(*INFINITY_DATABASE_MIGRATIONS)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -257,8 +252,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, InfinityDatabase::class.java, CURRENT_DATABASE_NAME)
-                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
-                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    // 恢复候选冻结为 v18，打开当前库需经应用注册的全部前进迁移。
+                    .addMigrations(*INFINITY_DATABASE_MIGRATIONS)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -324,8 +319,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                     .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
                 val database = Room.databaseBuilder(context, InfinityDatabase::class.java, CURRENT_DATABASE_NAME)
-                    // 恢复候选冻结为 v18，打开当前库需经前进迁移。
-                    .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    // 恢复候选冻结为 v18，打开当前库需经应用注册的全部前进迁移。
+                    .addMigrations(*INFINITY_DATABASE_MIGRATIONS)
                     .allowMainThreadQueries()
                     .build()
                 room = database
@@ -402,8 +397,8 @@ class AndroidDualDatabaseWorkspaceRecoveryTest {
                 .isInstanceOf(DualDatabaseBootstrapResult.Completed::class.java)
 
             val database = Room.databaseBuilder(context, InfinityDatabase::class.java, CURRENT_DATABASE_NAME)
-                // 恢复候选冻结为 v18，打开当前库需经前进迁移。
-                .addMigrations(MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                // 恢复候选冻结为 v18，打开当前库需经应用注册的全部前进迁移。
+                .addMigrations(*INFINITY_DATABASE_MIGRATIONS)
                 .allowMainThreadQueries()
                 .build()
             room = database

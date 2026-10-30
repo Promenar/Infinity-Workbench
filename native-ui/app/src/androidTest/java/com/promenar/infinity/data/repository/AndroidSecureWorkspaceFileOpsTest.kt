@@ -294,7 +294,9 @@ class AndroidSecureWorkspaceFileOpsTest {
             workspaceDeletionToken("android-test-cleanup"),
         )
         ops.cleanupTombstones(root)
-        assertThat(Files.list(root.resolve(".infinity_tombstones")).use { it.count() }).isEqualTo(0L)
+        // 墓碑位于工作区内部目录 .infinity/tombstones；旧版根目录墓碑清空后会被移除。
+        assertThat(Files.list(root.resolve(".infinity/tombstones")).use { it.count() }).isEqualTo(0L)
+        assertThat(Files.exists(root.resolve(".infinity_tombstones"))).isFalse()
 
         ops.createFile(root, listOf("docs", "crash.txt"), "old".toByteArray())
         val token = sha256("crash.txt".toByteArray()).take(24)

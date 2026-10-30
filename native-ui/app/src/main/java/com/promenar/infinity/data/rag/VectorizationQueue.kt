@@ -362,20 +362,24 @@ class VectorizationQueue(
         return if (gate == null) block() else gate.withSessionAdmission(sessionId, block)
     }
 
-    suspend fun retryDocumentReference(workspaceRootUuid: String, docId: String): Boolean {
+    suspend fun retryDocumentReference(workspaceRootUuid: String, docId: String): Boolean =
+        retryDocumentReferenceTask(workspaceRootUuid, docId) != null
+
+    /** 重试失败的文件引用索引；重试换用新的任务标识，返回它供调用方继续跟踪，无法重试时返回 null。 */
+    suspend fun retryDocumentReferenceTask(workspaceRootUuid: String, docId: String): String? {
         requireNotNull(documentIndexService) { "document_reference 必须配置事务索引服务" }
         val existing = vectorizationTaskDao.getByWorkspaceFile(
             workspaceRootUuid,
             docId,
             TYPE_DOCUMENT_REFERENCE,
-        ) ?: return false
-        if (existing.status !in setOf("failed", "partial", "interrupted")) return false
-        val entry = requireNotNull(fileEntryDao).getActiveByUuid(workspaceRootUuid, docId) ?: return false
-        enqueueDocumentReference(
+        ) ?: return null
+        if (existing.status !in setOf("failed", "partial", "interrupted")) return null
+        val entry = requireNotNull(fileEntryDao).getActiveByUuid(workspaceRootUuid, docId) ?: return null
+        return enqueueDocumentReference(
             workspaceRootUuid = workspaceRootUuid,
             docId = docId,
             docTitle = entry.name,
-            sourceMimeType = entry.mimeType ?: return false,
+            sourceMimeType = entry.mimeType ?: return null,
             targetContentHash = entry.hash,
             targetEpoch = entry.updatedAt,
             kgStrategy = existing.kgStrategy?.takeUnless {
@@ -384,7 +388,6 @@ class VectorizationQueue(
             } ?: "full".takeIf { existing.kgStrategy != null },
             skipVectorization = existing.skipVectorization,
         )
-        return true
     }
 
     private suspend fun processNext(task: VectorizationTask) {

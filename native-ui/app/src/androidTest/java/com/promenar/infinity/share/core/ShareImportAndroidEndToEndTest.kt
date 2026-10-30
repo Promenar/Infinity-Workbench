@@ -1,5 +1,6 @@
 package com.promenar.infinity.share.core
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ActivityScenario
@@ -21,7 +22,10 @@ import com.promenar.infinity.data.local.db.entity.SessionEntity
 import com.promenar.infinity.data.rag.DocumentReferenceExtractor
 import com.promenar.infinity.data.repository.SecureWorkspaceFileOps
 import com.promenar.infinity.data.repository.WorkspaceFileTooLargeException
+import com.promenar.infinity.onboarding.OnboardingStateStore
+import com.promenar.infinity.onboarding.OnboardingStep
 import kotlinx.coroutines.runBlocking
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -30,6 +34,17 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 class ShareImportAndroidEndToEndTest {
     private var lastStartupState: BackupStartupState? = null
+
+    /**
+     * 从完成引导的主界面开始。全新安装停在引导页，其灯珠字标持续逐帧动画，
+     * 主线程始终不空闲，startActivitySync 会一直等到超时。
+     */
+    @Before
+    fun completeOnboarding() {
+        ApplicationProvider.getApplicationContext<InfinityApplication>()
+            .getSharedPreferences(OnboardingStateStore.PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit().putString("step", OnboardingStep.COMPLETED.name).commit()
+    }
 
     @Test
     fun activityDispatchStagesBeforeClearingIntentAndFreshMainActivityMountsSheet() {

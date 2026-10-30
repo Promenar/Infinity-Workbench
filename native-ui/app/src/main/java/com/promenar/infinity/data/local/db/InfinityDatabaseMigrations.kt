@@ -5,6 +5,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
+/** 应用打开当前库时注册的全部前进迁移；设备测试打开冻结的旧版本库时复用同一份列表。 */
+val INFINITY_DATABASE_MIGRATIONS: Array<Migration>
+    get() = arrayOf(
+        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_18, MIGRATION_17_18,
+        MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24,
+        MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
+        MIGRATION_30_31,
+    )
+
 /** 用户消息的引用批注以可空 JSON 文本保存。 */
 val MIGRATION_30_31 = object : Migration(30, 31) {
     override fun migrate(db: SupportSQLiteDatabase) {

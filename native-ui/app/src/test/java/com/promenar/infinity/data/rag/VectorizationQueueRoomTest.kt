@@ -108,11 +108,15 @@ class VectorizationQueueRoomTest {
         assertThat(database.vectorizationTaskDao().getById(TASK)?.subStatus)
             .isEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
 
-        assertThat(queue.retryDocumentReference(ROOT, DOC)).isTrue()
+        val retriedTaskId = queue.retryDocumentReferenceTask(ROOT, DOC)
         val retried = database.vectorizationTaskDao().getByWorkspaceFile(ROOT, DOC, VectorizationQueue.TYPE_DOCUMENT_REFERENCE)
         assertThat(retried?.status).isEqualTo("pending")
         assertThat(retried?.subStatus).isNotEqualTo(DUAL_DATABASE_RECOVERY_INDEX_HOLD)
-        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(retried!!.id)
+        // 重试换用新标识，并把它交回调用方继续跟踪。
+        assertThat(retriedTaskId).isEqualTo(retried!!.id)
+        assertThat(retriedTaskId).isNotEqualTo(TASK)
+        assertThat(queue.snapshotState().queue.map { it.id }).containsExactly(retried.id)
+        assertThat(queue.retryDocumentReferenceTask(ROOT, DOC)).isNull()
         queue.shutdown()
     }
 
