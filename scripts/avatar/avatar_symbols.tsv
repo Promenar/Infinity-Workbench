@@ -1,0 +1,391 @@
+category	name	label_zh	label_en	keywords	popular
+GENERAL	auto_awesome	灵感	Sparkles	魔法|sparkle	1
+GENERAL	all_inclusive	无限	Infinity	循环|infinity	1
+GENERAL	rocket_launch	启航	Rocket Launch	火箭|launch	1
+GENERAL	bolt	闪电	Bolt	能量|energy	1
+GENERAL	star	星星	Star	收藏|favorite	1
+GENERAL	diamond	钻石	Diamond	宝石|gem	1
+GENERAL	explore	探索	Explore	指南针|compass	1
+GENERAL	favorite	热爱	Favorite	爱心|love	0
+GENERAL	verified	认证	Verified	可靠|trusted	0
+GENERAL	shield	守护	Shield	防护|protect	0
+GENERAL	flag	旗帜	Flag	目标|goal	0
+GENERAL	extension	拼图	Extension	组合|puzzle	0
+GENERAL	key	钥匙	Key	解锁|unlock	0
+GENERAL	anchor	锚定	Anchor	稳定|steady	0
+GENERAL	balance	平衡	Balance	公平|fairness	0
+GENERAL	change_history	三角	Change History	山峰|triangle	0
+GENERAL	circle	圆形	Circle	完整|round	0
+GENERAL	square	方块	Square	秩序|block	0
+GENERAL	hexagon	六边形	Hexagon	蜂巢|honeycomb	0
+GENERAL	pentagon	五边形	Pentagon	几何|geometry	0
+GENERAL	interests	兴趣	Interests	爱好|hobby	0
+GENERAL	token	令牌	Token	通证|unit	0
+GENERAL	track_changes	靶心	Track Changes	专注|focus	0
+GENERAL	filter_vintage	花形	Filter Vintage	复古|flower	0
+GENERAL	flare	光芒	Flare	耀斑|shine	0
+GENERAL	wb_iridescent	辉光	Wb Iridescent	光环|glow	0
+GENERAL	brightness_medium	明暗	Brightness Medium	亮度|brightness	0
+GENERAL	nightlight	月灯	Nightlight	夜晚|night	0
+GENERAL	lightbulb	灯泡	Lightbulb	想法|idea	1
+GENERAL	local_fire_department	热情	Flame	火焰|fire	0
+GENERAL	spa	禅意	Spa	放松|zen	0
+GENERAL	self_improvement	冥想	Self Improvement	正念|meditation	0
+GENERAL	loyalty	忠诚	Loyalty	信任|trust	0
+GENERAL	workspace_premium	勋章	Workspace Premium	成就|medal	0
+GENERAL	military_tech	荣誉	Military Tech	奖励|award	0
+GENERAL	trophy	奖杯	Trophy	胜利|winner	0
+GENERAL	redeem	礼物	Redeem	惊喜|gift	0
+GENERAL	celebration	庆祝	Celebration	派对|party	0
+GENERAL	fingerprint	指纹	Fingerprint	身份|identity	0
+GENERAL	timelapse	流逝	Timelapse	时间|time	0
+GENERAL	speed	速度	Speed	效率|fast	0
+GENERAL	motion_photos_on	动态	Motion Photos On	流动|motion	0
+GENERAL	auto_fix_high	魔杖	Auto Fix High	魔法|magic wand	0
+GENERAL	stream	流星	Stream	群星|meteor	0
+CODING	terminal	终端	Terminal	命令行|shell	1
+CODING	code	代码	Code	编程|programming	1
+CODING	data_object	对象	Data Object	JSON|json	0
+CODING	data_array	数组	Data Array	列表|array	0
+CODING	folder_code	代码仓库	Folder Code	源码|repository	0
+CODING	deployed_code	部署	Deployed Code	交付|deployment	0
+CODING	code_blocks	代码积木	Code Blocks	模块|modules	0
+CODING	keyboard	键盘	Keyboard	输入|typing	0
+CODING	hard_drive	硬盘	Hard Drive	磁盘|disk	0
+CODING	integration_instructions	集成	Integration Instructions	接口|integration	0
+CODING	api	接口	Api	服务|endpoint	0
+CODING	webhook	钩子	Webhook	回调|callback	0
+CODING	bug_report	调试	Bug Report	缺陷|debug	0
+CODING	developer_board	开发板	Developer Board	硬件|hardware	0
+CODING	memory	芯片	Memory	内存|chip	0
+CODING	storage	数据库	Storage	存储|database	0
+CODING	dns	服务器	Dns	域名|server	0
+CODING	cloud	云端	Cloud	云计算|cloud computing	0
+CODING	hub	枢纽	Hub	节点|nodes	0
+CODING	account_tree	分支	Account Tree	架构|architecture	0
+CODING	lan	局域网	Lan	网络|network	0
+CODING	router	路由器	Router	网络设备|network	0
+CODING	wifi	无线	Wifi	联网|wireless	0
+CODING	sim_card	通信卡	SIM Card	移动通信|mobile connection	0
+CODING	satellite_alt	卫星	Satellite Alt	通信|satellite	0
+CODING	security	安全	Security	审计|audit	0
+CODING	lock	密锁	Lock	加密|encryption	0
+CODING	admin_panel_settings	管理员	Admin Panel Settings	权限|permission	0
+CODING	policy	策略	Policy	合规|policy	0
+CODING	settings_ethernet	以太网	Settings Ethernet	运维|ethernet	0
+CODING	build	工具	Build	维修|tools	0
+CODING	construction	建设	Construction	工程|engineering	0
+CODING	precision_manufacturing	机械	Precision Manufacturing	自动化|automation	0
+CODING	manufacturing	制造	Manufacturing	工厂|factory	0
+CODING	electrical_services	电路	Electrical Services	电工|electrical	0
+CODING	power	插头	Power	供电|plug	0
+CODING	battery_full	电池	Battery Full	续航|battery	0
+CODING	sensors	传感器	Sensors	信号|signal	0
+CODING	schema	模式	Schema	结构|structure	0
+CODING	polyline	连线	Polyline	图结构|graph	0
+CODING	web	网页布局	Web	浏览器|browser	0
+CODING	computer	计算机	Computer	桌面|desktop	0
+CODING	smartphone	手机	Smartphone	移动端|mobile	0
+CODING	cable	线缆	Cable	连接|connection	0
+WRITING	ink_pen	钢笔	Fountain Pen	书写|fountain pen	1
+WRITING	edit_note	笔记	Edit Note	记录|notes	1
+WRITING	translate	翻译	Translate	语言|language	1
+WRITING	menu_book	书本	Menu Book	阅读|book	0
+WRITING	book_2	图书	Book 2	著作|volume	0
+WRITING	library_books	书库	Library Books	资料|library	0
+WRITING	article	文章	Article	内容|article	0
+WRITING	feed	信息流	Feed	资讯|news	0
+WRITING	newspaper	报纸	Newspaper	新闻|press	0
+WRITING	description	文稿	Description	文档|document	0
+WRITING	draft	草稿	Draft	初稿|draft	0
+WRITING	history_edu	手稿	History Edu	历史|manuscript	0
+WRITING	auto_stories	故事	Auto Stories	小说|story	0
+WRITING	sticky_note_2	便签	Sticky Note 2	备忘|memo	0
+WRITING	note_alt	札记	Note Alt	摘录|note	0
+WRITING	contract	合同	Contract	协议|agreement	0
+WRITING	receipt_long	清单	Receipt Long	票据|receipt	0
+WRITING	assignment	作业	Assignment	任务单|assignment	0
+WRITING	fact_check	核查	Fact Check	事实|verify	0
+WRITING	plagiarism	查重	Plagiarism	引用|citation	0
+WRITING	gavel	法律	Gavel	裁判|legal	0
+WRITING	chat	聊天	Chat	交流|chat	0
+WRITING	forum	讨论	Discussion	论坛|discussion	0
+WRITING	speaker_notes	发言稿	Speaker Notes	讲稿|speech	0
+WRITING	record_voice_over	朗读	Record Voice Over	解说|narration	0
+WRITING	campaign	传播	Campaign	宣传|broadcast	0
+WRITING	mic	麦克风	Mic	口述|dictation	0
+WRITING	hearing	聆听	Hearing	听写|listening	0
+WRITING	podcasts	播客	Podcasts	声音|podcast	0
+WRITING	bookmark	书签	Bookmark	标记|bookmark	0
+WRITING	collections_bookmark	文集	Collections Bookmark	汇编|anthology	0
+WRITING	local_library	阅览室	Local Library	文学|literature	0
+WRITING	language	语言世界	Language	多语|multilingual	0
+WRITING	travel_explore	世界研究	Travel Explore	国际|world	0
+WRITING	draw	手绘	Draw	写作|drawing	0
+WRITING	stylus	手写笔	Stylus	触笔|pen	0
+WRITING	signature	签名	Signature	落款|autograph	0
+WRITING	ink_highlighter	荧光笔	Ink Highlighter	重点|highlight	0
+WRITING	mail	信件	Mail	邮件|letter	0
+WRITING	mark_email_read	已读信笺	Mark Email Read	通信|correspondence	0
+WRITING	book_ribbon	珍藏书	Book Ribbon	典籍|collection	0
+WRITING	gesture	手迹	Gesture	草写|handwriting	0
+LEARNING	school	学校	School	教育|education	1
+LEARNING	psychology	思维	Mind	心理|mind	1
+LEARNING	science	科学	Science	实验|experiment	0
+LEARNING	biotech	生物技术	Biotech	研究|biology	0
+LEARNING	genetics	遗传	Genetics	基因|dna	0
+LEARNING	microbiology	微生物	Microbiology	细菌|microbe	0
+LEARNING	globe	地球	Globe	地理|geography	0
+LEARNING	labs	实验室	Labs	化学|laboratory	0
+LEARNING	vaccines	疫苗	Vaccines	医学|vaccine	0
+LEARNING	medication	药物	Medication	药理|medicine	0
+LEARNING	stethoscope	听诊器	Stethoscope	诊断|diagnosis	0
+LEARNING	cardiology	心脏	Cardiology	心电|heart	0
+LEARNING	neurology	神经	Neurology	脑科学|brain	0
+LEARNING	orthopedics	骨骼	Orthopedics	骨科|bone	0
+LEARNING	pulmonology	呼吸	Pulmonology	肺部|lung	0
+LEARNING	hematology	血液	Hematology	血型|blood	0
+LEARNING	ent	耳鼻喉	Ent	感官|ear	0
+LEARNING	ophthalmology	眼科	Ophthalmology	视觉|vision	0
+LEARNING	dentistry	牙科	Dentistry	牙齿|tooth	0
+LEARNING	nutrition	营养	Apple	饮食|nutrition	0
+LEARNING	function	函数	Function	数学|math	0
+LEARNING	calculate	计算	Calculate	算术|calculator	0
+LEARNING	straighten	尺子	Straighten	测量|measure	0
+LEARNING	architecture	制图	Architecture	设计|drafting	0
+LEARNING	square_foot	面积	Square Foot	几何|geometry	0
+LEARNING	query_stats	数据分析	Query Stats	统计|statistics	0
+LEARNING	analytics	分析	Analytics	图表|analysis	0
+LEARNING	bar_chart	柱状图	Bar Chart	比较|chart	0
+LEARNING	pie_chart	饼图	Pie Chart	比例|proportion	0
+LEARNING	monitoring	趋势	Monitoring	观察|trend	0
+LEARNING	insights	洞察	Insights	规律|insight	0
+LEARNING	model_training	模型训练	Model Training	机器学习|machine learning	0
+LEARNING	network_intelligence	人工智能	Network Intelligence	智能网络|ai	0
+LEARNING	cognition	认知	Cognition	推理|reasoning	0
+LEARNING	psychology_alt	思考	Psychology Alt	提问|thinking	0
+LEARNING	quiz	测验	Quiz	问题|quiz	0
+LEARNING	help	帮助	Help	疑问|question	0
+LEARNING	tips_and_updates	知识提示	Tips And Updates	启发|tips	0
+LEARNING	light	灯具	Light	照明|illumination	0
+LEARNING	hourglass_empty	沙漏	Hourglass Empty	耐心|patience	0
+LEARNING	schedule	时钟	Schedule	计划|clock	0
+LEARNING	update	历史回顾	Update	时间轴|history	0
+LEARNING	surgical	外科	Surgical	手术|surgery	0
+LEARNING	dermatology	皮肤	Dermatology	皮肤科|skin	0
+WORK	work	公文包	Work	职业|briefcase	1
+WORK	apartment	楼宇	Apartment	企业|company	0
+WORK	corporate_fare	总部	Corporate Fare	机构|corporation	0
+WORK	storefront	店铺	Storefront	商店|shop	0
+WORK	shopping_bag	购物袋	Shopping Bag	零售|retail	0
+WORK	shopping_cart	购物车	Shopping Cart	电商|commerce	0
+WORK	sell	销售	Sell	价格|sale	0
+WORK	payments	支付	Payments	财务|payment	0
+WORK	account_balance	银行	Account Balance	金融|bank	0
+WORK	account_balance_wallet	钱包	Account Balance Wallet	资金|wallet	0
+WORK	savings	储蓄	Savings	存钱|saving	0
+WORK	currency_exchange	汇兑	Currency Exchange	外汇|exchange	0
+WORK	paid	货币	Paid	收款|money	0
+WORK	finance	金融走势	Finance	投资|investment	0
+WORK	candlestick_chart	行情	Candlestick Chart	股票|stocks	0
+WORK	stacked_line_chart	业绩	Stacked Line Chart	增长|growth	0
+WORK	leaderboard	排行	Leaderboard	绩效|ranking	0
+WORK	finance_mode	财经	Finance Mode	分析师|finance	0
+WORK	assured_workload	可信业务	Assured Workload	风控|compliance	0
+WORK	inventory_2	库存	Inventory 2	箱子|stock	0
+WORK	warehouse	仓库	Warehouse	物流|warehouse	0
+WORK	package_2	包裹	Package 2	交付|parcel	0
+WORK	local_shipping	运输	Local Shipping	货车|shipping	0
+WORK	forklift	叉车	Forklift	仓储|logistics	0
+WORK	factory	工厂	Factory	生产|production	0
+WORK	engineering	工程师	Engineering	施工|engineer	0
+WORK	support_agent	客服	Support Agent	支持|support	0
+WORK	contact_support	咨询	Contact Support	服务|consulting	0
+WORK	groups	团队	Groups	协作|team	0
+WORK	handshake	合作	Handshake	握手|cooperation	0
+WORK	partner_exchange	合伙人	Partner Exchange	伙伴|partner	0
+WORK	meeting_room	会议室	Meeting Room	会面|meeting	0
+WORK	co_present	演示	Co Present	汇报|presentation	0
+WORK	calendar_month	月历	Calendar Month	日程|calendar	0
+WORK	event_available	预约	Event Available	排期|appointment	0
+WORK	checklist	待办	Checklist	事项|todo	0
+WORK	task_alt	完成	Task Alt	执行|done	0
+WORK	rule	规则	Rule	审核|rules	0
+WORK	assignment_ind	岗位	Assignment Ind	职责|responsibility	0
+WORK	badge	工牌	Badge	职位|badge	0
+WORK	manage_accounts	账户管理	Manage Accounts	人事|hr	0
+WORK	contact_page	联系人	Contact Page	名片|contact	0
+WORK	real_estate_agent	房产	Real Estate Agent	置业|real estate	0
+CREATIVE	palette	调色盘	Palette	艺术|art	1
+CREATIVE	brush	画笔	Brush	绘画|paint	0
+CREATIVE	ink_eraser	橡皮擦	Eraser	素描|eraser	0
+CREATIVE	design_services	设计工具	Design Services	美术|design	0
+CREATIVE	gradient	渐变	Gradient	配色|gradient	0
+CREATIVE	texture	纹理	Texture	材质|texture	0
+CREATIVE	imagesmode	图像	Imagesmode	合成|image	0
+CREATIVE	photo_camera	相机	Photo Camera	摄影|photography	1
+CREATIVE	camera	机械快门	Camera	拍摄|shutter	0
+CREATIVE	camera_roll	胶卷	Camera Roll	影像|film	0
+CREATIVE	panorama	全景	Panorama	宽幅|panorama	0
+CREATIVE	photo_library	相册	Photo Library	图片集|gallery	0
+CREATIVE	photo_filter	滤镜	Photo Filter	修图|filter	0
+CREATIVE	movie	电影	Movie	影视|cinema	0
+CREATIVE	theaters	剧院	Theaters	观影|theater	0
+CREATIVE	videocam	录像	Videocam	视频|video	0
+CREATIVE	animation	动画	Animation	动效|animate	0
+CREATIVE	motion_mode	运动轨迹	Motion Mode	动态设计|motion design	0
+CREATIVE	view_in_ar	空间模型	View In Ar	三维|3d	0
+CREATIVE	shapes	图形	Shapes	造型|shapes	0
+CREATIVE	interpreter_mode	表演	Interpreter Mode	配音|performance	0
+CREATIVE	music_note	音符	Music Note	音乐|music	1
+CREATIVE	piano	钢琴	Piano	琴键|piano	0
+CREATIVE	music_video	音乐影像	Music Video	视听|music video	0
+CREATIVE	sound_sampler	采样器	Sound Sampler	电子乐|sampler	0
+CREATIVE	surround_sound	环绕音响	Surround Sound	声场|surround	0
+CREATIVE	equalizer	节奏	Equalizer	律动|rhythm	0
+CREATIVE	headphones	耳机	Headphones	音频|audio	0
+CREATIVE	speaker	音箱	Speaker	扩音|speaker	0
+CREATIVE	graphic_eq	均衡器	Graphic Eq	声波|equalizer	0
+CREATIVE	radio	收音机	Radio	广播|radio	0
+CREATIVE	album	唱片	Album	专辑|record	0
+CREATIVE	queue_music	歌单	Queue Music	曲目|playlist	0
+CREATIVE	spatial_audio	空间音频	Spatial Audio	环绕声|surround	0
+CREATIVE	joystick	摇杆	Joystick	游乐|arcade	0
+CREATIVE	sports_esports	电竞	Sports Esports	游戏竞技|gaming	0
+CREATIVE	draw_abstract	抽象画	Draw Abstract	创作|abstract	0
+CREATIVE	toys	玩具	Toys	童趣|toy	0
+CREATIVE	swords	双剑	Swords	冒险|adventure	0
+CREATIVE	casino	骰子	Casino	桌游|dice	0
+CREATIVE	playing_cards	扑克牌	Playing Cards	卡牌|cards	0
+CREATIVE	chess	国际象棋	Chess	策略|chess	0
+CREATIVE	comedy_mask	喜剧	Comedy Mask	戏剧|comedy	0
+CREATIVE	vrpano	虚拟全景	Vrpano	沉浸|virtual panorama	0
+LIFE	home	家园	Home	房屋|house	0
+LIFE	cottage	小屋	Cottage	度假|cabin	0
+LIFE	chair	椅子	Chair	家居|furniture	0
+LIFE	bed	床	Bed	休息|sleep	0
+LIFE	kitchen	厨房	Kitchen	冰箱|kitchen	0
+LIFE	restaurant	餐厅	Restaurant	吃饭|dining	0
+LIFE	ramen_dining	拉面	Ramen Dining	面食|noodles	0
+LIFE	local_pizza	披萨	Local Pizza	快餐|pizza	0
+LIFE	lunch_dining	汉堡	Lunch Dining	午餐|burger	0
+LIFE	icecream	冰淇淋	Icecream	甜品|dessert	0
+LIFE	cake	蛋糕	Cake	烘焙|baking	0
+LIFE	bakery_dining	面包	Bakery Dining	糕点|bread	0
+LIFE	local_cafe	咖啡	Coffee	茶歇|coffee	0
+LIFE	emoji_food_beverage	热茶	Emoji Food Beverage	饮品|tea	0
+LIFE	wine_bar	红酒	Wine Bar	品酒|wine	0
+LIFE	local_bar	鸡尾酒	Local Bar	调酒|cocktail	0
+LIFE	water_drop	水滴	Droplet	饮水|water	0
+LIFE	fitness_center	健身	Fitness Center	哑铃|fitness	0
+LIFE	sports_soccer	足球	Sports Soccer	球赛|football	0
+LIFE	sports_basketball	篮球	Sports Basketball	运动|basketball	0
+LIFE	sports_tennis	网球	Sports Tennis	球拍|tennis	0
+LIFE	sports_baseball	棒球	Sports Baseball	球棒|baseball	0
+LIFE	sports_golf	高尔夫	Sports Golf	绿地|golf	0
+LIFE	pool	游泳	Pool	泳池|swimming	0
+LIFE	directions_run	跑步	Directions Run	锻炼|running	0
+LIFE	directions_bike	骑行	Directions Bike	自行车|cycling	0
+LIFE	hiking	徒步	Hiking	登山|trekking	0
+LIFE	kayaking	皮划艇	Kayaking	水上|paddling	0
+LIFE	surfing	冲浪	Surfing	海边|surf	0
+LIFE	skateboarding	滑板	Skateboarding	街头|skateboard	0
+LIFE	snowboarding	单板滑雪	Snowboarding	雪地|snowboard	0
+LIFE	sports_martial_arts	武术	Sports Martial Arts	格斗|martial arts	0
+LIFE	flight	飞机	Flight	航空|airplane	0
+LIFE	train	火车	Train	铁路|railway	0
+LIFE	directions_car	汽车	Directions Car	驾驶|car	0
+LIFE	two_wheeler	摩托车	Two Wheeler	骑士|motorcycle	0
+LIFE	sailing	帆船	Sailing	航海|sailboat	0
+LIFE	luggage	行李	Luggage	旅行|travel	0
+LIFE	backpack	背包	Backpack	探险|bag	0
+LIFE	map	地图	Map	导航|map	0
+LIFE	local_hospital	医院	Local Hospital	医疗|hospital	0
+LIFE	health_and_safety	健康	Health And Safety	安全|health	0
+LIFE	emergency	急救	Emergency	紧急|emergency	0
+LIFE	volunteer_activism	公益	Volunteer Activism	志愿|volunteer	0
+LIFE	local_laundry_service	洗衣	Local Laundry Service	洗护|laundry	0
+NATURE	sunny	太阳	Sunny	晴天|sun	0
+NATURE	partly_cloudy_day	多云	Partly Cloudy Day	日间|partly cloudy	0
+NATURE	weather_hail	冰雹	Weather Hail	降雹|hail	0
+NATURE	rainy	雨天	Rainy	降水|rain	0
+NATURE	thunderstorm	雷暴	Thunderstorm	暴雨|storm	0
+NATURE	weather_snowy	雪花	Weather Snowy	下雪|snow	0
+NATURE	ac_unit	冰晶	Ac Unit	寒冷|ice	0
+NATURE	foggy	浓雾	Foggy	雾气|fog	0
+NATURE	air	风	Air	气流|wind	0
+NATURE	cyclone	气旋	Cyclone	台风|hurricane	0
+NATURE	tornado	龙卷风	Tornado	旋风|twister	0
+NATURE	dew_point	露珠	Dew Point	湿度|dew	0
+NATURE	clear_night	夜空	Clear Night	月亮|moon	0
+NATURE	wb_twilight	暮光	Wb Twilight	黄昏|twilight	0
+NATURE	waves	海浪	Waves	潮汐|tide	0
+NATURE	tsunami	海啸	Tsunami	巨浪|ocean	0
+NATURE	flood	洪水	Flood	水位|flood	0
+NATURE	landscape	山峦	Landscape	地貌|mountain	0
+NATURE	volcano	火山	Volcano	熔岩|lava	0
+NATURE	camping	露营	Camping	野营|camp	0
+NATURE	forest	森林	Forest	树木|woods	0
+NATURE	park	树木	Park	公园|tree	0
+NATURE	nature_people	林间漫步	Nature People	森林疗愈|forest walk	0
+NATURE	grass	草丛	Grass	草地|grass	0
+NATURE	yard	花园	Yard	园艺|garden	0
+NATURE	local_florist	花朵	Flower	鲜花|flower	0
+NATURE	eco	绿叶	Leaf	节能|leaf	1
+NATURE	psychiatry	心灵绿芽	Psychiatry	成长|growth	0
+NATURE	potted_plant	盆栽	Potted Plant	绿植|plant	0
+NATURE	agriculture	农业	Agriculture	耕种|farming	0
+NATURE	compost	堆肥	Compost	循环生态|compost	0
+NATURE	recycling	回收	Recycling	再利用|recycle	0
+NATURE	energy_savings_leaf	绿色能源	Energy Savings Leaf	低碳|green energy	0
+NATURE	solar_power	太阳能	Solar Power	光伏|solar	0
+NATURE	wind_power	风能	Wind Power	风车|windmill	0
+NATURE	water_pump	水泵	Water Pump	灌溉|irrigation	0
+NATURE	earthquake	地震	Earthquake	地质|geology	0
+NATURE	coronavirus	病毒	Coronavirus	微观|virus	0
+NATURE	planet	行星	Planet	宇宙|planet	0
+NATURE	orbit	轨道	Orbit	天体|orbit	0
+NATURE	moon_stars	星月	Moon Stars	星辰|stars	0
+NATURE	water_bottle	水瓶	Water Bottle	补水|bottle	0
+NATURE	beach_access	海滩	Beach Access	沙滩|beach	0
+NATURE	umbrella	雨伞	Umbrella	避雨|umbrella	0
+CHARACTERS	smart_toy	机器人	Robot	智能助手|robot	1
+CHARACTERS	robot_2	机械伙伴	Robot Companion	机器人|android	0
+CHARACTERS	face	面孔	Face	人物|face	0
+CHARACTERS	pets	萌宠	Pets	动物|pet	1
+CHARACTERS	cruelty_free	兔子	Rabbit	温柔|rabbit	0
+CHARACTERS	domino_mask	蒙面侠	Masked Hero	英雄|superhero	0
+CHARACTERS	raven	乌鸦	Raven	智慧|crow	0
+CHARACTERS	owl	猫头鹰	Owl	博学|owl	0
+CHARACTERS	diversity_1	友谊	Diversity 1	拥抱|friendship	0
+CHARACTERS	chess_knight	战马	Chess Knight	骑士|knight	0
+CHARACTERS	pest_control	害虫	Pest Control	甲虫|beetle	0
+CHARACTERS	pest_control_rodent	老鼠	Pest Control Rodent	啮齿动物|mouse	0
+CHARACTERS	emoji_nature	蜜蜂	Emoji Nature	花丛|bee	0
+CHARACTERS	emoji_people	问好	Emoji People	欢迎|welcome	0
+CHARACTERS	person	个人	Person	人形|person	0
+CHARACTERS	person_4	伙伴	Person 4	侧影|profile	0
+CHARACTERS	person_play	玩耍	Person Play	活力|play	0
+CHARACTERS	person_celebrate	欢呼	Person Celebrate	高兴|cheer	0
+CHARACTERS	person_book	读者	Reader	学者|reader	0
+CHARACTERS	person_apron	厨师	Person Apron	匠人|chef	0
+CHARACTERS	person_raised_hand	举手	Person Raised Hand	发言|participate	0
+CHARACTERS	person_shield	保卫者	Person Shield	守卫|guardian	0
+CHARACTERS	person_heart	关爱	Person Heart	友善|caring	0
+CHARACTERS	person_search	寻人	Person Search	侦探|detective	0
+CHARACTERS	supervised_user_circle	导师	Supervised User Circle	指导|mentor	0
+CHARACTERS	family_restroom	家庭	Family Restroom	家人|family	0
+CHARACTERS	child_care	宝宝	Child Care	育儿|baby	0
+CHARACTERS	elderly	长者	Elderly	经验|elder	0
+CHARACTERS	accessibility_new	自由	Accessibility New	张臂|freedom	0
+CHARACTERS	emoji_emotions	微笑	Emoji Emotions	开心|smile	0
+CHARACTERS	sentiment_very_satisfied	欢喜	Sentiment Very Satisfied	大笑|happy	0
+CHARACTERS	sentiment_calm	平静	Sentiment Calm	安宁|calm	0
+CHARACTERS	sentiment_excited	兴奋	Sentiment Excited	激动|excited	0
+CHARACTERS	sentiment_sad	悲伤	Sentiment Sad	难过|sad	0
+CHARACTERS	sentiment_stressed	压力	Sentiment Stressed	紧张|stress	0
+CHARACTERS	mood_bad	沮丧	Mood Bad	情绪|upset	0
+CHARACTERS	skull	骷髅	Skull	酷感|skull	0
+CHARACTERS	skeleton	骨架	Skeleton	解剖|skeleton	0
+CHARACTERS	man_2	男士	Man	男性|man	0
+CHARACTERS	woman_2	女士	Woman	女性|woman	0

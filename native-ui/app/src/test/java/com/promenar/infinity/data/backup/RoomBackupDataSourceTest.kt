@@ -1637,6 +1637,7 @@ class RoomBackupDataSourceTest {
         runBlocking {
             RestoreCrashPoint.entries.filter { it !in setOf(
                 RestoreCrashPoint.SKILLS_STAGED, RestoreCrashPoint.SKILLS_OLD_MOVED, RestoreCrashPoint.SKILLS_COMMITTED,
+                RestoreCrashPoint.AVATARS_STAGED, RestoreCrashPoint.AVATARS_OLD_MOVED, RestoreCrashPoint.AVATARS_COMMITTED,
             ) }.forEach { point ->
                 db.clearAllTables()
                 if (!Files.exists(sourceRoot)) Files.createDirectories(sourceRoot)
@@ -2187,7 +2188,7 @@ class RoomBackupDataSourceTest {
     fun `技能目录在每个事务中断点重启后与数据库一致且恢复幂等`() = runBlocking {
         val skills = sourceBase.resolve("agent_skills")
         val codec = DefaultBackupPackageCodec()
-        RestoreCrashPoint.entries.forEach { point ->
+        RestoreCrashPoint.entries.filterNot { it.name.startsWith("AVATARS_") }.forEach { point ->
             skills.toFile().deleteRecursively()
             Files.createDirectories(skills)
             writeUtf8(skills.resolve("new"), "新")
@@ -2286,6 +2287,210 @@ class RoomBackupDataSourceTest {
     private fun writeUtf8(path: Path, value: String) = Files.write(path, value.toByteArray(Charsets.UTF_8))
     private fun readUtf8(path: Path): String = Files.readAllBytes(path).toString(Charsets.UTF_8)
 
+
+    @Test
+    fun `头像照片和用户照片跨目录恢复内容一致且文件名重新生成`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        val source = Files.createDirectory(sourceBase.resolve("avatars"))
+        val target = sourceBase.resolve("target-avatars")
+        val agentPhoto = Files.write(source.resolve("agent-original.img"), byteArrayOf(1, 2, 3))
+        val userPhoto = Files.write(source.resolve("user-original.img"), byteArrayOf(4, 5, 6))
+        val agent = db.agentDao().getAll().single()
+        db.agentDao().update(agent.copy(avatarPath = agentPhoto.toString()))
+        preferences.snapshot = BackupPreferenceSnapshot(listOf(BackupPreferenceEntry("settings", "user_avatar", userPhoto.toString())), emptySet())
+        val snapshot = newDataSource(avatarRoot = source).snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.avatars.size).isEqualTo(2)
+        assertThat(snapshot.database.toString(Charsets.UTF_8)).doesNotContain(source.toString())
+        assertThat(snapshot.preferences.toString(Charsets.UTF_8)).doesNotContain(source.toString())
+        val codec = DefaultBackupPackageCodec()
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        db.clearAllTables()
+        newDataSource(avatarRoot = target).restore(codec.decode(bytes, null), "avatar-cross-directory")
+        val restoredAgent = Path.of(db.agentDao().getAll().single().avatarPath!!)
+        val restoredUser = Path.of(preferences.snapshot.entries.single().value)
+        assertThat(restoredAgent.parent).isEqualTo(target)
+        assertThat(restoredUser.parent).isEqualTo(target)
+        assertThat(restoredAgent.fileName.toString()).isNotEqualTo("agent-original.img")
+        assertThat(Files.readAllBytes(restoredAgent)).isEqualTo(byteArrayOf(1, 2, 3))
+        assertThat(Files.readAllBytes(restoredUser)).isEqualTo(byteArrayOf(4, 5, 6))
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+    }
+
+    @Test
+    fun `头像缺失越界链接超限和不稳定源逐项跳过`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        db.clearAllTables()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        val outside = Files.write(sourceBase.resolve("outside.img"), byteArrayOf(1))
+        val link = Files.createSymbolicLink(root.resolve("link.img"), outside)
+        val big = root.resolve("big.img")
+        java.io.RandomAccessFile(big.toFile(), "rw").use { it.setLength(AvatarBackupFiles.MAX_FILE_BYTES + 1) }
+        val unstable = Files.write(root.resolve("unstable.img"), byteArrayOf(1))
+        listOf(root.resolve("missing.img"), outside, link, big, unstable).forEachIndexed { i, path ->
+            db.agentDao().insert(AgentEntity("avatar-$i", "照片", avatarPath = path.toString(), createdAt = i.toLong()))
+        }
+        val snapshot = newDataSource(avatarRoot = root, snapshotReadHook = { path ->
+            if (path == unstable) Files.write(path, byteArrayOf(2))
+        }).snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.avatars).isEmpty()
+        val rows = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+            .getValue("tables").jsonObject.getValue("agents").jsonArray
+        rows.forEach { assertThat(it.jsonObject["avatar_path"]).isEqualTo(JsonNull) }
+        snapshot.wipe()
+    }
+
+    @Test
+    fun `头像总量超限时只收录预算内照片`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        db.clearAllTables()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        repeat(5) { index ->
+            val file = root.resolve("$index.img")
+            java.io.RandomAccessFile(file.toFile(), "rw").use { it.setLength(AvatarBackupFiles.MAX_FILE_BYTES) }
+            db.agentDao().insert(AgentEntity("photo-$index", "照片", avatarPath = file.toString(), createdAt = index.toLong()))
+        }
+        val snapshot = newDataSource(avatarRoot = root).snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.avatars.size).isEqualTo(4)
+        assertThat(snapshot.avatars.values.sumOf { it.size.toLong() }).isEqualTo(AvatarBackupFiles.MAX_TOTAL_BYTES)
+        snapshot.wipe()
+    }
+
+    @Test
+    fun `头像旧格式恢复清空智能体和用户的源设备路径`() = runBlocking {
+        val snapshot = emptyWorkspaceBackup()
+        val database = Json.parseToJsonElement(snapshot.database.toString(Charsets.UTF_8)).jsonObject
+        val tables = database.getValue("tables").jsonObject
+        val agents = tables.getValue("agents").jsonArray.map { row ->
+            JsonObject(row.jsonObject + ("avatar_path" to JsonPrimitive("/old/device/photo.img")))
+        }
+        val legacyDatabase = JsonObject(database + ("tables" to JsonObject(tables + ("agents" to JsonArray(agents))))).toString().toByteArray()
+        val legacyPreferences = Json.encodeToString(BackupPreferenceSnapshot(listOf(
+            BackupPreferenceEntry("settings", "user_avatar", "/old/device/user.img")), emptySet())).toByteArray()
+        newDataSource().restore(validated(snapshot, database = legacyDatabase, preferencesBytes = legacyPreferences, secrets = emptyMap()))
+        assertThat(db.agentDao().getAll().single().avatarPath).isNull()
+        assertThat(preferences.snapshot.entries.map { it.key }).doesNotContain("user_avatar")
+    }
+
+    @Test
+    fun `头像哈希不符在落盘前拒绝恢复`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        val photo = Files.write(root.resolve("photo.img"), byteArrayOf(1))
+        val agent = db.agentDao().getAll().single()
+        db.agentDao().update(agent.copy(avatarPath = photo.toString()))
+        val snapshot = newDataSource(avatarRoot = root).snapshot(CANONICAL_CONTENT)
+        val codec = DefaultBackupPackageCodec()
+        val validated = codec.decode(codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT)), null)
+        validated.avatars.values.single()[0] = 2
+        assertFails { newDataSource(avatarRoot = root).restore(validated, "bad-avatar-hash") }
+        assertThat(Files.readAllBytes(photo)).isEqualTo(byteArrayOf(1))
+        assertThat(db.agentDao().getAll().single().avatarPath).isEqualTo(photo.toString())
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        snapshot.wipe()
+    }
+
+    @Test
+    fun `头像恢复偏好提交失败立即回滚文件与数据库`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        val photo = Files.write(root.resolve("new.img"), byteArrayOf(1))
+        val agent = db.agentDao().getAll().single()
+        db.agentDao().update(agent.copy(avatarPath = photo.toString()))
+        val codec = DefaultBackupPackageCodec()
+        val snapshot = newDataSource(avatarRoot = root).snapshot(CANONICAL_CONTENT)
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        Files.delete(photo)
+        val sentinel = Files.write(root.resolve("old.img"), byteArrayOf(9))
+        db.agentDao().update(agent.copy(avatarPath = sentinel.toString()))
+        preferences.failCommit = true
+        assertFails { newDataSource(avatarRoot = root).restore(codec.decode(bytes, null), "avatar-rollback") }
+        assertThat(Files.readAllBytes(sentinel)).isEqualTo(byteArrayOf(9))
+        assertThat(db.agentDao().getAll().single().avatarPath).isEqualTo(sentinel.toString())
+        assertThat(Files.list(root).use { it.count() }).isEqualTo(1)
+        assertThat(Files.exists(root.parent.resolve(".infinity-avatars-restore-avatar-rollback"))).isFalse()
+    }
+
+    @Test
+    fun `头像恢复每个中断点重启后文件引用一致且可幂等收尾`() = runBlocking {
+        val root = sourceBase.resolve("avatars")
+        val codec = DefaultBackupPackageCodec()
+        RestoreCrashPoint.entries.filterNot { it.name.startsWith("SKILLS_") }.forEach { point ->
+            emptyWorkspaceBackup().wipe()
+            root.toFile().deleteRecursively()
+            Files.createDirectories(root)
+            val photo = Files.write(root.resolve("new.img"), byteArrayOf(1, 2))
+            val agent = db.agentDao().getAll().single()
+            db.agentDao().update(agent.copy(avatarPath = photo.toString()))
+            val snapshot = newDataSource(avatarRoot = root).snapshot(CANONICAL_CONTENT)
+            val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+            snapshot.wipe()
+            Files.delete(photo)
+            val old = Files.write(root.resolve("old.img"), byteArrayOf(9))
+            db.agentDao().update(agent.copy(avatarPath = old.toString()))
+            var interrupted = false
+            try { newDataSource(point, avatarRoot = root).restore(codec.decode(bytes, null)) }
+            catch (_: SimulatedRestoreProcessDeath) { interrupted = true }
+            assertThat(interrupted).isTrue()
+            newDataSource(avatarRoot = root).recoverInterruptedRestore()
+            newDataSource(avatarRoot = root).recoverInterruptedRestore()
+            val committed = point in setOf(RestoreCrashPoint.ROOM_COMMITTED, RestoreCrashPoint.JOURNAL_COMMITTED, RestoreCrashPoint.RECEIPT_PERSISTED)
+            val restored = Path.of(db.agentDao().getAll().single().avatarPath!!)
+            assertThat(Files.readAllBytes(restored)).isEqualTo(if (committed) byteArrayOf(1, 2) else byteArrayOf(9))
+            assertThat(Files.exists(old)).isEqualTo(!committed)
+            assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+        }
+    }
+
+    @Test
+    fun `头像提交中断时技能和照片随主事务一起回滚`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        val skills = Files.createDirectory(sourceBase.resolve("agent_skills"))
+        val photo = Files.write(root.resolve("new.img"), byteArrayOf(1))
+        Files.write(skills.resolve("new.txt"), byteArrayOf(2))
+        val agent = db.agentDao().getAll().single()
+        db.agentDao().update(agent.copy(avatarPath = photo.toString()))
+        val codec = DefaultBackupPackageCodec()
+        val snapshot = newDataSource(userSkillsRoot = skills, avatarRoot = root).snapshot(CANONICAL_CONTENT)
+        val bytes = codec.encode(snapshot, BackupOptions(CANONICAL_CONTENT))
+        snapshot.wipe()
+        Files.delete(photo)
+        Files.delete(skills.resolve("new.txt"))
+        val oldPhoto = Files.write(root.resolve("old.img"), byteArrayOf(9))
+        Files.write(skills.resolve("old.txt"), byteArrayOf(8))
+        db.agentDao().update(agent.copy(avatarPath = oldPhoto.toString()))
+        var interrupted = false
+        try { newDataSource(RestoreCrashPoint.AVATARS_COMMITTED, userSkillsRoot = skills, avatarRoot = root).restore(codec.decode(bytes, null)) }
+        catch (_: SimulatedRestoreProcessDeath) { interrupted = true }
+        assertThat(interrupted).isTrue()
+        newDataSource(userSkillsRoot = skills, avatarRoot = root).recoverInterruptedRestore()
+        assertThat(Files.readAllBytes(oldPhoto)).isEqualTo(byteArrayOf(9))
+        assertThat(Files.readAllBytes(skills.resolve("old.txt"))).isEqualTo(byteArrayOf(8))
+        assertThat(Files.exists(skills.resolve("new.txt"))).isFalse()
+        assertThat(db.agentDao().getAll().single().avatarPath).isEqualTo(oldPhoto.toString())
+        assertThat(Files.exists(restoreParent.resolve(FileRestoreJournal.FILE_NAME))).isFalse()
+    }
+
+    @Test
+    fun `头像只使用技能快照后的余量且不会挤占既有备份`() = runBlocking {
+        emptyWorkspaceBackup().wipe()
+        db.clearAllTables()
+        val root = Files.createDirectory(sourceBase.resolve("avatars"))
+        val skills = Files.createDirectory(sourceBase.resolve("agent_skills"))
+        java.io.RandomAccessFile(skills.resolve("data.bin").toFile(), "rw").use { it.setLength(9L * 1024 * 1024) }
+        repeat(4) { index ->
+            val path = root.resolve("$index.img")
+            java.io.RandomAccessFile(path.toFile(), "rw").use { it.setLength(AvatarBackupFiles.MAX_FILE_BYTES) }
+            db.agentDao().insert(AgentEntity("photo-$index", "照片", avatarPath = path.toString(), createdAt = index.toLong()))
+        }
+        val snapshot = newDataSource(userSkillsRoot = skills, avatarRoot = root).snapshot(CANONICAL_CONTENT)
+        assertThat(snapshot.skills!!.files.getValue("data.bin").size).isEqualTo(9 * 1024 * 1024)
+        assertThat(snapshot.avatars.size).isEqualTo(3)
+        snapshot.wipe()
+    }
+
     private fun newDataSource(
         crashPoint: RestoreCrashPoint? = null,
         snapshotReadHook: (Path) -> Unit = {},
@@ -2294,6 +2499,7 @@ class RoomBackupDataSourceTest {
         fileOperations: RestoreFileOperations = TestRestoreFileOperations(),
         configurationRevision: () -> Long = { 0L },
         userSkillsRoot: Path? = null,
+        avatarRoot: Path? = null,
     ): RoomBackupDataSource = RoomBackupDataSource(
         database = db,
         preferences = preferenceStore,
@@ -2309,6 +2515,7 @@ class RoomBackupDataSourceTest {
         journalAuthenticator = TestRestoreJournalAuthenticator,
         restoreFileOperations = fileOperations,
         userSkillsRoot = userSkillsRoot,
+        avatarRoot = avatarRoot,
     )
 
     private suspend fun emptyWorkspaceBackup(): BackupSnapshot {

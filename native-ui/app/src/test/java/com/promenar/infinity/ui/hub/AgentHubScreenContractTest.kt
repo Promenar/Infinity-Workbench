@@ -145,21 +145,21 @@ class AgentHubScreenContractTest {
     }
 
     @Test
-    fun `all four avatar surfaces share the common icon table and color function`() {
+    fun `all four avatar surfaces pass raw icon and color to the shared avatar`() {
         val hub = hubSource.readText()
         val three = projectRoot.resolve("src/main/java/com/promenar/infinity/ui/hub/HubThreePane.kt").readText()
         val edit = projectRoot.resolve("src/main/java/com/promenar/infinity/ui/hub/AgentEditScreen.kt").readText()
         listOf(hub, three, edit).forEach { source ->
-            assertThat(source).doesNotContain("fun agentIconVector(")
-            assertThat(source).doesNotContain("fun agentAvatarColor(")
+            assertThat(source).doesNotContain("agentIconVector(")
+            assertThat(source).doesNotContain("agentAvatarTones(")
             assertThat(source).doesNotContain("lerp(")
         }
-        assertThat(hub).contains("agentIconVector(item.agent.icon)")
-        assertThat(hub).contains("agentIconVector(agent.icon)")
-        assertThat(three).contains("agentIconVector(entry.agent.agent.icon)")
-        assertThat(edit).contains("agentIconVector(selectedIcon)")
-        assertThat(edit).contains("AgentPresetIcons")
-        assertThat(edit).contains("agentAvatarColor(selectedColor")
+        assertThat(hub).contains("icon = item.agent.icon")
+        assertThat(hub).contains("icon = agent.icon")
+        assertThat(three).contains("icon = entry.agent.agent.icon")
+        assertThat(edit).contains("AgentAvatarCodec.decode(selectedIcon)")
+        assertThat(edit).contains("AgentAvatarPickerSheet(")
+        assertThat(edit).doesNotContain("ColorPickerPanel(")
     }
 
     @Test

@@ -83,8 +83,6 @@ import com.promenar.infinity.navigation.trackSettingsPaneStack
 import com.promenar.infinity.ui.MainTabsState
 import com.promenar.infinity.ui.chat.LocalChatNavigationIcon
 import com.promenar.infinity.ui.common.AgentAvatar
-import com.promenar.infinity.ui.common.agentAvatarColor
-import com.promenar.infinity.ui.common.agentIconVector
 import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.infinityDomainColors
 import kotlinx.coroutines.flow.first
@@ -469,9 +467,11 @@ private fun HubStripItem(
     ) {
         Box {
             AgentAvatar(
-                icon = agentIconVector(entry.agent.agent.icon),
-                customImageUri = entry.agent.agent.avatarPath,
-                backgroundColor = agentAvatarColor(entry.agent.agent.color),
+                icon = entry.agent.agent.icon,
+                color = entry.agent.agent.color,
+                seed = entry.agent.agent.id,
+                name = entry.agent.title,
+                photoUri = entry.agent.agent.avatarPath,
                 size = 36.dp,
             )
             if (activity != null) {

@@ -2025,6 +2025,15 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                         }
                     }
                 }
+                // 备份恢复已收敛，业务 writer 尚未开放；重复启动只升级未自定义的出厂头像。
+                // 头像升级只影响外观，失败时跳过，不能挡住后续 writer 开放。
+                try {
+                    com.promenar.infinity.data.agent.upgradePresetAgentAvatars(database.agentDao())
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    android.util.Log.w("InfinityApplication", "预置智能体头像升级失败，保留原值", failure)
+                }
                 val runtime = backupRuntime
                 PostBackupStartupRecoverySequence(
                     recoverWorkspaceJournal = { recoverStartupWorkspaces() },
@@ -2703,21 +2712,21 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
                 id = "default",
                 name = preset.fallbackName("default"),
                 description = preset.fallbackDescription("default"),
-                icon = "✨", color = "#C0C1FF", isPinned = true
+                icon = "sym:all_inclusive", color = "#6366F1", isPinned = true
             ),
             com.promenar.infinity.domain.model.Agent(
                 id = "coder",
                 name = preset.fallbackName("coder"),
                 description = preset.fallbackDescription("coder"),
                 systemPrompt = com.promenar.infinity.data.agent.PresetAgentPrompts.forAgentId("coder"),
-                icon = "💻", color = "#6366F1"
+                icon = "sym:terminal", color = "#3B82F6"
             ),
             com.promenar.infinity.domain.model.Agent(
                 id = "writer",
                 name = preset.fallbackName("writer"),
                 description = preset.fallbackDescription("writer"),
                 systemPrompt = com.promenar.infinity.data.agent.PresetAgentPrompts.forAgentId("writer"),
-                icon = "📝", color = "#10B981"
+                icon = "sym:ink_pen", color = "#10B981"
             )
         )
     }

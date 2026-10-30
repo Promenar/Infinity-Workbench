@@ -142,6 +142,10 @@ class DefaultBackupPackageCodec private constructor(
                     requireSafeFileId(id)
                     result += "$FILES_PREFIX$id" to content.copyOf()
                 }
+                AvatarBackupFiles.validateSizes(snapshot.avatars.mapValues { it.value.size.toLong() })
+                snapshot.avatars.toSortedMap().forEach { (id, bytes) ->
+                    result += "${AvatarBackupFiles.PREFIX}$id" to bytes.copyOf()
+                }
             }
             snapshot.skills?.let { skills ->
                 SkillBackupPaths.validate(skills.metadata, skills.files.keys, skills.files.values.sumOf { it.size.toLong() })
@@ -256,6 +260,9 @@ class DefaultBackupPackageCodec private constructor(
                         .mapKeys { (path, _) -> path.removePrefix(FILES_PREFIX) }
                         .mapValues { (_, content) -> content.copyOf() },
                     secrets = secrets,
+                    avatars = contents.filterKeys { it.startsWith(AvatarBackupFiles.PREFIX) }
+                        .mapKeys { (path, _) -> path.removePrefix(AvatarBackupFiles.PREFIX) }
+                        .mapValues { (_, bytes) -> bytes.copyOf() },
                     skills = manifest.skills?.let { metadata ->
                         SkillBackupPartition(
                             contents.filterKeys { it.startsWith(SkillBackupPaths.PREFIX) }
@@ -311,6 +318,11 @@ class DefaultBackupPackageCodec private constructor(
             if (!SHA256_PATTERN.matches(entry.sha256)) throw BackupValidationException("manifest 摘要无效")
         }
         val declaresSecrets = SECRETS_PATH in paths
+        val avatarEntries = manifest.entries.filter { it.path.startsWith(AvatarBackupFiles.PREFIX) }
+        if (manifest.formatVersion < 3 && avatarEntries.isNotEmpty()) {
+            throw BackupValidationException("旧格式不支持头像分区")
+        }
+        AvatarBackupFiles.validateSizes(avatarEntries.associate { it.path.removePrefix(AvatarBackupFiles.PREFIX) to it.sizeBytes })
         if (manifest.containsSecrets != declaresSecrets || declaresSecrets && !manifest.encrypted) {
             throw BackupValidationException("备份密钥元数据不一致")
         }
@@ -448,6 +460,10 @@ class DefaultBackupPackageCodec private constructor(
             SkillBackupPaths.parts(path.removePrefix(SkillBackupPaths.PREFIX))
             return
         }
+        if (path.startsWith(AvatarBackupFiles.PREFIX)) {
+            AvatarBackupFiles.requireId(path.removePrefix(AvatarBackupFiles.PREFIX))
+            return
+        }
         throw BackupValidationException("备份包包含未知内容路径")
     }
 
@@ -562,7 +578,7 @@ class DefaultBackupPackageCodec private constructor(
     }
 
     companion object {
-        const val FORMAT_VERSION = 2
+        const val FORMAT_VERSION = 3
         private const val MANIFEST_PATH = "manifest.json"
         private const val DATABASE_PATH = "database.json"
         private const val PREFERENCES_PATH = "preferences.json"

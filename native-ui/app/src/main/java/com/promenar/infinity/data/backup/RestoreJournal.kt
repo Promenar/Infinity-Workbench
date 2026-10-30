@@ -27,9 +27,10 @@ data class RestoreJournalRecord(
     val newRootFileKey: String?,
     val phase: RestoreJournalPhase,
     val skills: SkillRestoreJournalRecord? = null,
+    val avatars: SkillRestoreJournalRecord? = null,
 )
 
-/** 技能根与暂存目录使用相同的持久身份格式。 */
+/** 可替换分区根与暂存目录使用相同的持久身份格式。 */
 @Serializable
 data class SkillRestoreJournalRecord(
     val rootName: String,
@@ -166,7 +167,7 @@ internal class FileRestoreJournal(
             }
             requirePersistentIdentity(identity)
         }
-        record.skills?.let { skills ->
+        listOfNotNull(record.skills, record.avatars).forEach { skills ->
             if (!Regex("[A-Za-z0-9_-]{1,128}").matches(skills.rootName) ||
                 listOf(skills.oldRootFileKey, skills.newRootFileKey, skills.stagingFileKey).any { it != null && (it.isBlank() || it.length > 512) }
             ) throw BackupValidationException("技能恢复 journal 元数据无效")

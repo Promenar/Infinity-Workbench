@@ -33,6 +33,9 @@ interface AgentDao {
     @Query("SELECT * FROM agents ORDER BY created_at ASC")
     suspend fun getAll(): List<AgentEntity>
 
+    @Query("UPDATE agents SET icon = :newIcon, color = :newColor WHERE id = :id AND icon = :oldIcon AND color = :oldColor")
+    suspend fun upgradePresetAvatarIfUnchanged(id: String, oldIcon: String, oldColor: String, newIcon: String, newColor: String): Int
+
     @Query("SELECT user_rules FROM agents WHERE id = :agentId")
     suspend fun getUserRules(agentId: String): String?
 

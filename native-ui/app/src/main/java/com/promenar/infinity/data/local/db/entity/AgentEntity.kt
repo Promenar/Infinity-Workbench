@@ -19,8 +19,8 @@ data class AgentEntity(
     @ColumnInfo(name = "system_prompt")
     val systemPrompt: String = "",
     val model: String = "",
-    val icon: String = "✨",
-    val color: String = "#C0C1FF",
+    val icon: String = com.promenar.infinity.domain.avatar.AgentAvatarCodec.NEW_AGENT_DEFAULT,
+    val color: String = com.promenar.infinity.domain.avatar.AgentAvatarPalette.forSeed(id).hex,
     @ColumnInfo(name = "avatar_path")
     val avatarPath: String? = null,
     @ColumnInfo(name = "is_pinned")

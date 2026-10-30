@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_avatar_row_title">Avatar</string>
+    <string name="agent_avatar_summary_symbol">Symbol · %1$s</string>
+    <string name="agent_avatar_summary_generated">Generated · gradient initial</string>
+    <string name="agent_avatar_summary_photo">Photo</string>
+    <string name="agent_avatar_picker_title">Avatar</string>
+    <string name="agent_avatar_done">Done</string>
+    <string name="agent_avatar_tab_symbols">Symbols</string>
+    <string name="agent_avatar_tab_generated">Generated</string>
+    <string name="agent_avatar_tab_photo">Photo</string>
+    <string name="agent_avatar_search_placeholder">Search, e.g. translate, code, cat</string>
+    <string name="agent_avatar_search_empty">No symbols match “%1$s”. Try another word, or switch to Generated.</string>
+    <string name="agent_avatar_category_all">All</string>
+    <string name="agent_avatar_category_popular">Popular</string>
+    <string name="agent_avatar_category_general">General</string>
+    <string name="agent_avatar_category_coding">Coding</string>
+    <string name="agent_avatar_category_writing">Writing</string>
+    <string name="agent_avatar_category_learning">Learning</string>
+    <string name="agent_avatar_category_work">Work</string>
+    <string name="agent_avatar_category_creative">Creative</string>
+    <string name="agent_avatar_category_life">Life</string>
+    <string name="agent_avatar_category_nature">Nature</string>
+    <string name="agent_avatar_category_characters">Characters</string>
+    <string name="agent_avatar_generated_hint">Gradient and initial, unique to this agent</string>
+    <string name="agent_avatar_shuffle">Shuffle</string>
+    <string name="agent_avatar_generated_variant">Generated avatar %1$d</string>
+    <string name="agent_avatar_photo_pick">Choose from photos</string>
+    <string name="agent_avatar_photo_hint">The photo is cropped to a circle and stays on this device until you export a backup.</string>
+    <string name="agent_avatar_color">Color</string>
+    <string name="agent_avatar_color_current">Current color</string>
+    <string name="agent_avatar_color_indigo">Indigo</string>
+    <string name="agent_avatar_color_blue">Blue</string>
+    <string name="agent_avatar_color_cyan">Cyan</string>
+    <string name="agent_avatar_color_emerald">Emerald</string>
+    <string name="agent_avatar_color_lime">Lime</string>
+    <string name="agent_avatar_color_yellow">Yellow</string>
+    <string name="agent_avatar_color_amber">Amber</string>
+    <string name="agent_avatar_color_orange">Orange</string>
+    <string name="agent_avatar_color_rose">Rose</string>
+    <string name="agent_avatar_color_pink">Pink</string>
+    <string name="agent_avatar_color_fuchsia">Fuchsia</string>
+    <string name="agent_avatar_color_violet">Violet</string>
+    <string name="agent_avatar_color_slate">Slate</string>
+</resources>

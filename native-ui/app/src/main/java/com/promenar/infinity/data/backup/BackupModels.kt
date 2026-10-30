@@ -38,6 +38,7 @@ data class BackupSnapshot(
     val appVersion: String,
     val createdAt: Long = System.currentTimeMillis(),
     val skills: SkillBackupPartition? = null,
+    val avatars: Map<String, ByteArray> = emptyMap(),
 )
 
 class ValidatedBackup(
@@ -47,6 +48,7 @@ class ValidatedBackup(
     val files: Map<String, ByteArray> = emptyMap(),
     val secrets: Map<SecretId, ByteArray> = emptyMap(),
     val skills: SkillBackupPartition? = null,
+    val avatars: Map<String, ByteArray> = emptyMap(),
 ) : AutoCloseable {
     private val consumed = java.util.concurrent.atomic.AtomicBoolean(false)
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -62,6 +64,7 @@ class ValidatedBackup(
         files.values.forEach { it.fill(0) }
         secrets.values.forEach { it.fill(0) }
         skills?.wipe()
+        avatars.values.forEach { it.fill(0) }
     }
 }
 
@@ -170,6 +173,7 @@ internal fun BackupSnapshot.wipe() {
     files.values.forEach { it.fill(0) }
     secrets.values.forEach { it.fill(0) }
     skills?.wipe()
+    avatars.values.forEach { it.fill(0) }
 }
 
 @Serializable
