@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v0.2.2-beta workflow 发行可靠性纯文本契约测试。"""
+"""发行 workflow 可靠性纯文本契约测试。"""
 
 from __future__ import annotations
 
@@ -18,14 +18,7 @@ RELEASE = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 SMOKE = (ROOT / "scripts/ci/android-release-apk-smoke.sh").read_text(encoding="utf-8")
 UPGRADE_SMOKE = (ROOT / "scripts/ci/android-release-upgrade-smoke.sh").read_text(encoding="utf-8")
 APP_BUILD = (ROOT / "native-ui/app/build.gradle.kts").read_text(encoding="utf-8")
-VALIDATOR = str((ROOT / "scripts/ci/validate-release-readiness.py"))
-REQUIRED_LEDGER_MARKERS = (
-    "> 物理真机人工验收：BETA-RISK-ACCEPTED",
-    "> GitHub 发布动作：AUTHORIZED",
-    "> 当前本地 APK 冷安装：PASS",
-    "> 同源历史候选冷安装：PASS",
-    "> 旧版覆盖升级数据继承：PASS",
-)
+METADATA = str((ROOT / "scripts/ci/release-metadata.py"))
 
 
 def braced_block_after(source: str, marker: str) -> str:
@@ -86,123 +79,121 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             self.assertIn(task, quality)
         self.assertNotIn("continue-on-error: true", ANDROID_CI)
 
+    def test_android_ci_runs_only_for_pull_requests_and_manual_dispatch(self) -> None:
+        trigger = ANDROID_CI.split("\npermissions:", 1)[0]
+        self.assertIn("  pull_request:\n", trigger)
+        self.assertIn("  workflow_dispatch:\n", trigger)
+        self.assertNotIn("  push:", trigger)
+
+    def test_release_triggers_on_version_tags_and_manual_candidate(self) -> None:
+        self.assertRegex(
+            RELEASE,
+            r'(?m)^on:\n  workflow_dispatch:\n  push:\n    tags:\n      - "v\*"$',
+        )
+        self.assertIn("group: release-${{ github.ref_name }}", RELEASE)
+        self.assertNotRegex(RELEASE, r"\d+\.\d+\.\d+-beta", "发行工作流不得写死版本号")
+
+    def test_release_identity_comes_from_android_source_through_job_outputs(self) -> None:
+        validate_job = workflow_job("validate-release-inputs")
+        self.assertIn("python3 scripts/ci/release-metadata.py", validate_job)
+        self.assertIn('--github-output "${GITHUB_OUTPUT}"', validate_job)
+        for key in ("tag", "version-name", "version-code", "prerelease"):
+            self.assertIn(f"{key}: ${{{{ steps.metadata.outputs.{key} }}}}", validate_job)
+        build = workflow_job("build-release")
+        self.assertIn('--expected-version-code "${VERSION_CODE}"', build)
+        self.assertIn('--expected-version-name "${VERSION_NAME}"', build)
+        self.assertIn("VERSION_CODE: ${{ needs.validate-release-inputs.outputs.version-code }}", build)
+        smoke = workflow_job("signed-apk-smoke")
+        self.assertIn("INFINITY_EXPECTED_VERSION_CODE: ${{ needs.validate-release-inputs.outputs.version-code }}", smoke)
+        self.assertIn("INFINITY_EXPECTED_VERSION_NAME: ${{ needs.validate-release-inputs.outputs.version-name }}", smoke)
+        for job_name in ("build-release", "signed-apk-smoke", "publish"):
+            with self.subTest(job=job_name):
+                self.assertIn("validate-release-inputs", job_level_value(workflow_job(job_name), "needs"))
+
     def test_distribution_assets_and_smoke_are_independent(self) -> None:
         build = workflow_job("build-release")
         publish = workflow_job("publish")
         smoke = workflow_job("signed-apk-smoke")
         for flavor, suffix in (("sideload", ""), ("play", "-play")):
-            asset = f"infinity-v0.2.2-beta{suffix}.apk"
             self.assertIn(f"outputs/apk/{flavor}/release/app-{flavor}-release.apk", build)
-            self.assertIn(f"dist/{asset}", publish)
-            self.assertIn(f"dist/{asset}.sha256", publish)
-            self.assertIn(f"apk-name: {asset}", smoke)
-            self.assertIn(f"distribution: {flavor}", smoke)
-        self.assertIn('matrix.apk-name', smoke)
-        self.assertIn('matrix.distribution', smoke)
+            self.assertIn(f'"dist/infinity-${{RELEASE_TAG}}{suffix}.apk"', build)
+            self.assertIn(f'"dist/infinity-${{tag}}{suffix}.apk"', publish)
+            self.assertIn(f'"dist/infinity-${{tag}}{suffix}.apk.sha256"', publish)
+            self.assertIn(f'distribution: {flavor}\n            apk-suffix: "{suffix}"', smoke)
+        self.assertIn("APK_NAME: infinity-${{ needs.validate-release-inputs.outputs.tag }}${{ matrix.apk-suffix }}.apk", smoke)
+        self.assertIn('scripts/ci/android-release-apk-smoke.sh "dist/${APK_NAME}"', smoke)
         self.assertIn('INFINITY_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}', smoke)
         self.assertIn('--distribution "${distribution}"', build)
         self.assertIn('check-distribution-manifests.py', ANDROID_CI)
         self.assertIn('check-distribution-manifests.py', build)
         self.assertIn('check-native-page-alignment.py --build-type release', build)
         self.assertIn('check-native-page-alignment.py', ANDROID_CI)
-        self.assertNotIn('-play.apk', workflow_job("signed-apk-upgrade-smoke"))
 
-    def test_release_identity_matches_android_source(self) -> None:
-        version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
-        version_code = re.search(r'versionCode\s*=\s*(\d+)', APP_BUILD).group(1)
-        tag = f"v{version_name}"
-        self.assertIn(f"      - {tag}\n", RELEASE)
-        self.assertIn(f'--expected-version-code {version_code} ', RELEASE)
-        self.assertIn(f'--expected-version-name {version_name} ', RELEASE)
-        self.assertIn(f'dist/infinity-{tag}.apk', workflow_job("build-release"))
-        self.assertIn(f'refs/tags/{tag}', workflow_job("publish"))
-        self.assertIn(f'--notes-file docs/release/{tag}.md', workflow_job("publish"))
-        for suffix in (".md", "-validation.md"):
-            self.assertTrue((ROOT / "docs/release" / f"{tag}{suffix}").is_file())
-        self.assertNotIn("0.2.1-beta", RELEASE)
+    def test_signing_reads_existing_release_environment_secrets(self) -> None:
+        build = workflow_job("build-release")
+        self.assertEqual(job_level_value(build, "environment"), "release")
+        for name in ("KEYSTORE_BASE64", "STORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD"):
+            self.assertIn(f"INFINITY_{name}: ${{{{ secrets.NEXARA_{name} }}}}", build)
+        self.assertNotIn("secrets.INFINITY_", RELEASE)
+        self.assertNotIn("vars.INFINITY_", RELEASE)
+        self.assertIn("INFINITY_SIGNING_CERT_SHA256: ${{ vars.NEXARA_SIGNING_CERT_SHA256 }}", workflow_job("signed-apk-smoke"))
+        for name in ("INFINITY_KEYSTORE_PATH", "INFINITY_STORE_PASSWORD", "INFINITY_KEY_ALIAS", "INFINITY_KEY_PASSWORD"):
+            self.assertIn(f'providers.environmentVariable("{name}")', APP_BUILD)
 
     def test_signed_apk_smoke_defaults_match_source_and_allow_explicit_override(self) -> None:
         version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
         version_code = re.search(r'versionCode\s*=\s*(\d+)', APP_BUILD).group(1)
         assignments = "\n".join(
-            re.findall(r"^EXPECTED_VERSION_(?:CODE|NAME)=.*$", SMOKE, flags=re.MULTILINE)
+            re.findall(r"^(?:APP_BUILD_FILE|EXPECTED_VERSION_(?:CODE|NAME))=.*$", SMOKE, flags=re.MULTILINE)
         )
-        self.assertEqual(len(assignments.splitlines()), 2)
+        self.assertEqual(len(assignments.splitlines()), 3)
         shell = assignments + '\nprintf "%s\\n%s\\n" "$EXPECTED_VERSION_CODE" "$EXPECTED_VERSION_NAME"'
         for environment, expected in (
             ({}, [version_code, version_name]),
             ({"INFINITY_EXPECTED_VERSION_CODE": "99", "INFINITY_EXPECTED_VERSION_NAME": "test-only"}, ["99", "test-only"]),
         ):
             with self.subTest(environment=environment):
-                result = subprocess.run(["/bin/bash", "-c", shell], env=environment, text=True, capture_output=True)
+                result = subprocess.run(
+                    ["/bin/bash", "-c", shell],
+                    env={**environment, "REPO_ROOT": str(ROOT), "PATH": "/usr/bin:/bin"},
+                    text=True,
+                    capture_output=True,
+                )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.splitlines(), expected)
 
-    def test_android_ci_covers_current_default_and_release_branches(self) -> None:
-        self.assertIn("pull_request:", ANDROID_CI)
-        self.assertIn("      - B-native-refactor", ANDROID_CI)
-        self.assertIn("      - codex/v0.2.2-beta", ANDROID_CI)
-        self.assertIn("      - codex/md3-redesign", ANDROID_CI)
-
-    def test_release_inputs_and_tag_provenance_fail_closed(self) -> None:
-        self.assertIn("docs/release/v0.2.2-beta.md", RELEASE)
-        self.assertIn("docs/release/v0.2.2-beta-validation.md", RELEASE)
-        self.assertIn('git cat-file -t "refs/tags/${GITHUB_REF_NAME}"', RELEASE)
-        self.assertIn('"tag"', RELEASE)
-        self.assertIn("verification.verified", RELEASE)
-        self.assertIn("INFINITY_ALLOW_UNSIGNED_ANNOTATED_TAG", RELEASE)
-        self.assertIn("INFINITY_RELEASE_COMMIT_SHA", RELEASE)
-        self.assertIn("origin/B-native-refactor", RELEASE)
-        self.assertIn("origin/codex/v0.2.2-beta", RELEASE)
-        self.assertIn('git rev-parse "${reviewed_branch}"', RELEASE)
-        self.assertNotIn("merge-base --is-ancestor", RELEASE)
-
-    def test_workflow_dispatch_manual_candidate_entry_exists(self) -> None:
-        self.assertRegex(
-            RELEASE,
-            r"(?m)^on:\n  workflow_dispatch:\n  push:\n    tags:\n      - v0\.2\.2-beta$",
+    def test_tag_must_match_source_version_and_come_from_main(self) -> None:
+        validate_job = workflow_job("validate-release-inputs")
+        tag_branch = validate_job.split('test "${GITHUB_EVENT_NAME}" = "push"', 1)[1]
+        ordered_checks = (
+            'test "${GITHUB_REF_TYPE}" = "tag"',
+            '[[ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]]',
+            'git cat-file -t "refs/tags/${GITHUB_REF_NAME}"',
+            '[[ "${tag_object_type}" != "tag" ]]',
+            '[[ "${tag_target_type}" != "commit" ]]',
+            'test "${tag_target_sha}" = "${GITHUB_SHA}"',
+            "git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'",
+            'git merge-base --is-ancestor "${tag_target_sha}" origin/main',
         )
+        positions = [tag_branch.index(check) for check in ordered_checks]
+        self.assertEqual(positions, sorted(positions))
 
-    def test_workflow_dispatch_candidate_must_be_only_B_native_refactor_branch(self) -> None:
-        validate_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
-        self.assertIn('test "${GITHUB_REF_TYPE}" = "branch"', validate_job)
-        self.assertIn('test "${GITHUB_REF_NAME}" = "B-native-refactor"', validate_job)
-
-    def test_workflow_dispatch_candidate_must_match_controlled_full_sha(self) -> None:
+    def test_workflow_dispatch_candidate_is_main_only_and_never_publishes(self) -> None:
         validate_job = workflow_job("validate-release-inputs")
         candidate_start = validate_job.index('if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]')
         candidate_end = validate_job.index("\n          fi", candidate_start)
         candidate_branch = validate_job[candidate_start:candidate_end]
         ordered_checks = (
             'test "${GITHUB_REF_TYPE}" = "branch"',
-            'test "${GITHUB_REF_NAME}" = "B-native-refactor"',
-            'candidate_head="$(git rev-parse HEAD)"',
-            'controlled_sha="${INFINITY_RELEASE_COMMIT_SHA:-}"',
-            '[[ ! "${controlled_sha}" =~ ^[0-9a-fA-F]{40}$ ]]',
-            'test "${GITHUB_SHA}" = "${candidate_head}"',
-            'test "${GITHUB_SHA,,}" = "${controlled_sha,,}"',
+            'test "${GITHUB_REF_NAME}" = "main"',
             "exit 0",
         )
         positions = [candidate_branch.index(check) for check in ordered_checks]
         self.assertEqual(positions, sorted(positions))
-
-    def test_readiness_validator_only_runs_for_push_tag_event(self) -> None:
-        validate_job = workflow_job("validate-release-inputs")
-        readiness_step = validate_job.split("- name: 发行前统一校验发布状态", 1)[1].split(
-            "\n      - name:", 1
-        )[0]
-        self.assertIn(
-            "if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}",
-            readiness_step,
-        )
-        self.assertIn("validate-release-readiness.py", readiness_step)
-        self.assertIn("校验固定标签、发行文档、签名与来源", validate_job)
-
-    def test_publish_only_runs_on_tag_push_events(self) -> None:
-        publish_job = workflow_job("publish")
+        self.assertLess(validate_job.index("release-metadata.py"), candidate_start, "候选模式也要先校验 CHANGELOG")
         self.assertEqual(
-            job_level_value(publish_job, "if"),
-            "${{ github.event_name == 'push' && github.ref == 'refs/tags/v0.2.2-beta' }}",
+            job_level_value(workflow_job("publish"), "if"),
+            "${{ github.event_name == 'push' && github.ref_type == 'tag' }}",
         )
 
     def test_candidate_mode_keeps_all_pre_publish_jobs_enabled(self) -> None:
@@ -211,21 +202,29 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             "minified-blackbox",
             "build-release",
             "signed-apk-smoke",
-            "signed-apk-upgrade-smoke",
         ):
             with self.subTest(job=job_name):
                 self.assertIsNone(job_level_value(workflow_job(job_name), "if"))
         signed_job = workflow_job("signed-apk-smoke")
         self.assertIn("- api-level: 35", signed_job)
         self.assertIn("- api-level: 36", signed_job)
+        self.assertEqual(
+            job_level_value(workflow_job("publish"), "needs"),
+            "[validate-release-inputs, signed-apk-smoke]",
+        )
 
-    def test_candidate_checks_documents_before_early_exit(self) -> None:
-        validate_job = workflow_job("validate-release-inputs")
-        document_check = validate_job.index("for required_document in")
-        candidate_branch = validate_job.index('if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]')
-        candidate_exit = validate_job.index("exit 0", candidate_branch)
-        self.assertLess(document_check, candidate_branch)
-        self.assertLess(candidate_branch, candidate_exit)
+    def test_upgrade_smoke_script_keeps_install_r_only_path(self) -> None:
+        self.assertIn("64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232", UPGRADE_SMOKE)
+        self.assertIn("UPGRADE_WORKSPACE_SENTINEL", UPGRADE_SMOKE)
+        self.assertNotIn("sentinel-hash", UPGRADE_SMOKE)
+        self.assertNotIn("root-hash", UPGRADE_SMOKE)
+        upgrade_phase = UPGRADE_SMOKE.split("# 覆盖升级核心动作", 1)[1]
+        self.assertIn('install -r --no-streaming "${NEW_APK}"', upgrade_phase)
+        self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+uninstall\b")
+        self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+shell\s+pm\s+clear\b")
+        self.assertIn("cmd package resolve-activity --brief", UPGRADE_SMOKE)
+        self.assertIn('adb_cmd shell am start -W -n "${component}"', UPGRADE_SMOKE)
+        self.assertNotIn("adb_cmd shell monkey", UPGRADE_SMOKE)
 
     def test_cross_job_artifact_name_survives_failed_job_rerun(self) -> None:
         self.assertIn("signed-release-apk-${{ github.run_id }}", RELEASE)
@@ -240,7 +239,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/", RELEASE)
         self.assertNotIn("INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
         self.assertIn("build-release:", RELEASE)
-        self.assertIn("needs: [device-e2e, minified-blackbox]", RELEASE)
+        self.assertIn("needs: [validate-release-inputs, device-e2e, minified-blackbox]", RELEASE)
 
     def test_build_release_cleans_before_fresh_full_gate_gradle_invocation(self) -> None:
         build_job = workflow_job("build-release")
@@ -300,30 +299,6 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("- api-level: 36", signed_job)
         self.assertIn("android-release-apk-smoke.sh", signed_job)
         self.assertNotIn("android-device-core-e2e.sh", signed_job)
-
-    def test_upgrade_smoke_uses_frozen_old_apk_and_install_r_only_path(self) -> None:
-        upgrade_job = workflow_job("signed-apk-upgrade-smoke")
-        self.assertIn("0dfe33b280af97b94c27203b9e66691ff8e41af237777a93d21d2b27907b9291", upgrade_job)
-        self.assertIn("android-release-upgrade-smoke.sh", upgrade_job)
-        self.assertIn("dist/infinity-v0.1.apk", upgrade_job)
-        self.assertIn("dist/infinity-v0.2.2-beta.apk", upgrade_job)
-        self.assertIn("(cd dist && sha256sum -c infinity-v0.2.2-beta.apk.sha256)", upgrade_job)
-        self.assertIn("64124d620f1875ac448941c5c8161bfc7f4bdabdc592f0b0d53e59530623b232", UPGRADE_SMOKE)
-        self.assertIn("UPGRADE_WORKSPACE_SENTINEL", UPGRADE_SMOKE)
-        self.assertNotIn("sentinel-hash", UPGRADE_SMOKE)
-        self.assertNotIn("root-hash", UPGRADE_SMOKE)
-        upgrade_phase = UPGRADE_SMOKE.split("# 覆盖升级核心动作", 1)[1]
-        self.assertIn('install -r --no-streaming "${NEW_APK}"', upgrade_phase)
-        self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+uninstall\b")
-        self.assertNotRegex(upgrade_phase, r"(?m)^\s*adb_cmd\s+shell\s+pm\s+clear\b")
-        self.assertIn("cmd package resolve-activity --brief", UPGRADE_SMOKE)
-        self.assertIn('adb_cmd shell am start -W -n "${component}"', UPGRADE_SMOKE)
-        self.assertNotIn("adb_cmd shell monkey", UPGRADE_SMOKE)
-        publish_job = workflow_job("publish")
-        self.assertEqual(
-            job_level_value(publish_job, "needs"),
-            "[signed-apk-smoke, signed-apk-upgrade-smoke]",
-        )
 
     def test_upgrade_smoke_reads_back_every_required_data_sentinel(self) -> None:
         for sentinel in (
@@ -495,138 +470,80 @@ is_expected_resumed_activity "$2"
         self.assertLess(upload_idx, verification_idx)
         self.assertLess(verification_idx, publish_idx)
         self.assertIn("--draft=false", publish_job[publish_idx:])
-        self.assertIn("--notes-file docs/release/v0.2.2-beta.md", publish_job[publish_idx:])
-        self.assertIn("--latest=false", publish_job[publish_idx:])
+        self.assertIn("--notes-file release-notes.md", publish_job[publish_idx:])
+        self.assertIn('--prerelease="${PRERELEASE}"', publish_job[publish_idx:])
+        self.assertIn('--latest="${latest}"', publish_job[publish_idx:])
+        self.assertIn('if [[ "${PRERELEASE}" == "true" ]]; then latest=false; else latest=true; fi', publish_job)
 
-    def test_validate_release_input_job_calls_validator_early(self) -> None:
-        validate_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
-        checkout_idx = validate_job.find("- name: 检出候选提交或已存在的发行标签")
-        validator_idx = validate_job.find("validate-release-readiness.py")
-        provenance_idx = validate_job.find("校验固定标签、发行文档、签名与来源")
-        self.assertGreaterEqual(checkout_idx, 0)
-        self.assertGreater(validator_idx, checkout_idx)
-        self.assertGreater(provenance_idx, validator_idx)
-
-    def test_publish_calls_validator_before_release_commands(self) -> None:
+    def test_publish_notes_come_from_changelog_before_release_commands(self) -> None:
         publish_job = RELEASE.split("\n  publish:", 1)[1]
-        validator_idx = publish_job.find("python3 scripts/ci/validate-release-readiness.py")
-        self.assertGreaterEqual(validator_idx, 0)
-        self.assertLess(validator_idx, publish_job.find("gh release view"))
-        self.assertLess(validator_idx, publish_job.find("gh release create"))
-        self.assertLess(validator_idx, publish_job.find("gh release upload"))
+        notes_idx = publish_job.index("python3 scripts/ci/release-metadata.py --notes release-notes.md")
+        self.assertLess(notes_idx, publish_job.index("gh release create"))
+        self.assertIn("### 安装包", publish_job)
+        self.assertNotIn("docs/release/", RELEASE)
 
-    def test_publish_validation_call_uses_expected_doc_paths(self) -> None:
-        publish_job = RELEASE.split("\n  publish:", 1)[1]
-        self.assertRegex(
-            publish_job,
-            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.2-beta-validation\.md \\\n\s+docs/release/v0\.2\.2-beta\.md",
-        )
-
-        validation_job = RELEASE.split("  validate-release-inputs:", 1)[1].split("  device-e2e:", 1)[0]
-        self.assertRegex(
-            validation_job,
-            r"python3 scripts/ci/validate-release-readiness\.py \\\n\s+docs/release/v0\.2\.2-beta-validation\.md \\\n\s+docs/release/v0\.2\.2-beta\.md",
-        )
-
-    def run_release_validator(self, ledger: str, notes: str) -> subprocess.CompletedProcess[str]:
+    def run_release_metadata(self, build: str, changelog: str) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
-            ledger_path = tmp_root / "v0.2.2-beta-validation.md"
-            notes_path = tmp_root / "v0.2.2-beta.md"
-            ledger_path.write_text(ledger, encoding="utf-8")
-            notes_path.write_text(notes, encoding="utf-8")
-            return subprocess.run(
-                [sys.executable, VALIDATOR, ledger_path, notes_path],
+            (tmp_root / "build.gradle.kts").write_text(build, encoding="utf-8")
+            (tmp_root / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+            notes = tmp_root / "notes.md"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    METADATA,
+                    "--build-file", str(tmp_root / "build.gradle.kts"),
+                    "--changelog", str(tmp_root / "CHANGELOG.md"),
+                    "--notes", str(notes),
+                ],
                 text=True,
                 capture_output=True,
                 check=False,
             )
+            return result, notes.read_text(encoding="utf-8") if notes.exists() else ""
 
-    def test_validate_release_readiness_accepts_only_exact_go_markers(self) -> None:
-        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
-        accepted_documents = (
-            (f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n", "> 发布状态：GO\n"),
-            (f"> 状态：**GO**\n{required_markers}\n- 最终结论：`GO`\n", "> 发布状态：**GO**\n"),
+    def test_release_metadata_extracts_only_the_matching_changelog_section(self) -> None:
+        build = '        versionCode = 21\n        versionName = "0.7.1-beta"\n'
+        changelog = (
+            "# Changelog\n\n## [Unreleased]\n\n- 未发布\n\n"
+            "## [0.7.1-beta] - 2026-11-01\n\n### 修复\n\n- 修复 A\n\n"
+            "## [0.7.0-beta] - 2026-10-30\n\n- 旧版本\n"
         )
-        for ledger, notes in accepted_documents:
-            with self.subTest(ledger=ledger, notes=notes):
-                result = self.run_release_validator(ledger, notes)
-                self.assertEqual(result.returncode, 0, result.stderr)
+        result, notes = self.run_release_metadata(build, changelog)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.splitlines(),
+            ["tag=v0.7.1-beta", "version-name=0.7.1-beta", "version-code=21", "prerelease=true"],
+        )
+        self.assertEqual(notes, "### 修复\n\n- 修复 A\n")
 
-    def test_validate_release_readiness_rejects_missing_empty_or_duplicate_markers(self) -> None:
-        invalid_documents = (
-            ("- 最终结论：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：   \n- 最终结论：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：GO\n> 状态：GO\n- 最终结论：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：GO\n- 最终结论：   \n", "> 发布状态：GO\n"),
-            ("> 状态：GO\n- 最终结论：GO\n- 最终结论：GO\n", "> 发布状态：GO\n"),
-            ("> 状态：GO\n- 最终结论：GO\n", "# 缺少发布状态\n"),
-            ("> 状态：GO\n- 最终结论：GO\n", "> 发布状态：   \n"),
-            ("> 状态：GO\n- 最终结论：GO\n", "> 发布状态：GO\n> 发布状态：GO\n"),
+    def test_release_metadata_marks_stable_versions_and_reads_last_section(self) -> None:
+        build = '        versionCode = 30\n        versionName = "1.0.0"\n'
+        result, notes = self.run_release_metadata(build, "## [1.0.0] - 2026-12-01\n\n- 正式版\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("prerelease=false", result.stdout.splitlines())
+        self.assertEqual(notes, "- 正式版\n")
+
+    def test_release_metadata_fails_closed(self) -> None:
+        build = '        versionCode = 21\n        versionName = "0.7.1-beta"\n'
+        cases = (
+            (build, "## [0.7.0-beta] - 2026-10-30\n\n- 旧版本\n"),
+            (build, "## [0.7.1-beta] - 2026-11-01\n\n## [0.7.0-beta] - 2026-10-30\n\n- 旧版本\n"),
+            (build, "## [0.7.1-beta] - 2026-11-01\n\n- A\n\n## [0.7.1-beta] - 2026-11-02\n\n- B\n"),
+            (build, "## [0.7.1-beta-rc] - 2026-11-01\n\n- 前缀相同的另一版本\n"),
+            ('        versionCode = 21\n', "## [0.7.1-beta]\n\n- A\n"),
+            ('        versionCode = 21\n        versionName = "beta"\n', "## [beta]\n\n- A\n"),
         )
-        for ledger, notes in invalid_documents:
-            with self.subTest(ledger=ledger, notes=notes):
-                result = self.run_release_validator(ledger, notes)
+        for build_source, changelog in cases:
+            with self.subTest(build=build_source, changelog=changelog):
+                result, _ = self.run_release_metadata(build_source, changelog)
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_validate_release_readiness_rejects_ambiguous_go_substrings(self) -> None:
-        invalid_values = (
-            "PENDING",
-            "NO-GO",
-            "NOT GO",
-            "NO GO",
-            "ONGOING",
-            "GOING",
-            "GO / PASS",
-            "GO / PENDING",
-        )
-        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
-        for invalid_value in invalid_values:
-            documents = (
-                (
-                    f"> 状态：{invalid_value}\n{required_markers}\n- 最终结论：GO\n",
-                    "> 发布状态：GO\n",
-                ),
-                (
-                    f"> 状态：GO\n{required_markers}\n- 最终结论：{invalid_value}\n",
-                    "> 发布状态：GO\n",
-                ),
-                (
-                    f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n",
-                    f"> 发布状态：{invalid_value}\n",
-                ),
-            )
-            for ledger, notes in documents:
-                with self.subTest(value=invalid_value, ledger=ledger, notes=notes):
-                    result = self.run_release_validator(ledger, notes)
-                    self.assertNotEqual(result.returncode, 0)
-
-    def test_validate_release_readiness_requires_explicit_beta_risk_and_evidence_markers(self) -> None:
-        required_markers = "\n".join(REQUIRED_LEDGER_MARKERS)
-        valid_ledger = f"> 状态：GO\n{required_markers}\n- 最终结论：GO\n"
-        for missing_marker in REQUIRED_LEDGER_MARKERS:
-            with self.subTest(missing_marker=missing_marker):
-                result = self.run_release_validator(
-                    valid_ledger.replace(f"{missing_marker}\n", ""),
-                    "> 发布状态：GO\n",
-                )
-                self.assertNotEqual(result.returncode, 0)
-
-    def test_go_cannot_override_missing_authorization_or_current_evidence(self) -> None:
-        valid_ledger = "> 状态：GO\n" + "\n".join(REQUIRED_LEDGER_MARKERS) + "\n- 最终结论：GO\n"
-        invalid_markers = {
-            "> GitHub 发布动作：AUTHORIZED": "> GitHub 发布动作：NOT-AUTHORIZED",
-            "> 物理真机人工验收：BETA-RISK-ACCEPTED": "> 物理真机人工验收：PENDING",
-            "> 当前本地 APK 冷安装：PASS": "> 当前本地 APK 冷安装：HISTORICAL-PASS",
-            "> 同源历史候选冷安装：PASS": "> 同源历史候选冷安装：NOT-RUN",
-            "> 旧版覆盖升级数据继承：PASS": "> 旧版覆盖升级数据继承：HISTORICAL-PASS / CURRENT-NOT-RUN",
-        }
-        for accepted, invalid in invalid_markers.items():
-            with self.subTest(marker=invalid):
-                result = self.run_release_validator(valid_ledger.replace(accepted, invalid), "> 发布状态：GO\n")
-                self.assertNotEqual(result.returncode, 0, result.stdout)
-                self.assertIn("值非法", result.stderr)
+    def test_release_metadata_accepts_current_repository_sources(self) -> None:
+        result = subprocess.run([sys.executable, METADATA], text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        version_name = re.search(r'versionName\s*=\s*"([^"\n]+)"', APP_BUILD).group(1)
+        self.assertIn(f"tag=v{version_name}", result.stdout.splitlines())
 
     def test_actions_are_sha_pinned_and_permissions_are_minimal(self) -> None:
         for workflow in (ANDROID_CI, RELEASE):

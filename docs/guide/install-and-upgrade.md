@@ -16,9 +16,9 @@ Infinity Workbench 使用 `com.promenar.infinity`，与旧应用并存。备份�
 
 ## 安装
 
-公开制品只从 [Promenar/Infinity Workbench Releases](https://github.com/Promenar/Infinity-Workbench/releases) 发布。截至 2026-10-01，公开 `v0.2-beta` 为 prerelease（2026-07-29 发布），Latest 仍为 `v0.1-beta`；`v0.2.2-beta`、`v0.3.0-beta`、`v0.4.0-beta`、`v0.4.1-beta`、`v0.4.2-beta`、`v0.4.3-beta`、`v0.4.4-beta`、`v0.4.5-beta`、`v0.4.6-beta`、`v0.4.7-beta`、`v0.5.0-beta` 与 `v0.5.1-beta` 尚未公开发布。当前 `v0.5.1-beta` 若由维护者直接交付，应同时提供 APK 的绝对路径、SHA-256、版本身份和同签名验真结果；未获授权前不会创建 tag 或 GitHub Release。安装时：
+公开制品只从 [Promenar/Infinity Workbench Releases](https://github.com/Promenar/Infinity-Workbench/releases) 发布，由发行工作流在推送版本标签后构建、验签并上传；早期 `v0.1-beta` 与 `v0.2-beta` 发行已于 2026-10-30 下线。公开发布可能落后于源码。安装时：
 
-1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；侧载主资产为 `infinity-v0.2.2-beta.apk`，Play 风味资产为 `infinity-v0.2.2-beta-play.apk`。
+1. 取得维护者交付并验真的 APK 与对应 `.sha256` 文件；侧载主资产为 `infinity-v<版本>.apk`，Play 风味资产为 `infinity-v<版本>-play.apk`，Release 说明中列出两者的 SHA-256。
 2. 校验 APK 的 SHA-256 与发布文件一致。
 3. 在 Android 系统中允许当前文件管理器或浏览器“安装未知应用”。
 4. 安装 Infinity Workbench 后，在旧应用导出备份并导入新应用。确认数据完整前保留旧应用；不同应用 ID 不能覆盖升级。同 ID 的后续版本可按同签名覆盖安装。

@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 变更
+
+- 主分支更名为 `main`。发行工作流改为推送 `v<versionName>` 注释标签触发：版本号取自 `build.gradle.kts`，发布说明取自本文件对应版本小节，`-beta` 版本标为 prerelease，附侧载与 Play 两个签名 APK 及其 SHA-256。Android CI 不再在每次推送时运行，只在 PR 与手动触发时运行。
+
 ## [0.7.0-beta] - 2026-10-30
 
 ### 新增

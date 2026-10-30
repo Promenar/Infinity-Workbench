@@ -35,7 +35,9 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 Release 构建需要安全注入既有四个 `INFINITY_*` 签名变量，在获得签名构建授权的主控会话执行 `:app:assembleSideloadRelease :app:assemblePlayRelease`，随后执行 `python3 ../scripts/ci/check-distribution-manifests.py --build-type release` 与 `python3 ../scripts/ci/check-native-page-alignment.py --build-type release`。不把秘密写入命令、文档或报告。
 
-发行工作流整理侧载主资产 `dist/infinity-v0.2.2-beta.apk` 和 Play 资产 `dist/infinity-v0.2.2-beta-play.apk`；二者各有 `.sha256`。R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书；覆盖升级冒烟只接受同 ID 的上一版正式侧载包；没有同 ID 基线时明确输出跳过并成功退出。准备发行链路不构成公开发布，也不代表 Play 商店审核通过。
+发行工作流 `.github/workflows/release.yml` 只在推送 `v*` 注释标签（或在 `main` 上手动触发候选验证）时运行，日常推送不会构建 APK。`scripts/ci/release-metadata.py` 从 `native-ui/app/build.gradle.kts` 读取 versionName 与 versionCode，要求标签等于 `v<versionName>`、指向 `main` 历史中的提交，并从 `CHANGELOG.md` 的 `## [<versionName>]` 小节生成发布说明；该小节缺失或为空时拒绝发布。工作流先跑设备回归与 minifiedTest 黑盒，再用 release 环境的 `NEXARA_*` 签名机密执行全门禁并构建两个渠道，整理侧载主资产 `dist/infinity-v<版本>.apk` 和 Play 资产 `dist/infinity-v<版本>-play.apk`，二者各有 `.sha256`；R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`，只作为保留 3 天的 Actions 制品。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书，通过后才以 draft 上传资产、逐个回读哈希，再公开 Release；版本名带 `-` 后缀时标为 prerelease。手动触发只做候选验证，不发布。`scripts/ci/android-release-upgrade-smoke.sh` 依赖已下线的 v0.1 公开基线，目前不在工作流中运行，可在本机用同签名旧包手动执行。发行不代表 Play 商店审核通过。
+
+发布步骤：完成版本提交并推送 `main` 后，在用户授权下执行 `git tag -a v<版本> -m "Infinity Workbench v<版本>"` 与 `git push origin v<版本>`。
 
 ## 打包 Python
 

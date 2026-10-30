@@ -1,14 +1,8 @@
 name: Android CI
 
+# 日常门禁在本机运行；云端只在 PR 与手动触发时跑，发布由 release.yml 按版本标签触发。
 on:
   pull_request:
-  push:
-    branches:
-      - main
-      - B-native-refactor
-      - codex/v0.2.1-beta
-      - codex/v0.2.2-beta
-      - codex/md3-redesign
   workflow_dispatch:
 
 permissions:

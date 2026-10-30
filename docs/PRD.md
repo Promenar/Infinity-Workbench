@@ -17,7 +17,7 @@
 | **定位** | Android 端 BYOK 开源 AI 客户端 — 对标桌面端 LobeHub / Cherry Studio |
 | **平台** | Android（Kotlin/Jetpack Compose 原生），远期渐进式迁移 CMP 跨端 |
 | **许可证** | GPL-3.0 |
-| **当前版本** | `0.2.1-beta`（versionCode 3，`B-native-refactor`） |
+| **当前版本** | `0.7.0-beta`（versionCode 20，`main`） |
 
 ### 1.2 项目精神（Why Infinity Workbench）
 

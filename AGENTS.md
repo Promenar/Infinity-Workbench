@@ -49,6 +49,7 @@
   - 把 `CHANGELOG.md` 顶部 `[Unreleased]` 的内容切为 `## [版本名] - YYYY-MM-DD` 小节，并新开空的 `[Unreleased]`；
   - 同步 README 与 `.agent/registry.md` 中的当前版本描述。
 - 交付报告写明版本名、versionCode 与安装包 SHA-256。
+- 对外发布：版本提交推送 `main` 后，经用户授权推送注释标签 `v<versionName>`，由 `.github/workflows/release.yml` 构建、验签并发布 GitHub Release；发布说明取自 `CHANGELOG.md` 对应版本小节。流程见 [docs/distribution-builds.md](docs/distribution-builds.md)。
 
 ---
 *规范更新于 2026-10-29。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
