@@ -270,4 +270,4 @@ fun CanvasSessionHost(
 /** 复制原型源码：各屏按顺序拼接，屏前注明 ID 与标题。 */
 internal fun prototypeSource(document: CanvasDocument): String =
     if (document.screens.isEmpty()) document.html
-    else document.screens.joinToString("\n\n") { screen -> "<!-- screen: ${screen.id} · ${screen.title} -->\n${screen.html}" }
+    else document.screens.joinToString("\n\n") { screen -> "<!-- screen: ${screen.id} · ${screen.title} -->\n${screen.html}" }  // wrap-check: allow 复制的源码注释，非界面文本

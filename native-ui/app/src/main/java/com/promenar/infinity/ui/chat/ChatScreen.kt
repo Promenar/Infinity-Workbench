@@ -217,6 +217,7 @@ import com.promenar.infinity.ui.theme.LocalInfinityMotionStyles
 import com.promenar.infinity.ui.theme.infinityDomainColors
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.rounded.Compress
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 未配置嵌入模型或无检索范围的历史轨迹表示检索未执行，不单独构成检索步骤。 */
 internal fun Message.hasRagArtifacts(): Boolean =
@@ -1626,11 +1627,14 @@ internal fun GenerationRetryCapsule(retry: com.promenar.infinity.domain.generati
             else -> R.string.chat_retry_reason_network
         },
     )
-    val label = if (remainingSeconds > 0) {
-        stringResource(R.string.chat_retry_countdown, reason, remainingSeconds, retry.attempt, retry.maxAttempts)
-    } else {
-        stringResource(R.string.chat_retry_in_progress, reason, retry.attempt, retry.maxAttempts)
-    }
+    val label = listOf(
+        if (remainingSeconds > 0) {
+            stringResource(R.string.chat_retry_countdown, reason, remainingSeconds)
+        } else {
+            stringResource(R.string.chat_retry_in_progress, reason)
+        },
+        stringResource(R.string.chat_retry_attempt, retry.attempt, retry.maxAttempts),
+    )
     Row(
         modifier = Modifier.height(28.dp).padding(horizontal = 8.dp)
             .semantics { liveRegion = LiveRegionMode.Polite }
@@ -1643,8 +1647,8 @@ internal fun GenerationRetryCapsule(retry: com.promenar.infinity.domain.generati
             strokeWidth = 1.5.dp,
             color = MaterialTheme.colorScheme.tertiary,
         )
-        Text(
-            text = label,
+        InfinityMetaLine(
+            segments = label,
             style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
             color = MaterialTheme.colorScheme.tertiary,
             maxLines = 1,

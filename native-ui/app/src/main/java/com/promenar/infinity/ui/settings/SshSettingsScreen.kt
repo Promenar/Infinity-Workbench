@@ -113,6 +113,7 @@ import com.promenar.infinity.ui.theme.infinityDomainColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 private enum class SshPendingAction { VERIFY, TERMINAL, FORWARD }
 private data class SshTrustPrompt(val host: SshHost, val key: SshHostKey, val action: SshPendingAction)
@@ -483,8 +484,9 @@ private fun SshHostRow(
     val forward = forwardPort?.let { stringResource(R.string.settings_batch1_ssh_forward_running_summary, it) }
     InfinitySettingsItem(
         title = host.alias,
-        subtitle = "$address · $auth\n" + listOfNotNull(trust, forward).joinToString(" · "),
-        subtitleMaxLines = 2,
+        subtitleSegments = listOfNotNull(address, auth, trust, forward),
+        // 分段排版放不下时整段省略，放宽到三行让信任与转发状态都能显示。
+        subtitleMaxLines = 3,
         onClick = onOpen,
         enabled = enabled,
         onClickLabel = stringResource(R.string.ssh_host_actions),
@@ -553,17 +555,24 @@ internal fun SshHostActionsContent(
     onDelete: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = listOfNotNull(
-                stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port) + " · " +
+        Column(Modifier.padding(bottom = InfinitySpacing.Medium)) {
+            InfinityMetaLine(
+                segments = listOf(
+                    stringResource(R.string.ssh_visual_host_address, host.username, host.hostname, host.port),
                     stringResource(if (host.authType == SshAuthType.KEY) R.string.ssh_auth_key else R.string.ssh_auth_password),
-                stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
-                if (host.localForwardPort != null) stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0) else null,
-            ).joinToString("\n"),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = InfinitySpacing.Medium),
-        )
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = listOfNotNull(
+                    stringResource(if (host.keepTerminal) R.string.ssh_keep_enabled else R.string.ssh_close_on_exit),
+                    if (host.localForwardPort != null) stringResource(R.string.ssh_forward_route, host.localForwardPort, host.forwardHost, host.forwardPort ?: 0) else null,
+                ).joinToString("\n"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         InfinitySettingsGroup {
             SshActionItem(Icons.Rounded.Terminal, stringResource(R.string.ssh_open_terminal), enabled, onTerminal,
                 subtitle = stringResource(if (host.trustedFingerprint == null) R.string.settings_batch1_ssh_untrusted_summary else R.string.ssh_trusted))

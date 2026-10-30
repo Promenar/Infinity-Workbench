@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.promenar.infinity.ui.theme.forInput
 
 data class LinuxMirrorsUiState(
     val selected: LinuxMirrorChoice,
@@ -201,7 +202,7 @@ internal fun LinuxMirrorsContent(
                             isError = invalid,
                             supportingText = if (invalid) ({ Text(stringResource(R.string.linux_mirror_custom_invalid)) }) else null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = InfinityMonospace),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = InfinityMonospace).forInput(),
                             modifier = Modifier.fillMaxWidth().testTag(UiTags.LINUX_MIRROR_CUSTOM_FIELD),
                         )
                         TextButton(

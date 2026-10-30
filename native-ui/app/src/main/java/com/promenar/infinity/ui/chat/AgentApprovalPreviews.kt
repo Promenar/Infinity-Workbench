@@ -43,6 +43,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 审批卡中 schedule_create 的结构化预览；与工具执行共用参数解析和渠道能力判断。 */
 data class ScheduleApprovalPreview(
@@ -141,11 +142,11 @@ internal fun ScheduleApprovalBlock(preview: ScheduleApprovalPreview) {
                 )
             }
         }
-        Text(
-            text = listOfNotNull(
+        InfinityMetaLine(
+            segments = listOfNotNull(
                 preview.countdownMinutes?.let { countdownText(it) } ?: triggerText(preview.trigger),
                 preview.maxRuns?.let { pluralStringResource(R.plurals.schedule_approval_max_runs, it, it) },
-            ).joinToString(" · "),
+            ),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -201,8 +202,8 @@ internal fun BackgroundRunLine(preview: BackgroundRunPreview) {
             BackgroundJobExitAction.NOTIFY -> stringResource(R.string.chat_approval_background_on_exit_notify)
             BackgroundJobExitAction.NONE -> null
         }
-        Text(
-            text = listOfNotNull(stringResource(R.string.chat_approval_background_run), limit, exit).joinToString(" · "),
+        InfinityMetaLine(
+            segments = listOfNotNull(stringResource(R.string.chat_approval_background_run), limit, exit),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f, fill = false),

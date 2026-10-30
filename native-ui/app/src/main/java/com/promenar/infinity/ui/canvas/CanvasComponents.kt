@@ -336,7 +336,7 @@ private fun prototypeCardMeta(metadata: CanvasMetadata, version: Int): String? {
         stringResource(R.string.artifact_kind_prototype),
         pluralStringResource(R.plurals.artifact_screen_count, metadata.screens.size, metadata.screens.size),
         stringResource(R.string.artifact_meta_version, version),
-    ).joinToString(" · ")
+    ).joinToString(" · ")  // wrap-check: allow 调用处均为单行省略
 }
 
 @Composable

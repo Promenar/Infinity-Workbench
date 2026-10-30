@@ -70,6 +70,7 @@ import com.promenar.infinity.domain.media.MediaUnavailableReason
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.InfinityTypography
 import kotlinx.coroutines.delay
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 卡片所处位置：正文中的块级卡片，或工具步骤中沿用缩略图视觉的卡片。 */
 enum class MediaCardStyle { MARKDOWN, TOOL }
@@ -307,7 +308,7 @@ fun WorkspaceVideoCard(
                         )
                     }
                     MediaBadge(
-                        text = listOfNotNull(stringResource(R.string.media_kind_video), durationText).joinToString(" · "),
+                        text = listOfNotNull(stringResource(R.string.media_kind_video), durationText).joinToString(" · "),  // wrap-check: allow 单行省略角标
                         modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
                     )
                 }
@@ -411,7 +412,7 @@ fun WorkspaceAudioCard(
                         text = listOfNotNull(
                             stringResource(R.string.media_kind_audio),
                             formatMediaDuration(ref.durationMs) ?: stringResource(R.string.media_duration_unknown),
-                        ).joinToString(" · "),
+                        ).joinToString(" · "),  // wrap-check: allow 单行显示
                         style = InfinityTypography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -494,12 +495,11 @@ fun WorkspaceFileCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            text = listOfNotNull(mediaTypeLabel(ref), formatMediaSize(ref.sizeBytes)).joinToString(" · "),
+                        InfinityMetaLine(
+                            segments = listOfNotNull(mediaTypeLabel(ref), formatMediaSize(ref.sizeBytes)),
                             style = InfinityTypography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (!compact) MediaActionButtons(available = available, runner = runner)

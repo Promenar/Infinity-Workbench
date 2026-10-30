@@ -124,7 +124,7 @@ private fun SkillRow(
     val title = skill.displayName ?: skill.name
     val description = (skill.shortDescription ?: skill.description).replace('\n', ' ').trim()
     val note = skillStatusNote(skill)
-    val subtitle = listOfNotNull(note, description.takeIf(String::isNotEmpty)).joinToString(" · ").ifEmpty { null }
+    val subtitle = listOfNotNull(note, description.takeIf(String::isNotEmpty)).joinToString(" · ").ifEmpty { null }  // wrap-check: allow 含可能很长的技能说明，按两行省略
     // 开关先在本地翻转，避免目录重扫完成前的回弹。
     var checked by remember(skill.id, skill.status) { mutableStateOf(skill.status == SkillStatus.ENABLED) }
     InfinitySettingsItem(

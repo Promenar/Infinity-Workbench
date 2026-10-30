@@ -70,6 +70,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.theme.breakableIdentifier
 
 object RunModeTags {
     const val CHIP = "run_mode_chip"
@@ -476,8 +478,8 @@ fun RunModeCheckpointContent(
                     if (report.failures.isNotEmpty()) {
                         Body(stringResource(R.string.run_mode_export_failures))
                         report.failures.take(MAX_FAILURES_SHOWN).forEach { failure ->
-                            Text("${failure.path} · ${stringResource(failure.reason.textRes())}", style = InfinityTypography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            InfinityMetaLine(listOf(failure.path.breakableIdentifier(), stringResource(failure.reason.textRes())),
+                                style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (report.failures.size > MAX_FAILURES_SHOWN) Text("…", style = InfinityTypography.bodySmall)
                     }

@@ -111,6 +111,7 @@ import com.promenar.infinity.ui.theme.hierarchicalTransition
 import com.promenar.infinity.ui.workspace.WorkspaceNameDialog
 import kotlinx.coroutines.delay
 import com.promenar.infinity.ui.common.InfinityMenuItem
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 private const val OUTCOME_VISIBLE_MS = 4_000L
 /** 读取超过这个时长才显示进度条，常见的毫秒级读取不闪烁。 */
@@ -526,14 +527,14 @@ private fun LinuxFilesMessages(state: LinuxFilesUiState, actions: LinuxFilesActi
         )
     }
     state.outcome?.let { outcome ->
-        Text(
-            linuxOutcomeText(outcome),
+        InfinityMetaLine(
+            linuxOutcomeSegments(outcome),
             style = MaterialTheme.typography.bodySmall,
             color = if (outcome.failed > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.XSmall)
-                .semantics { liveRegion = LiveRegionMode.Polite }
+                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
                 .testTag(UiTags.LINUX_FILES_OUTCOME),
         )
         LaunchedEffect(outcome) {
@@ -738,7 +739,7 @@ private fun linuxEntryMeta(entry: LinuxFileEntry, nowMs: Long): String {
         parts += formatLinuxSize(entry.size)
         if (linuxLooksBinaryByName(entry.name)) parts += stringResource(R.string.linux_files_meta_binary)
     }
-    return parts.joinToString(" · ")
+    return parts.joinToString(" · ")  // wrap-check: allow 调用处为单行省略
 }
 
 /** 选择模式的底栏：当前目录与“取消 / 选这个目录”；目录还没读完或读取失败时不能确认。 */

@@ -49,6 +49,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import com.promenar.infinity.ui.common.InfinityMenuItem
 import com.promenar.infinity.ui.common.InfinityDropdownMenu
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import androidx.compose.material3.LocalTextStyle
+import com.promenar.infinity.ui.theme.forInput
 
 /**
  * 运行详情“状态”页：面板标题与更新时间、按字段类型排版的卡片（数值与进度两两并排，文本与列表占整行），
@@ -164,12 +167,12 @@ fun StateBoardDetails(
             }
             Column(Modifier.weight(1f)) {
                 Text(board.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    text = listOfNotNull(
+                InfinityMetaLine(
+                    segments = listOfNotNull(
                         stringResource(R.string.state_board_maintained_by_agent),
                         time?.let { stringResource(R.string.state_board_updated_at, it) },
                         pluralStringResource(R.plurals.state_board_field_count, board.fields.size, board.fields.size),
-                    ).joinToString(" · "),
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -267,7 +270,7 @@ private fun StateFieldCard(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(field.label, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (field.type == "list") {
-                        Text("· ${field.value.jsonArray.size}", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                        Text("· ${field.value.jsonArray.size}", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)  // wrap-check: allow 紧跟字段名的单行计数
                     }
                     when {
                         manual -> StateFieldTag(stringResource(R.string.state_board_tag_manual), MaterialTheme.infinityDomainColors.warningContainer, MaterialTheme.infinityDomainColors.onWarningContainer)
@@ -378,7 +381,8 @@ private fun StateFieldEditor(snapshot: StateBoardSnapshot, field: StateField, on
                     items.forEachIndexed { index, value ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(value, { new -> items = items.toMutableList().also { it[index] = new.take(StateBoardEngine.MAX_ITEM_TEXT) } },
-                                modifier = Modifier.weight(1f), label = { Text(stringResource(R.string.state_item, index + 1)) }, enabled = !saving)
+                                modifier = Modifier.weight(1f), label = { Text(stringResource(R.string.state_item, index + 1)) }, enabled = !saving,
+                                textStyle = LocalTextStyle.current.forInput())
                             IconButton(enabled = !saving, onClick = { items = items.filterIndexed { i, _ -> i != index } }, modifier = Modifier.size(48.dp)) {
                                 Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.state_remove_item, index + 1))
                             }
@@ -389,10 +393,12 @@ private fun StateFieldEditor(snapshot: StateBoardSnapshot, field: StateField, on
                     OutlinedTextField(text, { text = it.take(StateBoardEngine.MAX_TEXT) }, modifier = Modifier.testTag(UiTags.CHAT_STATE_VALUE), enabled = !saving,
                         label = { Text(stringResource(if (field.type == "meter") R.string.state_current else R.string.state_value)) },
                         keyboardOptions = KeyboardOptions(keyboardType = if (field.type == "text") KeyboardType.Text else KeyboardType.Decimal),
-                        singleLine = field.type != "text", minLines = if (field.type == "text") 3 else 1)
+                        singleLine = field.type != "text", minLines = if (field.type == "text") 3 else 1,
+                        textStyle = LocalTextStyle.current.forInput())
                     if (field.type == "meter") OutlinedTextField(max, { max = it.take(40) }, enabled = !saving,
                         modifier = Modifier.testTag(UiTags.CHAT_STATE_MAX), label = { Text(stringResource(R.string.state_max)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
+                        textStyle = LocalTextStyle.current.forInput())
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }

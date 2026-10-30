@@ -90,6 +90,7 @@ import com.promenar.infinity.ui.theme.InfinitySpacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.promenar.infinity.ui.common.InfinityMenuItem
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 超过此长度的文本只为开头部分上色，其余保持纯文本，避免大文件卡顿。 */
 private const val HIGHLIGHT_MAX_CHARS = 64 * 1024
@@ -315,27 +316,30 @@ private fun LinuxContentTab(state: LinuxFileUiState, actions: LinuxFileActions) 
 @Composable
 private fun LinuxContentSummary(entry: LinuxFileEntry, text: LinuxTextPreview?, nowMs: Long) {
     val first = buildList {
-        add(linuxTypeLabel(entry, text))
+        addAll(linuxTypeLabels(entry, text))
         text?.encoding?.let(::add)
         text?.lineEnding?.let { add(linuxLineEndingLabel(it)) }
         add(formatLinuxSize(entry.size))
         text?.lineCount?.takeIf { !text.isBinary }?.let { add(pluralStringResource(R.plurals.linux_file_line_count, it, it)) }
-    }.joinToString(" · ")
-    val second = "${formatLinuxPermissions(entry.type, entry.mode)} (${formatLinuxOctalMode(entry.mode)}) · ${entry.owner}:${entry.group} · " +
-        linuxTimestampText(linuxTimestamp(entry.modifiedMs, nowMs))
+    }
+    val second = listOf(
+        "${formatLinuxPermissions(entry.type, entry.mode)} (${formatLinuxOctalMode(entry.mode)})",
+        "${entry.owner}:${entry.group}",
+        linuxTimestampText(linuxTimestamp(entry.modifiedMs, nowMs)),
+    )
     Column(Modifier.fillMaxWidth().padding(bottom = InfinitySpacing.Small)) {
-        Text(first, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(second, style = MaterialTheme.typography.bodySmall.copy(fontFamily = InfinityMonospace), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        InfinityMetaLine(first, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        InfinityMetaLine(second, style = MaterialTheme.typography.bodySmall.copy(fontFamily = InfinityMonospace), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun linuxTypeLabel(entry: LinuxFileEntry, text: LinuxTextPreview?): String = when (entry.type) {
-    LinuxFileType.DIRECTORY -> stringResource(R.string.linux_file_directory)
-    LinuxFileType.OTHER -> stringResource(R.string.linux_file_special)
+private fun linuxTypeLabels(entry: LinuxFileEntry, text: LinuxTextPreview?): List<String> = when (entry.type) {
+    LinuxFileType.DIRECTORY -> listOf(stringResource(R.string.linux_file_directory))
+    LinuxFileType.OTHER -> listOf(stringResource(R.string.linux_file_special))
     else -> {
         val kind = stringResource(linuxFileKindLabel(text?.kind ?: linuxKindByName(entry.name) ?: LinuxFileKind.TEXT))
-        if (entry.type == LinuxFileType.SYMLINK) stringResource(R.string.linux_file_link) + " · " + kind else kind
+        if (entry.type == LinuxFileType.SYMLINK) listOf(stringResource(R.string.linux_file_link), kind) else listOf(kind)
     }
 }
 
@@ -520,7 +524,7 @@ private fun LinuxPropertiesTab(state: LinuxFileUiState) {
     ) {
         Column(Modifier.fillMaxWidth().bettboxListGroup().padding(vertical = 6.dp)) {
             PropertyRow(stringResource(R.string.linux_file_prop_path), entry.path, mono = true)
-            PropertyRow(stringResource(R.string.linux_file_prop_type), linuxTypeLabel(entry, text))
+            PropertyRow(stringResource(R.string.linux_file_prop_type), linuxTypeLabels(entry, text))
             entry.symlinkTarget?.let { PropertyRow(stringResource(R.string.linux_file_prop_link), it, mono = true) }
             if (text != null && !text.isBinary) {
                 text.encoding?.let { PropertyRow(stringResource(R.string.linux_file_prop_encoding), it) }
@@ -530,7 +534,7 @@ private fun LinuxPropertiesTab(state: LinuxFileUiState) {
                 add(formatLinuxSize(entry.size))
                 if (entry.size >= 1024) add("${entry.size} B")
                 text?.lineCount?.takeIf { !text.isBinary }?.let { add(pluralStringResource(R.plurals.linux_file_line_count, it, it)) }
-            }.joinToString(" · ")
+            }
             PropertyRow(stringResource(R.string.linux_file_prop_size), size)
             PropertyRow(
                 stringResource(R.string.linux_file_prop_permissions),
@@ -560,5 +564,22 @@ private fun PropertyRow(label: String, value: String, mono: Boolean = false) {
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f),
         )
+    }
+}
+
+/** 多段取值（如“大小 · 字节数 · 行数”）：整段换行，靠右对齐。 */
+@Composable
+private fun PropertyRow(label: String, segments: List<String>) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(InfinitySpacing.Medium),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp)
+            .padding(horizontal = InfinitySpacing.Large, vertical = 9.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.TopEnd) {
+            InfinityMetaLine(segments, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }

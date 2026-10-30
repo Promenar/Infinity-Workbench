@@ -70,12 +70,13 @@ import com.promenar.infinity.ui.common.InfinitySettingsSection
 import com.promenar.infinity.ui.common.InfinitySheetHeight
 import com.promenar.infinity.ui.settings.NetworkAccessRows
 import com.promenar.infinity.ui.settings.NetworkRunMode
-import com.promenar.infinity.ui.settings.tailnetSummary
+import com.promenar.infinity.ui.settings.tailnetSummarySegments
 import com.promenar.infinity.ui.theme.InfinityMonospace
 import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.breakableIdentifier
 import com.promenar.infinity.ui.theme.forReading
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 internal data class AgentReachActions(
     /** 局域网白名单是全局设置：非 null 时该行关闭面板并打开全局网络访问页（R3），为 null 时只显示项数。 */
@@ -316,6 +317,8 @@ private fun ReachRow(
     title: String,
     subtitle: String?,
     modifier: Modifier = Modifier,
+    /** 多段元数据副标题：非空时以 [InfinityMetaLine] 排版并取代 [subtitle]。 */
+    subtitleSegments: List<String>? = null,
     icon: ImageVector? = null,
     note: String? = null,
     path: String? = null,
@@ -339,7 +342,10 @@ private fun ReachRow(
         }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) {
+            if (subtitleSegments != null) {
+                Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
+                InfinityMetaLine(subtitleSegments, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else if (subtitle != null) {
                 Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -410,7 +416,8 @@ private fun PathSection(state: AgentReachState, mode: SessionRunMode) {
                     )
                     ReachRow(
                         title = mount.alias,
-                        subtitle = attributes.joinToString(" · "),
+                        subtitle = null,
+                        subtitleSegments = attributes,
                         path = entry.path,
                         trailing = if (mount.knowledgeBase) ({ KnowledgeReadOnlyTag() }) else null,
                         modifier = Modifier.testTag("agent_reach_path_mount"),
@@ -461,8 +468,9 @@ private fun RunnerSection(state: AgentReachState, mode: SessionRunMode, actions:
                 ReachBackendKind.SSH -> stringResource(R.string.agent_reach_backend_ssh_scope)
             }
             // 可用时说明作用范围；缺 Python 时范围之后补一句状态；其它不可用状态只说状态。
+            val subtitleSegments = if (ready && backend.count != null) listOf(scope, backendStatusText(backend)) else null
             val subtitle = when {
-                ready && backend.count != null -> scope + " · " + backendStatusText(backend)
+                subtitleSegments != null -> null
                 ready -> scope
                 backend.status == ReachBackendStatus.SHELL_ONLY || backend.status == ReachBackendStatus.JS_ONLY ->
                     scope + "\n" + backendStatusText(backend)
@@ -473,6 +481,7 @@ private fun RunnerSection(state: AgentReachState, mode: SessionRunMode, actions:
             ReachRow(
                 title = stringResource(title),
                 subtitle = subtitle,
+                subtitleSegments = subtitleSegments,
                 icon = icon,
                 note = note,
                 enabled = backend.status != ReachBackendStatus.DISABLED && !backend.status.isUnavailable(),
@@ -599,7 +608,8 @@ private fun NetworkSection(state: AgentReachState, actions: AgentReachActions, m
         )
         ReachRow(
             title = stringResource(R.string.network_tailnet_title),
-            subtitle = tailnetSummary(network),
+            subtitle = null,
+            subtitleSegments = tailnetSummarySegments(network),
             onClick = actions.onOpenTailscale,
             modifier = Modifier.testTag("agent_reach_network_tailnet"),
         )

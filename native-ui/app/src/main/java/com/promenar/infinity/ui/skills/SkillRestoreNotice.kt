@@ -18,6 +18,7 @@ import com.promenar.infinity.R
 import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.data.backup.SkillBackupSummary
 import com.promenar.infinity.data.backup.SkippedSkillGitRepository
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 仓库在文件工具中的虚拟路径；技能根本身记为 `.`。 */
 internal fun SkippedSkillGitRepository.virtualPath(): String =
@@ -72,6 +73,6 @@ private fun SkippedRepository(repository: SkippedSkillGitRepository) {
             repository.branch?.let { stringResource(R.string.skills_restore_notice_branch, it) },
             repository.shortCommit()?.let { stringResource(R.string.skills_restore_notice_commit, it) },
         )
-        if (revision.isNotEmpty()) Text(revision.joinToString(" · "), style = body, color = secondary)
+        InfinityMetaLine(revision, style = body, color = secondary)
     }
 }

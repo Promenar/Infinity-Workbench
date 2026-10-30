@@ -47,6 +47,8 @@ fun InfinitySettingsItem(
     selected: Boolean? = null,
     horizontalPadding: Dp = InfinitySpacing.RowHorizontal,
     subtitleMaxLines: Int = 1,
+    /** 多段元数据副标题：非空时以 [InfinityMetaLine] 排版并取代 [subtitle]。 */
+    subtitleSegments: List<String>? = null,
 ) {
     val haptics = LocalInfinityHaptics.current
     // 单选行在选中项变化时轻振；按钮行是导航或打开面板，不振动。
@@ -69,6 +71,7 @@ fun InfinitySettingsItem(
         subtitleModifier = subtitleModifier,
         horizontalPadding = horizontalPadding,
         subtitleMaxLines = subtitleMaxLines,
+        subtitleSegments = subtitleSegments,
         trailingContent = when {
             trailingContent != null -> trailingContent
             showChevron -> ({ Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant) })
@@ -102,16 +105,20 @@ internal fun InfinitySettingsRowLayout(
     subtitleMaxLines: Int = 1,
     /** 标题始终单行：放不下时缓慢横向滚动（系统关闭动画时改为省略号），列表行不会因长标题变成两行。 */
     marqueeTitle: Boolean = false,
+    /** 多段元数据副标题：非空时以 [InfinityMetaLine] 排版并取代 [subtitle]，整段换行、分隔符不落行首行尾。 */
+    subtitleSegments: List<String>? = null,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val marquee = marqueeTitle && rememberAnimationsEnabled()
+    val segments = subtitleSegments?.filter(String::isNotBlank)?.takeIf { it.isNotEmpty() }
+    val hasSubtitle = subtitle != null || segments != null
     BoxWithConstraints(modifier = modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.38f)) {
         val trailingMaxWidth = maxWidth * trailingMaxWidthFraction
         val expandTitle = maxWidth < 280.dp || LocalDensity.current.fontScale > 1f
         Row(
             Modifier.fillMaxWidth()
-                .heightIn(min = if (subtitle == null) InfinitySpacing.RowSingleLineHeight else InfinitySpacing.RowTwoLineHeight)
-                .padding(horizontal = horizontalPadding, vertical = if (subtitle == null) 0.dp else InfinitySpacing.RowTwoLineVertical),
+                .heightIn(min = if (!hasSubtitle) InfinitySpacing.RowSingleLineHeight else InfinitySpacing.RowTwoLineHeight)
+                .padding(horizontal = horizontalPadding, vertical = if (!hasSubtitle) 0.dp else InfinitySpacing.RowTwoLineVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null || leadingContent != null || leadingSpacer) {
@@ -135,11 +142,20 @@ internal fun InfinitySettingsRowLayout(
                     maxLines = when {
                         marqueeTitle -> 1
                         expandTitle -> Int.MAX_VALUE
-                        subtitle == null -> 2
+                        !hasSubtitle -> 2
                         else -> 1
                     },
                     overflow = if (marquee) TextOverflow.Clip else TextOverflow.Ellipsis)
-                if (subtitle != null) {
+                if (segments != null) {
+                    Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
+                    InfinityMetaLine(
+                        segments = segments,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = subtitleModifier,
+                        maxLines = subtitleMaxLines,
+                    )
+                } else if (subtitle != null) {
                     Spacer(Modifier.height(InfinitySpacing.RowTwoLineGap))
                     Text(if (subtitleIsIdentifier) subtitle.breakableIdentifier() else subtitle,
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -120,11 +120,12 @@ internal fun DeleteSessionDialogContent(
     val context = LocalContext.current
     InfinityConfirmDialogCard(
         title = stringResource(R.string.chat_dialog_delete_session_title),
-        message = if (summary == null) {
-            stringResource(R.string.chat_dialog_delete_session_msg)
-        } else {
-            pluralStringResource(R.plurals.delete_session_files, summary.fileCount, summary.fileCount) +
-                " · " + Formatter.formatShortFileSize(context, summary.totalBytes)
+        message = if (summary == null) stringResource(R.string.chat_dialog_delete_session_msg) else "",
+        messageSegments = summary?.let {
+            listOf(
+                pluralStringResource(R.plurals.delete_session_files, it.fileCount, it.fileCount),
+                Formatter.formatShortFileSize(context, it.totalBytes),
+            )
         },
         confirmText = stringResource(R.string.shared_btn_delete),
         onConfirm = onConfirm,

@@ -241,7 +241,7 @@ private fun QuoteCollapsedRow(total: Int, annotated: Int, onExpand: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(R.string.ux2_quote_collapsed_summary, total, annotated) + " · ",
+            text = stringResource(R.string.ux2_quote_collapsed_summary, total, annotated) + " · ",  // wrap-check: allow 单行省略
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -277,7 +277,7 @@ private fun ComposerQuoteCard(
             BasicTextField(
                 value = quote.annotation,
                 onValueChange = onAnnotationChange,
-                textStyle = annotationStyle,
+                textStyle = annotationStyle.forInput(),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 maxLines = 4,
                 modifier = Modifier

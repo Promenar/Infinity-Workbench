@@ -54,6 +54,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 internal data class CanvasInvocation(val id: String, val title: String, val version: Int)
 
@@ -130,8 +131,8 @@ private fun FileArtifactCard(file: ArtifactInvocation, onOpen: () -> Unit) {
             ArtifactKindIcon(file.kind, size = 36.dp)
             Column(Modifier.weight(1f)) {
                 Text(file.title, style = InfinityTypography.bodyMedium.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    text = "${stringResource(file.kind.labelRes)} · ${stringResource(R.string.artifact_meta_version, file.version)}",
+                InfinityMetaLine(
+                    segments = listOf(stringResource(file.kind.labelRes), stringResource(R.string.artifact_meta_version, file.version)),
                     style = InfinityTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

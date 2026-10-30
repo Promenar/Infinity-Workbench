@@ -466,7 +466,7 @@ private fun ModelBreakdownRow(model: ModelCostInfo) {
         subtitle = listOfNotNull(
             stringResource(R.string.token_in_out, formatTokenCount(model.inputTokens), formatTokenCount(model.outputTokens)),
             cost,
-        ).joinToString(" · "),
+        ).joinToString(" · "),  // wrap-check: allow 单行省略
         trailingContent = {
             Text(
                 text = formatTokenCount(model.inputTokens + model.outputTokens),

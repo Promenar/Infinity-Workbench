@@ -209,7 +209,7 @@ internal fun artifactMeta(artifact: ArtifactSummary): String {
         artifact.sizeBytes?.let { add(Formatter.formatShortFileSize(context, it)) }
         add(version)
     }
-    return parts.joinToString(" · ")
+    return parts.joinToString(" · ")  // wrap-check: allow 调用处均为单行省略
 }
 
 @Composable

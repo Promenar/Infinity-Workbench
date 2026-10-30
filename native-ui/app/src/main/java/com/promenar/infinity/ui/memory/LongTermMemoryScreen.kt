@@ -58,6 +58,9 @@ import com.promenar.infinity.ui.common.SettingsToggle
 import com.promenar.infinity.ui.testing.UiTags
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import kotlinx.coroutines.launch
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import androidx.compose.material3.LocalTextStyle
+import com.promenar.infinity.ui.theme.forInput
 
 /** 长期记忆的标题与正文上限，与数据层校验一致。 */
 internal const val LONG_TERM_MEMORY_TITLE_MAX = 80
@@ -236,8 +239,8 @@ private fun LongTermMemoryRow(item: LongTermMemoryListItem, nowMs: Long, onClick
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            listOfNotNull(item.agentName, relativeDay(item.memory.updatedAt, nowMs)).joinToString(" · "),
+        InfinityMetaLine(
+            listOfNotNull(item.agentName, relativeDay(item.memory.updatedAt, nowMs)),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
         )
@@ -294,6 +297,7 @@ internal fun LongTermMemoryEditForm(
             value = title,
             onValueChange = { title = it.take(LONG_TERM_MEMORY_TITLE_MAX) },
             label = { Text(stringResource(R.string.ltm_field_title)) },
+            textStyle = LocalTextStyle.current.forInput(),
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag(UiTags.LTM_EDIT_TITLE),
         )
@@ -301,14 +305,15 @@ internal fun LongTermMemoryEditForm(
             value = content,
             onValueChange = { content = it.take(LONG_TERM_MEMORY_CONTENT_MAX) },
             label = { Text(stringResource(R.string.ltm_field_content)) },
+            textStyle = LocalTextStyle.current.forInput(),
             minLines = 3,
             maxLines = 8,
             supportingText = { Text("${content.length} / $LONG_TERM_MEMORY_CONTENT_MAX") },
             modifier = Modifier.fillMaxWidth().testTag(UiTags.LTM_EDIT_CONTENT),
         )
         source?.let {
-            Text(
-                text = sourceText(memory, it),
+            InfinityMetaLine(
+                segments = sourceSegments(memory, it),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -326,8 +331,9 @@ internal fun LongTermMemoryEditForm(
     }
 }
 
+/** 来源分段：“来自”前缀并入第一段，其余为会话与时间。 */
 @Composable
-private fun sourceText(memory: LongTermMemory, source: LongTermMemorySourceLabel): String {
+private fun sourceSegments(memory: LongTermMemory, source: LongTermMemorySourceLabel): List<String> {
     val time = DateUtils.formatDateTime(
         LocalContext.current,
         memory.createdAt,
@@ -338,5 +344,5 @@ private fun sourceText(memory: LongTermMemory, source: LongTermMemorySourceLabel
         source.sessionTitle?.takeIf(String::isNotBlank)?.let { stringResource(R.string.ltm_source_session, it) },
         time,
     )
-    return stringResource(R.string.ltm_source, parts.joinToString(" · "))
+    return listOf(stringResource(R.string.ltm_source, parts.first())) + parts.drop(1)
 }

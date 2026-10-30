@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+
+- 文本换行门禁恢复通过：子代理状态、Git 入口与 worktree、SSH 主机、外部文件夹、可达范围、Linux 文件详情、长期记忆、审批卡、触摸锁、引导页等处的“·”元数据改用 `InfinityMetaLine` 分段排版，分隔符不再落在行首或行尾；SSH 主机与外部文件夹副标题放宽到三行，转发端口与访问方式不再被省略。
+- 重试倒计时与 Tailscale 本机副标题拆成分段字符串；13 处输入框补齐输入换行策略。
+- `InfinityMetaLine` 高度不超过父级约束，空间不足时向下裁切，不再居中盖住上方内容。
+
 ### 文档
 
 - 仓库首页重构为英文 `README.md` 与中文 `README.zh-CN.md` 两版，精简为亮点、真机截图、安装与构建；原首页详细章节迁入 `docs/guide/` 六篇使用指南。

@@ -109,6 +109,7 @@ import com.promenar.infinity.ui.theme.infinityDomainColors
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 object GitPanelTags {
     const val ROOT = "git_panel_root"
@@ -427,12 +428,11 @@ private fun BranchHeader(status: GitStatus, nowMillis: Long?) {
         status.head?.take(7)?.let { stringResource(R.string.git_panel_head, it) },
         fetchAgeLabel(gitFetchAge(status.lastFetchSeconds, now)),
     )
-    Text(
-        text = parts.joinToString(" · "),
+    InfinityMetaLine(
+        segments = parts,
         style = InfinityTypography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -787,7 +787,7 @@ private fun BranchRow(branch: GitBranch) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            val meta = listOfNotNull(branch.shortSha, branch.title?.takeIf(String::isNotBlank)).joinToString(" · ")
+            val meta = listOfNotNull(branch.shortSha, branch.title?.takeIf(String::isNotBlank)).joinToString(" · ")  // wrap-check: allow 单行省略
             if (meta.isNotEmpty()) {
                 Text(
                     text = meta,
@@ -877,7 +877,7 @@ private fun CommitMeta(commit: GitCommitSummary) {
             maxLines = 1,
         )
         Text(
-            text = commit.authorName.ifBlank { commit.authorEmail } + " · " + formatCommitTime(commit),
+            text = commit.authorName.ifBlank { commit.authorEmail } + " · " + formatCommitTime(commit),  // wrap-check: allow 单行省略
             style = InfinityTypography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -1079,7 +1079,12 @@ internal fun gitSummaryLine(summary: GitEntrySummary.Repository, compactChanges:
 
 /** 分支名之后的“ · 改动数 · ↑领先 · ↓落后”；顶栏单独排版，让长分支名先被截断。 */
 @Composable
-internal fun gitSummarySuffix(summary: GitEntrySummary.Repository, compactChanges: Boolean = false): String {
+internal fun gitSummarySuffix(summary: GitEntrySummary.Repository, compactChanges: Boolean = false): String =
+    gitSummaryCounts(summary, compactChanges).joinToString(separator = " · ", prefix = " · ")  // wrap-check: allow 顶栏单行逐级收缩
+
+/** 改动数、↑领先与↓落后，各为一段。 */
+@Composable
+internal fun gitSummaryCounts(summary: GitEntrySummary.Repository, compactChanges: Boolean = false): List<String> {
     val changes = if (compactChanges && !summary.truncated && summary.changeCount > 0) {
         pluralStringResource(R.plurals.git_top_bar_changes, summary.changeCount, summary.changeCount)
     } else changeCountLabel(summary.changeCount, summary.truncated)
@@ -1087,7 +1092,7 @@ internal fun gitSummarySuffix(summary: GitEntrySummary.Repository, compactChange
         changes,
         gitTrackingCount(summary.ahead, null)?.let { "\u2191$it" },
         gitTrackingCount(summary.behind, null)?.let { "\u2193$it" },
-    ).joinToString(separator = " · ", prefix = " · ")
+    )
 }
 
 /** 会话工作区状态区中的 Git 入口：显示分支与改动数，点击打开 Git 变更面板。[GitEntrySummary.Hidden] 时不显示。 */
@@ -1099,9 +1104,10 @@ fun GitWorkspaceEntry(
 ) {
     val subtitle = when (summary) {
         GitEntrySummary.Hidden -> return
-        is GitEntrySummary.Repository -> gitSummaryLine(summary)
-        GitEntrySummary.PythonUnavailable -> stringResource(R.string.git_panel_entry_python_unavailable)
-        GitEntrySummary.Failed -> stringResource(R.string.git_panel_entry_failed)
+        is GitEntrySummary.Repository ->
+            listOf(branchLabel(summary.branch, summary.detached, summary.headShortSha, summary.unborn)) + gitSummaryCounts(summary)
+        GitEntrySummary.PythonUnavailable -> listOf(stringResource(R.string.git_panel_entry_python_unavailable))
+        GitEntrySummary.Failed -> listOf(stringResource(R.string.git_panel_entry_failed))
     }
     val accent: Color = when (summary) {
         is GitEntrySummary.Repository -> MaterialTheme.colorScheme.primary
@@ -1131,12 +1137,11 @@ fun GitWorkspaceEntry(
                     style = InfinityTypography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
-                Text(
-                    text = subtitle,
+                InfinityMetaLine(
+                    segments = subtitle,
                     style = InfinityTypography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(

@@ -72,7 +72,6 @@ import com.promenar.infinity.ui.common.FolderEntriesList
 import com.promenar.infinity.ui.common.InfinityNavigationHeader
 import com.promenar.infinity.ui.common.InfinityBottomSheet
 import com.promenar.infinity.ui.common.InfinityDropdownMenu
-import com.promenar.infinity.ui.common.InfinityIdentifierText
 import com.promenar.infinity.ui.common.bettboxListGroup
 import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.InfinitySpacing
@@ -85,6 +84,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.promenar.infinity.ui.common.InfinityMenuItem
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.theme.breakableIdentifier
 
 private const val TEXT_PREVIEW_BYTES = 256 * 1024
 
@@ -321,18 +322,20 @@ fun KnowledgeWorkspaceListContent(
                     .testTag("knowledge_workspace_${workspace.id}"),
                 headlineContent = { Text(workspace.displayName, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
-                    InfinityIdentifierText(
+                    InfinityMetaLine(
                         // 内置文件夹只在显示名与目录名不同时补目录名；设备文件夹的路径本身有用。
-                        workspaceKindLabel(workspace.kind) + when {
-                            workspace.kind == WorkspaceEntity.KIND_SHARED -> " · " + compactSharedPath(workspace.location)
-                            workspace.kind == WorkspaceEntity.KIND_LINUX_HOME -> " · " + workspaceLocationText(workspace.kind, workspace.location)
-                            workspace.displayName != workspace.location -> " · " + workspace.location
-                            else -> ""
-                        },
+                        segments = listOfNotNull(
+                            workspaceKindLabel(workspace.kind),
+                            when {
+                                workspace.kind == WorkspaceEntity.KIND_SHARED -> compactSharedPath(workspace.location)
+                                workspace.kind == WorkspaceEntity.KIND_LINUX_HOME -> workspaceLocationText(workspace.kind, workspace.location)
+                                workspace.displayName != workspace.location -> workspace.location
+                                else -> null
+                            }?.breakableIdentifier(),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 leadingContent = { WorkspaceKindIcon(workspace.kind) },
@@ -517,12 +520,11 @@ internal fun KnowledgeWorkspaceFileContent(
         onBack = onBack.takeUnless { busy },
         backButtonTag = "knowledge_workspace_file_back",
         supporting = {
-            InfinityIdentifierText(
-                entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
+            InfinityMetaLine(
+                segments = listOf(entry.path.breakableIdentifier(), Formatter.formatShortFileSize(context, entry.size)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         },
     )

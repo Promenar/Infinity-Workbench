@@ -158,7 +158,7 @@ fun InfinityFieldRowTextField(
                         },
                     enabled = enabled,
                     readOnly = readOnly,
-                    textStyle = inputStyle,
+                    textStyle = inputStyle.forInput(),
                     singleLine = singleLine,
                     maxLines = if (singleLine) 1 else 6,
                     keyboardOptions = keyboardOptions,

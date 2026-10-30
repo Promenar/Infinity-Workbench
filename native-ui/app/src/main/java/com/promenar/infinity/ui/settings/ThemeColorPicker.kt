@@ -57,6 +57,7 @@ import com.promenar.infinity.ui.common.LocalInfinityHaptics
 import com.promenar.infinity.ui.common.InfinityBottomSheet
 import kotlin.math.max
 import kotlin.math.min
+import com.promenar.infinity.ui.theme.forInput
 
 /** 取色器里的颜色：色相 0..360，饱和度与明度 0..1。 */
 internal data class HsvColor(val hue: Float, val saturation: Float, val value: Float) {
@@ -130,7 +131,7 @@ internal fun ThemeColorPickerSheet(
                     label = { Text(stringResource(R.string.theme_custom_color_hex)) },
                     singleLine = true,
                     isError = parseHexColor(hexText) == null,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = InfinityMonospace),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = InfinityMonospace).forInput(),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { onApply(argb) }),
                     modifier = Modifier.weight(1f).testTag("theme_custom_color_hex"),

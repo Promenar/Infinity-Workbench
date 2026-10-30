@@ -354,7 +354,7 @@ private fun modelIdentityFooter(model: ModelInfo): String? {
         editedLabels.takeIf { it.isNotEmpty() }?.let {
             stringResource(R.string.provider_models_editor_user_overrides, it.joinToString(stringResource(R.string.model_editor_list_separator)))
         },
-    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")  // wrap-check: allow 分区脚注，两项均为可能很长的完整说明
 }
 
 @Composable

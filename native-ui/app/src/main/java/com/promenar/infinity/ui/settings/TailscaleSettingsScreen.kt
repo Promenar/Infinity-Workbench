@@ -338,7 +338,7 @@ private fun TailscaleStatusSection(state: TailscaleSettingsUiState, actions: Tai
         summary?.selfName?.let { name ->
             InfinitySettingsRowLayout(
                 title = name,
-                subtitle = preferredTailnetAddress(summary.selfIps)?.let { stringResource(R.string.tailscale_self_subtitle, it) },
+                subtitleSegments = preferredTailnetAddress(summary.selfIps)?.let { listOf(stringResource(R.string.tailscale_self_label), it) },
                 icon = Icons.Rounded.PhoneAndroid,
                 modifier = Modifier.testTag("tailscale_self"),
             )
@@ -398,7 +398,7 @@ private fun TailscalePeerRow(peer: TailnetPeer) {
         tailscaleOsLabel(peer.os),
         if (!peer.online) onlineText else null,
         if (!peer.allowed) stringResource(R.string.tailscale_peer_blocked) else null,
-    ).joinToString(" · ").ifEmpty { null }
+    ).joinToString(" · ").ifEmpty { null }  // wrap-check: allow 单行省略
     InfinitySettingsRowLayout(
         title = peer.name,
         subtitle = subtitle,

@@ -77,6 +77,7 @@ import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.animation.AnimatedVisibility
 import com.promenar.infinity.ui.theme.InfinityMotion
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 // ─────────────────────────────── 后台任务面板 ───────────────────────────────
 
@@ -277,7 +278,7 @@ private fun FinishedJobRow(
         }
         AnimatedVisibility(visible = expanded, enter = InfinityMotion.expandIn, exit = InfinityMotion.shrinkOut) {
             Column(Modifier.padding(start = 18.dp + InfinitySpacing.Medium, top = InfinitySpacing.XSmall)) {
-                Text(jobMeta(job, nowMillis), style = InfinityTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                InfinityMetaLine(jobMetaSegments(job, nowMillis), style = InfinityTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (onOpenLog != null) {
                     TextButton(onClick = onOpenLog, modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget)) {
                         Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(InfinitySpacing.RowIconSize))
@@ -325,7 +326,7 @@ internal fun BackgroundJobRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = listOfNotNull(jobMeta(job, nowMillis), sessionTitle).joinToString(" · "),
+                    text = (jobMetaSegments(job, nowMillis) + listOfNotNull(sessionTitle)).joinToString(" · "),  // wrap-check: allow 单行显示
                     style = InfinityTypography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -369,7 +370,7 @@ private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
 }
 
 @Composable
-private fun jobMeta(job: BackgroundJob, nowMillis: Long): String = "${jobRunnerName(job)} · ${jobStateText(job, nowMillis)}"
+private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> = listOf(jobRunnerName(job), jobStateText(job, nowMillis))
 
 @Composable
 private fun jobRunnerName(job: BackgroundJob): String = stringResource(
@@ -479,7 +480,7 @@ internal fun ScheduledTaskRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(task.name, style = InfinityTypography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                text = listOfNotNull(triggerText(task.trigger), sessionTitle).joinToString(" · "),
+                text = listOfNotNull(triggerText(task.trigger), sessionTitle).joinToString(" · "),  // wrap-check: allow 单行省略
                 style = InfinityTypography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -565,7 +566,7 @@ private fun scheduleStatus(task: ScheduledTask, nowMillis: Long): String {
         )
     }
     val runs = task.maxRuns?.let { stringResource(R.string.agent_schedules_runs_of, task.runCount, it) }
-    return listOfNotNull(next ?: if (!task.enabled) stringResource(R.string.agent_schedules_paused) else null, last, runs).joinToString(" · ")
+    return listOfNotNull(next ?: if (!task.enabled) stringResource(R.string.agent_schedules_paused) else null, last, runs).joinToString(" · ")  // wrap-check: allow 调用处为单行省略
 }
 
 @Composable

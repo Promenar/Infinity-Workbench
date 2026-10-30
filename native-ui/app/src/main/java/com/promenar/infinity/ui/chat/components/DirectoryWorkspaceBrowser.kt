@@ -56,7 +56,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.R
 import com.promenar.infinity.domain.storage.ExternalFolderEntry
@@ -64,7 +63,6 @@ import com.promenar.infinity.domain.workspace.DirectoryFileOpCode
 import com.promenar.infinity.ui.common.FolderBreadcrumbsBar
 import com.promenar.infinity.ui.common.FolderCrumb
 import com.promenar.infinity.ui.common.FolderEntriesList
-import com.promenar.infinity.ui.common.InfinityIdentifierText
 import com.promenar.infinity.ui.common.InfinityNavigationHeader
 import com.promenar.infinity.ui.common.bettboxListGroup
 import com.promenar.infinity.ui.testing.UiTags
@@ -77,6 +75,8 @@ import com.promenar.infinity.ui.workspace.WorkspaceNameDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.theme.breakableIdentifier
 
 /** 由规范路径生成面包屑；crumb id 即该级目录的路径。 */
 internal fun directoryCrumbs(path: String): List<FolderCrumb> {
@@ -335,12 +335,11 @@ private fun DirectoryFileView(
         backButtonTag = UiTags.RESOURCE_EXPLORER_FOLDER_BACK,
         modifier = Modifier.padding(horizontal = InfinitySpacing.Small),
         supporting = {
-            InfinityIdentifierText(
-                entry.path + " · " + Formatter.formatShortFileSize(context, entry.size),
+            InfinityMetaLine(
+                segments = listOf(entry.path.breakableIdentifier(), Formatter.formatShortFileSize(context, entry.size)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         },
     )

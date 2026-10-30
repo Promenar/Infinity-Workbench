@@ -138,7 +138,7 @@ private fun SlashCommandRow(command: SlashCommand, onClick: () -> Unit) {
         SlashCommandSource.GLOBAL_SKILL -> stringResource(R.string.slash_source_global)
         SlashCommandSource.WORKSPACE_SKILL -> stringResource(R.string.slash_source_workspace)
     }
-    val summary = listOfNotNull(command.displayName, sourceLabel, command.description.takeIf(String::isNotBlank)).joinToString(" · ")
+    val summary = listOfNotNull(command.displayName, sourceLabel, command.description.takeIf(String::isNotBlank)).joinToString(" · ")  // wrap-check: allow 只用于无障碍描述
     val description = stringResource(R.string.slash_item_cd, command.name, summary)
     val haptics = LocalInfinityHaptics.current
     Row(

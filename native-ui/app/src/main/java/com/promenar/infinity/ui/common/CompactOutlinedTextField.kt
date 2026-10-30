@@ -60,7 +60,7 @@ fun CompactOutlinedTextField(
             modifier = modifier.heightIn(min = CompactTextFieldHeight),
             enabled = enabled,
             readOnly = readOnly,
-            textStyle = textStyle.copy(color = textColor),
+            textStyle = textStyle.copy(color = textColor).forInput(),
             keyboardOptions = keyboardOptions,
             singleLine = true,
             visualTransformation = visualTransformation,

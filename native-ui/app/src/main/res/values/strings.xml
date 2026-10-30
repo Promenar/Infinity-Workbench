@@ -1660,8 +1660,9 @@
     <string name="chat_retry_reason_network">Network hiccup</string>
     <string name="chat_retry_reason_rate_limit">Rate limited</string>
     <string name="chat_retry_reason_server">Server error</string>
-    <string name="chat_retry_countdown">%1$s. Retrying in %2$ds · %3$d/%4$d</string>
-    <string name="chat_retry_in_progress">%1$s. Retrying · %2$d/%3$d</string>
+    <string name="chat_retry_countdown">%1$s. Retrying in %2$ds</string>
+    <string name="chat_retry_in_progress">%1$s. Retrying</string>
+    <string name="chat_retry_attempt">%1$d/%2$d</string>
     <string name="settings_stream_retry_limit">Auto-retry on network failure</string>
     <string name="settings_stream_retry_limit_desc">Resend on drops or rate limits; 0 = off</string>
     <string name="settings_tailscale_entry">Tailscale</string>
@@ -1715,7 +1716,7 @@
     <string name="tailscale_notice_logout_failed">Sign-out did not reach the control server; the saved auth key was deleted</string>
     <string name="tailscale_notice_failed">Operation failed. Try again.</string>
     <string name="tailscale_error_browser">No browser available to open the sign-in page</string>
-    <string name="tailscale_self_subtitle">This device · %1$s</string>
+    <string name="tailscale_self_label">This device</string>
     <string name="tailscale_value_saved">Saved</string>
     <string name="tailscale_value_not_set">Not set</string>
     <string name="tailscale_control_official">Tailscale</string>

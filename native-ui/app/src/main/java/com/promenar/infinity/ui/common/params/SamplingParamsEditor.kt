@@ -761,7 +761,7 @@ private fun SamplingNumberField(
         singleLine = true,
         textStyle = MaterialTheme.typography.titleMedium.copy(
             fontFeatureSettings = "tnum", textAlign = TextAlign.Center, color = colors.onSurface,
-        ),
+        ).forInput(),
         cursorBrush = SolidColor(colors.primary),
         keyboardOptions = KeyboardOptions(
             keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number,

@@ -62,7 +62,7 @@ internal fun linuxTimestampText(stamp: LinuxTimestamp): String = when (stamp.day
 }
 
 @Composable
-internal fun linuxOutcomeText(outcome: LinuxFileOpOutcome): String {
+internal fun linuxOutcomeSegments(outcome: LinuxFileOpOutcome): List<String> {
     val name = outcome.name.orEmpty()
     val done = when (outcome.op) {
         LinuxFileOp.COPY -> pluralStringResource(R.plurals.directory_op_copied, outcome.succeeded, outcome.succeeded)
@@ -73,10 +73,10 @@ internal fun linuxOutcomeText(outcome: LinuxFileOpOutcome): String {
         LinuxFileOp.COMPRESS -> stringResource(R.string.linux_files_op_compressed, name)
         LinuxFileOp.CHMOD -> stringResource(R.string.linux_files_op_chmod, name)
     }
-    if (outcome.failed == 0) return done
+    if (outcome.failed == 0) return listOf(done)
     val count = pluralStringResource(R.plurals.directory_op_failed_count, outcome.failed, outcome.failed)
     val failed = outcome.reason?.let { stringResource(R.string.directory_op_failed_reason, count, linuxErrorText(it)) } ?: count
-    return if (outcome.succeeded == 0) failed else "$done · $failed"
+    return if (outcome.succeeded == 0) listOf(failed) else listOf(done, failed)
 }
 
 /** 页面内的提示条：可关闭，读屏以礼貌方式播报。 */

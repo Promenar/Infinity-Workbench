@@ -30,6 +30,8 @@ import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.data.ssh.SshUserPrompt
 import com.promenar.infinity.data.ssh.SshUserPromptBroker
 import com.promenar.infinity.ui.theme.InfinitySpacing
+import androidx.compose.material3.LocalTextStyle
+import com.promenar.infinity.ui.theme.forInput
 
 /** 挂在应用根部：Agent 工具执行中需要用户输入 SSH 密码或核对主机指纹时弹出。 */
 @Composable
@@ -72,6 +74,7 @@ internal fun SshPasswordPromptDialog(prompt: SshUserPrompt.Password) {
                         value = password,
                         onValueChange = { password = it },
                         label = { Text(stringResource(R.string.ssh_password)) },
+                        textStyle = LocalTextStyle.current.forInput(),
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = SecretKeyboardOptions,

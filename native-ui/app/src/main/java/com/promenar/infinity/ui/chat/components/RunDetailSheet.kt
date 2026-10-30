@@ -88,6 +88,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.semantics.contentDescription
 import com.promenar.infinity.domain.jobs.BackgroundJob
 import com.promenar.infinity.ui.theme.InfinityMonospace
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 enum class RunDetailTab { PLAN, BACKGROUND, STATE }
 
@@ -250,7 +251,7 @@ private fun RunDetailHeader(
         },
         groups.running.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.run_detail_jobs_running, it, it) },
         groups.finished.size.takeIf { it > 0 }?.let { stringResource(R.string.run_detail_jobs_finished, it) },
-    ).joinToString(" · ")
+    )
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -304,8 +305,8 @@ private fun RunDetailHeader(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 10.dp, end = 12.dp),
             )
-            if (summary.isNotBlank()) {
-                Text(
+            if (summary.isNotEmpty()) {
+                InfinityMetaLine(
                     summary,
                     style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

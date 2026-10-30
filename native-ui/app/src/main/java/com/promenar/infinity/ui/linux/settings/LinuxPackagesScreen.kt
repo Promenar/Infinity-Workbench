@@ -313,7 +313,7 @@ private fun packageSubtitle(pkg: LinuxPackage): String? {
         null -> if (pkg.installed && !pkg.explicit) stringResource(R.string.linux_packages_dependency) else null
     }
     val size = pkg.installedSizeBytes?.let { linuxBytes(it) }
-    return listOfNotNull(origin, pkg.description?.takeIf(String::isNotBlank), size).joinToString(" · ").ifEmpty { null }
+    return listOfNotNull(origin, pkg.description?.takeIf(String::isNotBlank), size).joinToString(" · ").ifEmpty { null }  // wrap-check: allow 含可能很长的软件包描述，按两行省略
 }
 
 @Composable

@@ -100,6 +100,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.semantics.contentDescription
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 当前会话的子代理记录与查看入口；预览与测试中为空，此时不显示分组卡。 */
 class SubagentRunsAccess(
@@ -191,7 +192,7 @@ internal fun SubagentGroupCardContent(
             // 有“转入后台”按钮时状态文字换到下一行，不和按钮抢宽度。
             waitText?.takeUnless { wait != null && onDetach != null }?.let {
                 Text(
-                    text = "· $it",
+                    text = "· $it",  // wrap-check: allow 行内单行省略的状态后缀
                     style = InfinityTypography.labelMedium,
                     color = if (wait != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -276,14 +277,27 @@ private fun SubagentRunRow(run: SubagentRun, now: Long, modelName: String, onCli
             }
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(
-            text = subagentStatusText(run, now),
-            style = InfinityTypography.labelSmall,
-            color = if (run.status == SubagentStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 24.dp, end = 8.dp),
-        )
+        val statusSegments = subagentStatusSegments(run, now)
+        val statusColor = if (run.status == SubagentStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+        // 单段状态（如失败原因）可能很长，仍按两行省略；带用时的状态分段排版。
+        if (statusSegments.size == 1) {
+            Text(
+                text = statusSegments.single(),
+                style = InfinityTypography.labelSmall,
+                color = statusColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 24.dp, end = 8.dp),
+            )
+        } else {
+            InfinityMetaLine(
+                segments = statusSegments,
+                style = InfinityTypography.labelSmall,
+                color = statusColor,
+                maxLines = 2,
+                modifier = Modifier.padding(start = 24.dp, end = 8.dp),
+            )
+        }
         SubagentModelTag(subagentModelLabel(run, modelName), Modifier.padding(start = 24.dp, end = 8.dp, top = 2.dp))
         if (run.status == SubagentStatus.COMPLETED) {
             run.result?.let(::subagentResultSummary)?.let { summary ->
@@ -356,28 +370,31 @@ private fun SubagentStatusIcon(status: SubagentStatus) {
     }
 }
 
+/** 子 Agent 状态的分段文字：运行与收尾阶段在状态之后另起一段显示用时，交由 [InfinityMetaLine] 排版。 */
 @Composable
-internal fun subagentStatusText(run: SubagentRun, now: Long): String = when (run.status) {
+internal fun subagentStatusSegments(run: SubagentRun, now: Long): List<String> = when (run.status) {
     SubagentStatus.RUNNING -> {
         // 旧记录有固定步数上限，新记录只在主 Agent 设了轮数上限时显示“第 N/M 步”。
         val limit = run.maxTurns ?: run.maxSteps.takeIf { it > 0 }
-        when {
+        listOf(when {
             run.step == 0 -> stringResource(R.string.subagent_status_starting)
             run.currentTool != null && limit != null -> stringResource(R.string.subagent_status_tool, toolFriendlyName(run.currentTool), run.step, limit)
             run.currentTool != null -> stringResource(R.string.subagent_status_tool_open, toolFriendlyName(run.currentTool), run.step)
             limit != null -> stringResource(R.string.subagent_status_thinking, run.step, limit)
             else -> stringResource(R.string.subagent_status_thinking_open, run.step)
-        } + " · " + subagentElapsed((now - run.startedAt).coerceAtLeast(0))
+        }, subagentElapsed((now - run.startedAt).coerceAtLeast(0)))
     }
-    SubagentStatus.WAITING_APPROVAL -> stringResource(R.string.subagent_status_waiting, toolFriendlyName(run.currentTool))
-    SubagentStatus.COMPLETED -> stringResource(R.string.subagent_status_done, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
-    SubagentStatus.FAILED -> stringResource(R.string.subagent_status_failed, run.error.orEmpty())
-    SubagentStatus.STOPPED -> stringResource(R.string.subagent_status_stopped, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
-    SubagentStatus.CANCELLED -> stringResource(R.string.subagent_status_cancelled)
-    SubagentStatus.INTERRUPTED -> stringResource(R.string.subagent_status_interrupted)
-    SubagentStatus.QUEUED -> stringResource(R.string.subagent_status_queued)
-    SubagentStatus.WRAPPING_UP -> stringResource(R.string.subagent_status_wrapping_up_step, run.step) +
-        " · " + subagentElapsed((now - run.startedAt).coerceAtLeast(0))
+    SubagentStatus.WAITING_APPROVAL -> listOf(stringResource(R.string.subagent_status_waiting, toolFriendlyName(run.currentTool)))
+    SubagentStatus.COMPLETED -> listOf(stringResource(R.string.subagent_status_done, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0))))
+    SubagentStatus.FAILED -> listOf(stringResource(R.string.subagent_status_failed, run.error.orEmpty()))
+    SubagentStatus.STOPPED -> listOf(stringResource(R.string.subagent_status_stopped, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0))))
+    SubagentStatus.CANCELLED -> listOf(stringResource(R.string.subagent_status_cancelled))
+    SubagentStatus.INTERRUPTED -> listOf(stringResource(R.string.subagent_status_interrupted))
+    SubagentStatus.QUEUED -> listOf(stringResource(R.string.subagent_status_queued))
+    SubagentStatus.WRAPPING_UP -> listOf(
+        stringResource(R.string.subagent_status_wrapping_up_step, run.step),
+        subagentElapsed((now - run.startedAt).coerceAtLeast(0)),
+    )
 }
 
 /** 等待倒计时：分:秒。 */
@@ -635,8 +652,8 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SubagentStatusIcon(run.status)
-        Text(
-            text = subagentViewerStatusText(run, now),
+        InfinityMetaLine(
+            segments = subagentViewerStatusSegments(run, now),
             style = MaterialTheme.typography.bodyMedium,
             color = if (run.status == SubagentStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -691,9 +708,9 @@ internal fun SubagentViewerContent(run: SubagentRun, modelName: String, now: Lon
 
 /** 查看页顶部状态：失败原因已在结果区完整展示，这里只给状态与用时。 */
 @Composable
-private fun subagentViewerStatusText(run: SubagentRun, now: Long): String = when (run.status) {
-    SubagentStatus.FAILED -> stringResource(R.string.subagent_status_failed_elapsed, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0)))
-    else -> subagentStatusText(run, now)
+private fun subagentViewerStatusSegments(run: SubagentRun, now: Long): List<String> = when (run.status) {
+    SubagentStatus.FAILED -> listOf(stringResource(R.string.subagent_status_failed_elapsed, subagentElapsed(((run.endedAt ?: now) - run.startedAt).coerceAtLeast(0))))
+    else -> subagentStatusSegments(run, now)
 }
 
 @Composable

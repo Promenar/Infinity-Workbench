@@ -115,7 +115,8 @@ fun InfinityMetaLine(
             if (ellipsisX != null) maxOf(end, ellipsisX + ellipsis.width) else end
         }
         val width = minOf(contentWidth, maxWidth).coerceAtLeast(constraints.minWidth)
-        val height = rowMetrics.sumOf { it.second }.coerceAtLeast(constraints.minHeight)
+        // 与 Text 一致：高度不超过父级约束，超出部分向下溢出由父级裁切，而不是居中后盖住上方内容。
+        val height = rowMetrics.sumOf { it.second }.coerceIn(constraints.minHeight, constraints.maxHeight)
         layout(width, height) {
             var y = 0
             shown.forEachIndexed { rowIndex, row ->

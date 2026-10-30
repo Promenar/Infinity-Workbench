@@ -78,6 +78,7 @@ import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import com.promenar.infinity.ui.testing.UiTags
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.infinityDomainColors
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 环境页的全部用户操作；预览与截图测试传入空实现。 */
 internal data class LinuxEnvironmentActions(
@@ -513,7 +514,7 @@ internal fun LinuxInstallStepRow(step: LinuxInstallStepState) {
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (pending) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             )
-            Text(
+            InfinityMetaLine(
                 linuxStepSubtitle(step),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (step.status == LinuxStepStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -529,27 +530,30 @@ internal fun LinuxInstallStepRow(step: LinuxInstallStepState) {
     }
 }
 
+/** 步骤副标题的分段文字：网络步骤把 DNS、VPN 与代理各列一段。 */
 @Composable
-private fun linuxStepSubtitle(step: LinuxInstallStepState): String {
-    if (step.status == LinuxStepStatus.FAILED) return stringResource(R.string.linux_step_failed)
+private fun linuxStepSubtitle(step: LinuxInstallStepState): List<String> {
+    if (step.status == LinuxStepStatus.FAILED) return listOf(stringResource(R.string.linux_step_failed))
     if (step.status == LinuxStepStatus.SKIPPED && step.step == LinuxInstallStep.COMMON_TOOLS) {
-        return stringResource(R.string.linux_step_tools_skipped)
+        return listOf(stringResource(R.string.linux_step_tools_skipped))
     }
     return when (val detail = step.detail) {
-        is LinuxStepDetail.Unpacked -> stringResource(R.string.linux_step_unpack_done, linuxBytes(detail.bytes))
+        is LinuxStepDetail.Unpacked -> listOf(stringResource(R.string.linux_step_unpack_done, linuxBytes(detail.bytes)))
         is LinuxStepDetail.Network -> listOfNotNull(
             stringResource(R.string.linux_step_network_done, detail.dnsServers.joinToString(", ")),
             stringResource(R.string.linux_step_network_vpn).takeIf { detail.viaVpn },
             stringResource(R.string.linux_step_network_proxy).takeIf { detail.proxyConfigured },
-        ).joinToString(" · ")
+        )
         is LinuxStepDetail.Downloading -> {
             val mirror = stringResource(linuxMirrorName(detail.mirror))
             val total = detail.totalBytes
-            if (total != null) stringResource(R.string.linux_step_tools_progress, mirror, linuxBytes(detail.downloadedBytes), linuxBytes(total))
-            else stringResource(R.string.linux_step_tools_progress_unknown, mirror, linuxBytes(detail.downloadedBytes))
+            listOf(
+                if (total != null) stringResource(R.string.linux_step_tools_progress, mirror, linuxBytes(detail.downloadedBytes), linuxBytes(total))
+                else stringResource(R.string.linux_step_tools_progress_unknown, mirror, linuxBytes(detail.downloadedBytes)),
+            )
         }
-        is LinuxStepDetail.Diagnostics -> stringResource(R.string.linux_step_diagnostics_done, linuxDuration(detail.startupMs))
-        null -> stringResource(linuxStepPendingText(step.step))
+        is LinuxStepDetail.Diagnostics -> listOf(stringResource(R.string.linux_step_diagnostics_done, linuxDuration(detail.startupMs)))
+        null -> listOf(stringResource(linuxStepPendingText(step.step)))
     }
 }
 

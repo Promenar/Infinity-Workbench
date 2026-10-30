@@ -67,6 +67,7 @@ import com.promenar.infinity.ui.theme.TouchLockUnlock
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 浮岛运行坞上的锁按钮：生成中点按后锁定触摸。 */
 @Composable
@@ -160,8 +161,8 @@ internal fun TouchLockContent(
                 TouchLockPhase.APPROVAL -> stringResource(R.string.touch_lock_waiting_approval)
                 TouchLockPhase.DONE -> stringResource(R.string.touch_lock_done)
             }
-            Text(
-                text = listOf(status, state.meta).filter { it.isNotBlank() }.joinToString(" · "),
+            InfinityMetaLine(
+                segments = listOf(status, state.meta),
                 style = InfinityTypography.labelMedium.copy(fontFeatureSettings = "tnum"),
                 color = if (state.phase == TouchLockPhase.APPROVAL) InfinityTouchLockWarning else InfinityTouchLockContent.copy(alpha = 0.7f),
             )

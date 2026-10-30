@@ -81,6 +81,7 @@ import com.promenar.infinity.ui.testing.UiTags
 import com.promenar.infinity.ui.theme.InfinityMonospace
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.infinityDomainColors
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /**
  * 本地 Linux 终端页。
@@ -517,14 +518,26 @@ private fun JobStatusLine(tab: TerminalTab.AgentJob, truncated: Boolean) {
         job.exitCode != null -> stringResource(R.string.linux_terminal_job_ended, job.exitCode)
         else -> stringResource(R.string.linux_terminal_job_ended_unknown)
     }
-    Text(
-        text = if (truncated) status + " · " + stringResource(R.string.linux_terminal_job_truncated) else status,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().padding(bottom = InfinitySpacing.XSmall),
-    )
+    val modifier = Modifier.fillMaxWidth().padding(bottom = InfinitySpacing.XSmall)
+    // 运行中的状态带命令摘要，可能很长，单独显示时仍按两行省略；有截断提示时分段排版。
+    if (truncated) {
+        InfinityMetaLine(
+            segments = listOf(status, stringResource(R.string.linux_terminal_job_truncated)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            modifier = modifier,
+        )
+    } else {
+        Text(
+            text = status,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier,
+        )
+    }
 }
 
 /**

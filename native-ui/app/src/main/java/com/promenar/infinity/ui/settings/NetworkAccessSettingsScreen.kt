@@ -63,7 +63,7 @@ internal fun lanHostsSummary(snapshot: AgentNetworkSnapshot): String =
     else pluralStringResource(R.plurals.network_lan_hosts_count, snapshot.lanHosts.size, snapshot.lanHosts.size)
 
 @Composable
-internal fun tailnetSummary(snapshot: AgentNetworkSnapshot): String {
+internal fun tailnetSummarySegments(snapshot: AgentNetworkSnapshot): List<String> {
     val phase = stringResource(
         when {
             !snapshot.tailnetAvailable -> R.string.network_tailnet_missing
@@ -74,7 +74,7 @@ internal fun tailnetSummary(snapshot: AgentNetworkSnapshot): String {
     )
     val peers = if (snapshot.tailnetPeerAllowlist.isEmpty()) stringResource(R.string.network_tailnet_peers_all)
     else pluralStringResource(R.plurals.network_tailnet_peers_count, snapshot.tailnetPeerAllowlist.size, snapshot.tailnetPeerAllowlist.size)
-    return "$phase · $peers"
+    return listOf(phase, peers)
 }
 
 /** 设置页正文：先给两处可调的入口（白名单、Tailscale），再给按工具展开的访问范围总表。 */
@@ -105,7 +105,7 @@ internal fun NetworkAccessSettingsContent(
             InfinitySettingsItem(
                 icon = Icons.Rounded.Hub,
                 title = stringResource(R.string.network_tailnet_title),
-                subtitle = tailnetSummary(snapshot),
+                subtitleSegments = tailnetSummarySegments(snapshot),
                 onClick = onOpenTailscale,
                 showChevron = true,
                 subtitleMaxLines = 2,

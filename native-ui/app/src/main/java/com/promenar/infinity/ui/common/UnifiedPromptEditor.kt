@@ -272,7 +272,7 @@ fun UnifiedPromptEditor(
                     if (dirty) add(stringResource(R.string.prompt_editor_modified))
                     add(pluralStringResource(R.plurals.prompt_editor_word_count, statistics.words, statistics.words))
                     if (wide) add(pluralStringResource(R.plurals.prompt_editor_line_count, statistics.lines, statistics.lines))
-                }.joinToString(" · ")
+                }.joinToString(" · ")  // wrap-check: allow 状态栏单行省略
 
                 Column(
                     modifier = Modifier

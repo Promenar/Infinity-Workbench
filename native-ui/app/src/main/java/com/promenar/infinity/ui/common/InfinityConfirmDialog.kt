@@ -87,6 +87,8 @@ internal fun InfinityConfirmDialogCard(
     modifier: Modifier = Modifier,
     confirmEnabled: Boolean = true,
     cancelEnabled: Boolean = true,
+    /** 多段元数据正文（如“3 个文件 · 1.2 MB”）：非空时以 [InfinityMetaLine] 排版并取代 [message]。 */
+    messageSegments: List<String>? = null,
     content: @Composable (() -> Unit)? = null,
 ) {
     Surface(
@@ -114,7 +116,14 @@ internal fun InfinityConfirmDialogCard(
                 )
             }
 
-            if (message.isNotEmpty()) {
+            if (!messageSegments.isNullOrEmpty()) {
+                if (title.isNotBlank()) Spacer(modifier = Modifier.height(16.dp))
+                InfinityMetaLine(
+                    segments = messageSegments,
+                    style = InfinityTypography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (message.isNotEmpty()) {
                 if (title.isNotBlank()) Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = message,

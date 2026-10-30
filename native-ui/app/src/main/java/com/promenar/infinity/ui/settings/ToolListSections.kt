@@ -166,7 +166,7 @@ private fun McpServerRow(
             icon = Icons.Rounded.Hub,
             title = server.name,
             // 状态放在前面：行尾有三个控件，长地址换行后仍能看到连接状态。
-            subtitle = "$status · ${server.url}",
+            subtitleSegments = listOf(status, server.url),
             subtitleMaxLines = 2,
             onClick = onToggleExpand,
             trailingContent = {

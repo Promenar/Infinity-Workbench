@@ -24,7 +24,7 @@ fun AgentDefaultWorkspaceRow(
     InfinitySettingsItem(
         title = stringResource(R.string.workspace_agent_default),
         subtitle = when {
-            workspace != null -> workspace.displayName + " · " + compactSharedPath(workspace.location)
+            workspace != null -> workspace.displayName + " · " + compactSharedPath(workspace.location)  // wrap-check: allow 单行省略
             missing -> stringResource(R.string.workspace_missing_name)
             else -> stringResource(R.string.workspace_agent_default_none)
         },

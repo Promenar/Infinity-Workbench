@@ -63,6 +63,7 @@ import com.promenar.infinity.ui.common.InfinitySettingsRowLayout
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 目录工作区的文件操作回调；为 null 时浏览器保持只读。 */
 internal data class DirectoryFileActions(
@@ -107,16 +108,16 @@ internal fun directoryOpCodeText(code: DirectoryFileOpCode): String = stringReso
 )
 
 @Composable
-internal fun directoryOutcomeText(outcome: DirectoryOpOutcome): String {
+internal fun directoryOutcomeSegments(outcome: DirectoryOpOutcome): List<String> {
     val done = when (outcome.op) {
         DirectoryOp.COPY -> pluralStringResource(R.plurals.directory_op_copied, outcome.succeeded, outcome.succeeded)
         DirectoryOp.MOVE -> pluralStringResource(R.plurals.directory_op_moved, outcome.succeeded, outcome.succeeded)
         DirectoryOp.DELETE -> pluralStringResource(R.plurals.directory_op_deleted, outcome.succeeded, outcome.succeeded)
     }
-    if (outcome.failed == 0) return done
+    if (outcome.failed == 0) return listOf(done)
     val count = pluralStringResource(R.plurals.directory_op_failed_count, outcome.failed, outcome.failed)
     val failed = outcome.reason?.let { stringResource(R.string.directory_op_failed_reason, count, directoryOpCodeText(it)) } ?: count
-    return if (outcome.succeeded == 0) failed else "$done · $failed"
+    return if (outcome.succeeded == 0) listOf(failed) else listOf(done, failed)
 }
 
 /**
@@ -221,14 +222,14 @@ internal fun DirectoryPasteBar(
 
 @Composable
 internal fun DirectoryOutcomeLine(outcome: DirectoryOpOutcome) {
-    Text(
-        directoryOutcomeText(outcome),
+    InfinityMetaLine(
+        directoryOutcomeSegments(outcome),
         style = MaterialTheme.typography.bodySmall,
         color = if (outcome.failed > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = InfinitySpacing.Large, vertical = InfinitySpacing.XSmall)
-            .semantics { liveRegion = LiveRegionMode.Polite }
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
             .testTag("directory_outcome"),
     )
 }

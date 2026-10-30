@@ -631,11 +631,13 @@ private fun ExternalMountRow(
             mount.commandAccessible -> R.string.agent_reach_mount_command_visible
             else -> R.string.agent_reach_mount_files_only
         }),
-    ).joinToString(" · ")
+    )
     InfinitySettingsItem(
         title = mount.alias,
-        subtitle = if (unavailable) unavailableLabel else meta,
-        subtitleMaxLines = 2,
+        subtitle = unavailableLabel.takeIf { unavailable },
+        subtitleSegments = meta.takeUnless { unavailable },
+        // 分段排版放不下时整段省略，放宽到三行让访问方式始终可见。
+        subtitleMaxLines = if (unavailable) 2 else 3,
         // 不可用的挂载点按后直接给出重新授权或移除等操作。
         onClick = { if (unavailable) menuOpen = true else onBrowse(mount) },
         enabled = !busy,

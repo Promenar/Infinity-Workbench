@@ -85,6 +85,7 @@ import com.promenar.infinity.ui.theme.InfinityMonospace
 import com.promenar.infinity.ui.theme.InfinityMotion
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.infinityDomainColors
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 @Composable
 fun ProviderListScreen(
@@ -476,7 +477,7 @@ private fun ProviderCard(
     val scheme = MaterialTheme.colorScheme
     val domain = MaterialTheme.infinityDomainColors
     val secondary = scheme.onSurfaceVariant
-    val separator = " · "
+    val separator = " · "  // wrap-check: allow 凭据状态需单独着色的富文本行
     val metaLine = buildAnnotatedString {
         if (onTailnet) {
             append(stringResource(R.string.provider_list_tailnet_tag))
@@ -614,10 +615,10 @@ private fun ProviderConnectionLine(providerId: String, status: ProviderStatus?, 
         InfinityStatusKind.Info -> domain.info
         null -> scheme.outline
     }
-    val text = if (record == null) {
-        stringResource(R.string.provider_connection_never_tested)
+    val segments = if (record == null) {
+        listOf(stringResource(R.string.provider_connection_never_tested))
     } else {
-        record.outcomeLabel() + " · " + relativeTimeLabel(record.testedAtMillis, nowMillis)
+        listOf(record.outcomeLabel(), relativeTimeLabel(record.testedAtMillis, nowMillis))
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -625,7 +626,7 @@ private fun ProviderConnectionLine(providerId: String, status: ProviderStatus?, 
     ) {
         Box(Modifier.size(6.dp).background(dotColor, CircleShape))
         Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = if (record == null) scheme.outline else scheme.onSurfaceVariant)
+        InfinityMetaLine(segments, style = MaterialTheme.typography.bodySmall, color = if (record == null) scheme.outline else scheme.onSurfaceVariant)
     }
 }
 

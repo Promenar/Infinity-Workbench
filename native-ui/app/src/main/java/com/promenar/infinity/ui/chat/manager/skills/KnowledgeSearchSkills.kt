@@ -83,7 +83,7 @@ class KnowledgeSearchSkill(
                     if (hit.alreadyInContext) appendLine("[${hit.citationId}] 已在上方参考资料中") else {
                         val score = String.format(java.util.Locale.ROOT, "%.2f", reference.score)
                         append(if (reference.documentId != null)
-                            "[${hit.citationId}] 文档《${reference.source.removePrefix("文档: ")}》 片段 ${reference.chunkIndex} · 相关度 $score"
+                            "[${hit.citationId}] 文档《${reference.source.removePrefix("文档: ")}》 片段 ${reference.chunkIndex} · 相关度 $score"  // wrap-check: allow 工具结果文本，非界面排版
                         else "[${hit.citationId}] 历史对话（${reference.source}）${reference.occurredAt?.let { " " + java.time.Instant.ofEpochMilli(it)
                             .atZone(java.time.ZoneId.systemDefault()).toLocalDate() }.orEmpty()} · 相关度 $score")
                         hit.path?.let { append(" · 路径 $it") }
@@ -143,7 +143,7 @@ class RequestKnowledgeAccessSkill(
             if (!approved.allowed) return@withContext ToolResult(id, approved.reason ?: "文档范围不允许挂载", data = json.encodeToString(approved))
             val mounts = planner.mount(approved)
             ToolResult(id, if (mounts.isEmpty()) "当前范围内没有可挂载的知识库" else
-                mounts.joinToString("\n") { "/mnt/${it.alias} · 知识库 · 只读" }, data = json.encodeToString(approved))
+                mounts.joinToString("\n") { "/mnt/${it.alias} · 知识库 · 只读" }, data = json.encodeToString(approved))  // wrap-check: allow 工具结果文本，非界面排版
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { ToolResult(id, "知识库授权目标已变化或无法挂载，请重新核对可见范围。", "error") }
     }

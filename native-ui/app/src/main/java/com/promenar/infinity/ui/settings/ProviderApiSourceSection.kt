@@ -365,7 +365,7 @@ private fun peerDetail(peer: TailnetPeer): String = listOfNotNull(
     if (peer.online) null else stringResource(R.string.provider_tailnet_peer_offline),
     TailnetEndpoints.peerHost(peer),
     tailscaleOsLabel(peer.os),
-).joinToString(" · ")
+).joinToString(" · ")  // wrap-check: allow 调用处为单行省略
 
 internal const val PROVIDER_API_SOURCE_TAG = "provider_api_source"
 internal const val PROVIDER_TAILNET_STATUS_TAG = "provider_tailnet_status"

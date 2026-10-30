@@ -227,7 +227,7 @@ internal fun runDockLabelText(label: RunDockLabel): String = when (label) {
 internal fun runDockMetaText(state: RunDockUiState, elapsedSeconds: Long?): String = buildList {
     if (state.planTotal != null) add("${state.planDone ?: 0}/${state.planTotal}")
     elapsedSeconds?.let { add(runDockElapsedText(it)) }
-}.joinToString(" · ")
+}.joinToString(" · ")  // wrap-check: allow 运行坞单行省略；触控锁中作为一段短计时
 
 /** 本轮用时：不到 1 小时为 m:ss，以上为 h:mm:ss；显示时配等宽数字，逐秒变化不跳动。 */
 internal fun runDockElapsedText(seconds: Long): String {

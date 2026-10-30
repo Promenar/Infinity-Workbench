@@ -88,6 +88,7 @@ import com.promenar.infinity.ui.theme.InfinityPureDarkTheme
 import com.promenar.infinity.ui.theme.hierarchicalTransition
 import com.promenar.infinity.ui.theme.infinityDomainColors
 import kotlinx.coroutines.delay
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 宽于此值（折叠屏内屏、平板）时左栏常驻字标与竖排步骤，右栏是内容。 */
 private val WideLayoutMinWidth = 600.dp
@@ -271,9 +272,11 @@ private fun OnboardingHeader(
                     transitionSpec = { InfinityMotion.sharedAxisY(forward = targetState > initialState) },
                     label = "onboarding_step_label",
                 ) { shown ->
-                    Text(
-                        text = stringResource(R.string.onboarding_step_of, shown + 1, railSteps.size) + " · " +
+                    InfinityMetaLine(
+                        segments = listOf(
+                            stringResource(R.string.onboarding_step_of, shown + 1, railSteps.size),
                             stringResource(railSteps[shown].railLabel()),
+                        ),
                         style = OnboardingType.eyebrow(),
                         color = onboardingFaintText,
                     )

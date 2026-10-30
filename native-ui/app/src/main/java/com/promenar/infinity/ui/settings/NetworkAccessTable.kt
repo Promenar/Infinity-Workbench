@@ -38,6 +38,7 @@ import com.promenar.infinity.ui.common.InfinitySheetHeight
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.forInput
 import com.promenar.infinity.ui.theme.forReading
+import com.promenar.infinity.ui.common.InfinityMetaLine
 
 /** 单元格的视觉档位：放行、受条件约束、当前不可达。 */
 internal enum class NetworkCellTone { OPEN, LIMITED, CLOSED }
@@ -222,8 +223,8 @@ private fun NetworkCellChip(cell: NetworkCell) {
         shape = MaterialTheme.shapes.small,
         modifier = Modifier.clearAndSetSemantics { contentDescription = "$target：$meaning" },
     ) {
-        Text(
-            text = "$target · $meaning",
+        InfinityMetaLine(
+            segments = listOf(target, meaning),
             style = MaterialTheme.typography.labelMedium,
             color = if (cell.tone == NetworkCellTone.CLOSED) content.copy(alpha = 0.85f) else Color.Unspecified,
             modifier = Modifier.padding(horizontal = InfinitySpacing.Small, vertical = InfinitySpacing.XSmall),

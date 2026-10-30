@@ -1137,7 +1137,7 @@ private fun HubAgentRow(
             subtitle = listOf(
                 pluralStringResource(R.plurals.hub_agent_session_count, entry.sessionCount, entry.sessionCount),
                 entry.item.subtitle,
-            ).filter { it.isNotBlank() }.joinToString(" · "),
+            ).filter { it.isNotBlank() }.joinToString(" · "),  // wrap-check: allow 含可能很长的智能体说明，按行数省略
             pinned = agent.isPinned,
             trailing = {
                 Icon(

@@ -92,6 +92,7 @@ import com.promenar.infinity.ui.common.LocalInfinityPanePresentation
 import com.promenar.infinity.ui.common.InfinityPanePresentation
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.InfinityTypography
+import com.promenar.infinity.ui.theme.forInput
 
 /** 会话的 Agent 浏览器页：窄窗口整页、宽窗口在检视器“浏览器”页签。 */
 @Composable
@@ -275,7 +276,7 @@ private fun BrowserAddressField(initial: String, onGo: (String) -> Unit, onDismi
             value = value,
             onValueChange = { value = it },
             singleLine = true,
-            textStyle = InfinityTypography.bodyMedium.copy(color = scheme.onSurface),
+            textStyle = InfinityTypography.bodyMedium.copy(color = scheme.onSurface).forInput(),
             cursorBrush = SolidColor(scheme.primary),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
             keyboardActions = KeyboardActions(onGo = { onGo(value.text) }),

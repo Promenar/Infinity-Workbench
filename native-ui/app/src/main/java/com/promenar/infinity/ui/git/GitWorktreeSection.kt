@@ -33,6 +33,8 @@ import com.promenar.infinity.ui.common.InfinityIdentifierText
 import com.promenar.infinity.ui.theme.InfinityMonospace
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import com.promenar.infinity.ui.theme.InfinityTypography
+import com.promenar.infinity.ui.common.InfinityMetaLine
+import com.promenar.infinity.ui.theme.breakableIdentifier
 
 /**
  * Git 页的 worktree 区块：仓库只有主目录时不显示。每行是分支名（分离头指针时显示短提交）、目录与在用的会话；
@@ -106,21 +108,20 @@ internal fun WorktreeRow(entry: WorktreeEntry, current: Boolean, onClick: (() ->
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = worktreeSubtitle(entry),
+            InfinityMetaLine(
+                segments = worktreeSubtitleSegments(entry),
                 style = InfinityTypography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
 @Composable
-private fun worktreeSubtitle(entry: WorktreeEntry): String {
-    val place = if (entry.isMain) stringResource(R.string.git_worktree_main) else entry.path
+private fun worktreeSubtitleSegments(entry: WorktreeEntry): List<String> {
+    val place = if (entry.isMain) stringResource(R.string.git_worktree_main) else entry.path.breakableIdentifier()
     val user = entry.sessionTitle?.let { stringResource(R.string.git_worktree_used_by, it) }
         ?: stringResource(R.string.git_worktree_unused)
-    return "$place · $user"
+    return listOf(place, user)
 }
