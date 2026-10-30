@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 变更
+
+- Android CI 精简为 PR 与手动触发的静态检查；发行流程复用同一检查入口并继续执行完整构建、设备回归和签名验证。
+
+### 修复
+
+- 修复隔离脚本服务连接回调早于绑定调用返回时，握手被忽略并导致执行超时的问题。
+
 ## [0.8.0-beta] - 2026-10-31
 
 `v0.7.1-beta` 与 `v0.7.2-beta` 标签的发行流水线均未通过设备回归，没有发布安装包；其全部内容并入本版本。

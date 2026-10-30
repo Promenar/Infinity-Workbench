@@ -41,7 +41,6 @@ assert_not_contains() {
     fi
 }
 
-ANDROID_CI_WORKFLOW="${REPO_ROOT}/.github/workflows/android-ci.yml"
 RELEASE_WORKFLOW="${REPO_ROOT}/.github/workflows/release.yml"
 
 # 先锁定 white-box 脚本边界，确保旧 minified instrumentation 架构给出直接 RED。
@@ -49,18 +48,11 @@ assert_not_contains "${DEVICE_SCRIPT}" 'INFINITY_DEVICE_E2E_BUILD_TYPE'
 assert_not_contains "${DEVICE_SCRIPT}" 'MinifiedTest'
 assert_not_contains "${DEVICE_SCRIPT}" 'minifiedTest'
 
-for workflow in "${ANDROID_CI_WORKFLOW}" "${RELEASE_WORKFLOW}"; do
-    assert_count "${workflow}" "- api-level: 31" 1
-    assert_contains "${workflow}" 'INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}'
-    assert_contains "${workflow}" 'artifacts/android-device-api-${{ matrix.api-level }}-x86_64/'
-done
-assert_count "${ANDROID_CI_WORKFLOW}" "e2e-scope: minimum" 1
-assert_count "${ANDROID_CI_WORKFLOW}" "e2e-scope: full" 2
+assert_contains "${RELEASE_WORKFLOW}" 'INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}'
+assert_contains "${RELEASE_WORKFLOW}" 'artifacts/android-device-api-${{ matrix.api-level }}-x86_64/'
 assert_count "${RELEASE_WORKFLOW}" "e2e-scope: minimum" 1
 assert_count "${RELEASE_WORKFLOW}" "e2e-scope: full" 2
 
-assert_count "${ANDROID_CI_WORKFLOW}" "- api-level: 35" 1
-assert_count "${ANDROID_CI_WORKFLOW}" "- api-level: 36" 1
 assert_count "${RELEASE_WORKFLOW}" "- api-level: 31" 1
 assert_count "${RELEASE_WORKFLOW}" "- api-level: 35" 4
 assert_count "${RELEASE_WORKFLOW}" "- api-level: 36" 4

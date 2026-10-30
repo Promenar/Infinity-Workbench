@@ -129,8 +129,10 @@ class AndroidScriptProcess private constructor(private val context: Context) : S
             val process = AndroidScriptProcess(context.applicationContext)
             val name = MessageDigest.getInstance("SHA-256").digest(sessionId.toByteArray()).take(12).joinToString("") { "%02x".format(it) }
             try {
-                process.bound = context.bindIsolatedService(Intent(context, ScriptRuntimeService::class.java), Context.BIND_AUTO_CREATE, "script_$name", context.mainExecutor, process.connection)
-                if (!process.bound) throw ScriptFailure("PROCESS_DIED", "无法绑定隔离服务")
+                // 服务已启动时连接回调可能先于绑定调用返回，必须先允许处理回调。
+                process.bound = true
+                val accepted = context.bindIsolatedService(Intent(context, ScriptRuntimeService::class.java), Context.BIND_AUTO_CREATE, "script_$name", context.mainExecutor, process.connection)
+                if (!accepted || !process.bound) throw ScriptFailure("PROCESS_DIED", "无法绑定隔离服务")
                 withTimeout(5000) { process.ready.await() }
                 return process
             } catch (e: Throwable) { process.terminate(); throw e }

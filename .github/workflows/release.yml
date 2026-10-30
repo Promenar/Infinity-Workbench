@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  static-checks:
+    name: 静态检查与工作流契约
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
+      - name: 运行静态检查
+        run: bash scripts/ci/android-static-checks.sh
+
   validate-release-inputs:
     name: 校验版本、标签对象与提交来源
     runs-on: ubuntu-latest
@@ -267,7 +285,7 @@ jobs:
 
   build-release:
     name: 全门禁并构建签名 APK（侧载 + Play）
-    needs: [validate-release-inputs, device-e2e, minified-blackbox]
+    needs: [validate-release-inputs, static-checks, device-e2e, minified-blackbox]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: release

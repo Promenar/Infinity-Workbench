@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import subprocess
@@ -15,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 ANDROID_CI = (ROOT / ".github/workflows/android-ci.yml").read_text(encoding="utf-8")
 RELEASE = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+STATIC_CHECKS = (ROOT / "scripts/ci/android-static-checks.sh").read_text(encoding="utf-8")
 SMOKE = (ROOT / "scripts/ci/android-release-apk-smoke.sh").read_text(encoding="utf-8")
 UPGRADE_SMOKE = (ROOT / "scripts/ci/android-release-upgrade-smoke.sh").read_text(encoding="utf-8")
 APP_BUILD = (ROOT / "native-ui/app/build.gradle.kts").read_text(encoding="utf-8")
@@ -71,13 +73,32 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
-    def test_android_ci_collects_all_quality_failures_without_ignoring_exit_status(self) -> None:
-        commands = continued_shell_commands(ANDROID_CI, "./gradlew")
-        quality = next(command for command in commands if ":app:validateSideloadDebugScreenshotTest" in command)
-        self.assertIn("--continue", quality)
-        for task in (":app:testSideloadDebugUnitTest", ":app:lintSideloadDebug", ":app:assembleSideloadDebug"):
-            self.assertIn(task, quality)
+    def test_static_checks_gate_pr_and_release_build(self) -> None:
+        self.assertIn("bash scripts/ci/android-static-checks.sh", ANDROID_CI)
+        static_job = workflow_job("static-checks")
+        self.assertIn("bash scripts/ci/android-static-checks.sh", static_job)
+        self.assertIn("static-checks", job_level_value(workflow_job("build-release"), "needs"))
+        self.assertNotIn("./gradlew", ANDROID_CI)
+        self.assertNotIn("android-emulator-runner@", ANDROID_CI)
+        for check in ("update-model-catalog.py", "check-text-wrapping.py", "check-distribution-manifests-test.py",
+                      "check-native-page-alignment-test.py", "release-workflow-reliability-test.py",
+                      "android-device-core-e2e-contract-test.sh", "android-minified-blackbox-contract-test.sh"):
+            self.assertIn(check, STATIC_CHECKS)
+        self.assertIn("set -euo pipefail", STATIC_CHECKS)
         self.assertNotIn("continue-on-error: true", ANDROID_CI)
+
+    def test_static_checks_stop_when_first_check_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            stub = Path(directory) / "python3"
+            stub.write_text("#!/bin/sh\nprintf 'fixture\\n'\nexit 42\n", encoding="utf-8")
+            stub.chmod(0o755)
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/ci/android-static-checks.sh")],
+                env={**os.environ, "PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"},
+                capture_output=True, text=True, check=False,
+            )
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual(result.stdout.splitlines(), ["fixture"])
 
     def test_android_ci_runs_only_for_pull_requests_and_manual_dispatch(self) -> None:
         trigger = ANDROID_CI.split("\npermissions:", 1)[0]
@@ -124,10 +145,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn('scripts/ci/android-release-apk-smoke.sh "dist/${APK_NAME}"', smoke)
         self.assertIn('INFINITY_EXPECTED_DISTRIBUTION: ${{ matrix.distribution }}', smoke)
         self.assertIn('--distribution "${distribution}"', build)
-        self.assertIn('check-distribution-manifests.py', ANDROID_CI)
         self.assertIn('check-distribution-manifests.py', build)
         self.assertIn('check-native-page-alignment.py --build-type release', build)
-        self.assertIn('check-native-page-alignment.py', ANDROID_CI)
 
     def test_signing_reads_existing_release_environment_secrets(self) -> None:
         build = workflow_job("build-release")
@@ -239,7 +258,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/", RELEASE)
         self.assertNotIn("INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
         self.assertIn("build-release:", RELEASE)
-        self.assertIn("needs: [validate-release-inputs, device-e2e, minified-blackbox]", RELEASE)
+        for dependency in ("validate-release-inputs", "static-checks", "device-e2e", "minified-blackbox"):
+            self.assertIn(dependency, job_level_value(workflow_job("build-release"), "needs"))
 
     def test_build_release_cleans_before_fresh_full_gate_gradle_invocation(self) -> None:
         build_job = workflow_job("build-release")
@@ -557,7 +577,7 @@ is_expected_resumed_activity "$2"
     def test_every_gradle_job_installs_registered_go_for_tailnet(self) -> None:
         version = re.search(r'val tailnetGoVersion = "([0-9.]+)"', APP_BUILD)
         self.assertIsNotNone(version)
-        for workflow in (ANDROID_CI, RELEASE):
+        for workflow in (RELEASE,):
             jobs = re.findall(r"^  [a-z][a-z0-9-]*:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow, flags=re.MULTILINE | re.DOTALL)
             gradle_jobs = [job for job in jobs if "actions/setup-java@" in job]
             self.assertTrue(gradle_jobs)

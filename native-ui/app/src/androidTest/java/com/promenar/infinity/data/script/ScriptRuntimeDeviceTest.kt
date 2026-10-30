@@ -2,6 +2,7 @@ package com.promenar.infinity.data.script
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
@@ -16,6 +17,7 @@ import java.net.ServerSocket
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlinx.coroutines.*
@@ -122,6 +124,38 @@ class ScriptRuntimeDeviceTest {
             assertThat(runtime.execute(session, ScriptRequest("6*7"), noCapabilities).value).isEqualTo(JsonPrimitive(42))
             assertThat(processes.size).isEqualTo(2)
         } finally { processes.forEach { it.terminate() } }
+    }
+
+    @Test fun serviceConnectionMayArriveBeforeBindReturns() = runBlocking {
+        val observer = observeRuntime("early-callback-probe")
+        val earlyContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun bindIsolatedService(
+                intent: Intent, flags: Int, instanceName: String, executor: Executor, connection: ServiceConnection,
+            ): Boolean {
+                connection.onServiceConnected(ComponentName(context, ScriptRuntimeService::class.java), observer.binder)
+                return true
+            }
+            override fun unbindService(connection: ServiceConnection) = Unit
+        }
+        try {
+            val process = AndroidScriptProcess.bind(earlyContext, "early-callback-probe")
+            try {
+                assertThat(process.execute(ScriptRequest("21*2"), noCapabilities).value).isEqualTo(JsonPrimitive(42))
+            } finally { process.terminate() }
+        } finally { context.unbindService(observer.connection) }
+    }
+
+    @Test fun rejectedBindingFailsWithoutReturningLiveProcess() = runBlocking {
+        val rejectedContext = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+            override fun bindIsolatedService(
+                intent: Intent, flags: Int, instanceName: String, executor: Executor, connection: ServiceConnection,
+            ): Boolean = false
+        }
+        val failure = runCatching { AndroidScriptProcess.bind(rejectedContext, "rejected-probe") }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(ScriptFailure::class.java)
+        assertThat((failure as ScriptFailure).code).isEqualTo("PROCESS_DIED")
     }
 
     @Test fun relativeModuleImportResolvesWithinEntryDirectory() = runBlocking {

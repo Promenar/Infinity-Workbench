@@ -35,7 +35,7 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 Release 构建需要安全注入既有四个 `INFINITY_*` 签名变量，在获得签名构建授权的主控会话执行 `:app:assembleSideloadRelease :app:assemblePlayRelease`，随后执行 `python3 ../scripts/ci/check-distribution-manifests.py --build-type release` 与 `python3 ../scripts/ci/check-native-page-alignment.py --build-type release`。不把秘密写入命令、文档或报告。
 
-发行工作流 `.github/workflows/release.yml` 只在推送 `v*` 注释标签（或在 `main` 上手动触发候选验证）时运行，日常推送不会构建 APK。`scripts/ci/release-metadata.py` 从 `native-ui/app/build.gradle.kts` 读取 versionName 与 versionCode，要求标签等于 `v<versionName>`、指向 `main` 历史中的提交，并从 `CHANGELOG.md` 的 `## [<versionName>]` 小节生成发布说明；该小节缺失或为空时拒绝发布。工作流先跑设备回归与 minifiedTest 黑盒，再用 release 环境的 `NEXARA_*` 签名机密执行全门禁并构建两个渠道，整理侧载主资产 `dist/infinity-v<版本>.apk` 和 Play 资产 `dist/infinity-v<版本>-play.apk`，二者各有 `.sha256`；R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`，只作为保留 3 天的 Actions 制品。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书，通过后才以 draft 上传资产、逐个回读哈希，再公开 Release；版本名带 `-` 后缀时标为 prerelease。手动触发只做候选验证，不发布。`scripts/ci/android-release-upgrade-smoke.sh` 依赖已下线的 v0.1 公开基线，目前不在工作流中运行，可在本机用同签名旧包手动执行。发行不代表 Play 商店审核通过。
+Android CI 在 PR 与手动触发时运行 `scripts/ci/android-static-checks.sh`，检查内置模型目录、文本换行和工作流脚本契约；该入口也由发行工作流执行。发行工作流 `.github/workflows/release.yml` 只在推送 `v*` 注释标签（或在 `main` 上手动触发候选验证）时运行，日常推送不会构建 APK。`scripts/ci/release-metadata.py` 从 `native-ui/app/build.gradle.kts` 读取 versionName 与 versionCode，要求标签等于 `v<versionName>`、指向 `main` 历史中的提交，并从 `CHANGELOG.md` 的 `## [<versionName>]` 小节生成发布说明；该小节缺失或为空时拒绝发布。静态检查、设备回归与 minifiedTest 黑盒均通过后，工作流使用 release 环境的 `NEXARA_*` 签名机密执行全门禁并构建两个渠道，整理侧载主资产 `dist/infinity-v<版本>.apk` 和 Play 资产 `dist/infinity-v<版本>-play.apk`，二者各有 `.sha256`；R8 证据分别进入 `dist/r8/sideload/` 与 `dist/r8/play/`，只作为保留 3 天的 Actions 制品。冷安装冒烟覆盖每个渠道的 API 35/36，校验对应哈希、包名、版本与发行证书，通过后才以 draft 上传资产、逐个回读哈希，再公开 Release；版本名带 `-` 后缀时标为 prerelease。手动触发只做候选验证，不发布。`scripts/ci/android-release-upgrade-smoke.sh` 依赖已下线的 v0.1 公开基线，目前不在工作流中运行，可在本机用同签名旧包手动执行。发行不代表 Play 商店审核通过。
 
 发布步骤：完成版本提交并推送 `main` 后，在用户授权下执行 `git tag -a v<版本> -m "Infinity Workbench v<版本>"` 与 `git push origin v<版本>`。
 
@@ -107,7 +107,7 @@ OAuth App 不勾选 “Expire user access tokens”，令牌没有固定有效�
 | `libpython3.*.so`、`libpyext_*.so` 等 | python.org 官方 Android 预编译包 | 上游已 16 KB 对齐，无法重链，由下方检查兜底 |
 | AndroidX 等依赖 AAR 自带库 | Maven 依赖 | 由下方检查兜底 |
 
-`scripts/ci/check-native-page-alignment.py` 逐个读取两个渠道 APK 内 64 位 ELF 的程序头，任一 PT_LOAD 对齐小于 16 KB、未压缩存放的库 ZIP 偏移未按 16 KB 对齐或 APK 中没有 64 位原生库时失败；`libpystdlib.so`、`libpysite.so` 是借 `.so` 名随安装解压的 Python 归档而非 ELF，跳过。Android CI 与发行工作流在构建后执行该检查。升级 terminal-emulator 依赖时须同步替换 `termux.c`；若 AAR 内的库改为 16 KB 对齐，可删除本地源码与 CMake 目标。
+`scripts/ci/check-native-page-alignment.py` 逐个读取两个渠道 APK 内 64 位 ELF 的程序头，任一 PT_LOAD 对齐小于 16 KB、未压缩存放的库 ZIP 偏移未按 16 KB 对齐或 APK 中没有 64 位原生库时失败；`libpystdlib.so`、`libpysite.so` 是借 `.so` 名随安装解压的 Python 归档而非 ELF，跳过。发行工作流在构建后执行该检查；Android CI 运行检查器的静态契约测试。升级 terminal-emulator 依赖时须同步替换 `termux.c`；若 AAR 内的库改为 16 KB 对齐，可删除本地源码与 CMake 目标。
 
 调试包弹出兼容性对话框时，系统列出的“未知错误”不代表这些库有问题：系统对齐检查（`NativeLibraryHelper.checkApkAlignment`，Android 17 真机实测）把 APK 内当前 ABI 的每个库都加入列表，已对齐库的错误码为 0，界面没有对应文案便显示为“未知错误”，真正触发对话框的是标为“LOAD 区段未对齐”的库。`adb shell dumpsys package <包名>` 的 `pageSizeCompat` 为 0 表示未进入兼容模式；对话框窗口由系统进程持有，重装应用后需先关闭旧对话框再复测。
 

@@ -1,6 +1,5 @@
 name: Android CI
 
-# 日常门禁在本机运行；云端只在 PR 与手动触发时跑，发布由 release.yml 按版本标签触发。
 on:
   pull_request:
   workflow_dispatch:
@@ -13,219 +12,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: JVM、Lint、Android 编译与测试 APK
+  static-checks:
+    name: 静态检查与工作流契约
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-
+    timeout-minutes: 15
     steps:
       - name: 检出源码
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
-      - name: 配置 JDK 17
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: 配置 Python 3.14（预编译打包 Python 字节码）
+      - name: 配置 Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.14"
 
-      - name: 配置 Go 1.27.1（编译内置 Tailscale）
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: "1.27.1"
-          cache-dependency-path: native-ui/app/tailnet/go.sum
-
-      - name: 配置 Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
-        with:
-          packages: >-
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
-            cmake;3.22.1
-
-      - name: 配置 Gradle
-        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
-        with:
-          dependency-graph: disabled
-
-      - name: Validate bundled model catalog
-        run: >-
-          python3 scripts/model-catalog/update-model-catalog.py
-          --check
-          --input native-ui/app/src/main/assets/model-catalog/models-dev.normalized.json
-          --manifest native-ui/app/src/main/assets/model-catalog/manifest.json
-
-      - name: 文本换行静态门禁
-        run: |
-          python3 scripts/ci/tests/check-text-wrapping-test.py
-          python3 scripts/ci/check-text-wrapping.py
-          python3 scripts/ci/tests/check-distribution-manifests-test.py
-          python3 scripts/ci/tests/check-native-page-alignment-test.py
-          python3 scripts/ci/tests/release-workflow-reliability-test.py
-          bash scripts/ci/tests/android-device-core-e2e-contract-test.sh
-          bash scripts/ci/tests/android-minified-blackbox-contract-test.sh
-
-      - name: 执行当前可用质量门禁
-        working-directory: native-ui
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace --continue \
-            clean \
-            :app:validateSideloadDebugScreenshotTest \
-            :app:testSideloadDebugUnitTest \
-            :app:lintSideloadDebug \
-            :app:assembleSideloadDebug \
-            :app:assemblePlayDebug
-          python3 ../scripts/ci/check-distribution-manifests.py
-          python3 ../scripts/ci/check-native-page-alignment.py
-          ./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2e=true \
-            :app:assembleSideloadDeviceTest \
-            :app:assembleSideloadDeviceTestAndroidTest \
-            :mainactivity-e2e:assembleDeviceTest
-
-      - name: 上传 JVM 测试报告
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ci-jvm-reports-${{ github.run_attempt }}
-          path: |
-            native-ui/app/build/reports/tests/testSideloadDebugUnitTest/
-            native-ui/app/build/test-results/testSideloadDebugUnitTest/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: 上传 Lint 报告
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ci-lint-reports-${{ github.run_attempt }}
-          path: |
-            native-ui/app/build/reports/lint-results-sideloadDebug.html
-            native-ui/app/build/reports/lint-results-sideloadDebug.xml
-            native-ui/app/build/reports/lint-results-sideloadDebug.txt
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: 上传 Android 测试编译报告
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ci-android-test-reports-${{ github.run_attempt }}
-          path: |
-            native-ui/app/build/reports/androidTests/
-            native-ui/app/build/outputs/androidTest-results/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: 上传截图回归报告
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ci-screenshot-reports-${{ github.run_attempt }}
-          path: |
-            native-ui/app/build/reports/screenshotTest/preview/debug/sideload/
-            native-ui/app/build/outputs/screenshotTest-results/preview/debug/sideload/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  device-e2e:
-    name: 设备 E2E（API ${{ matrix.api-level }} / ${{ matrix.coverage-label }} / x86_64）
-    needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - api-level: 31
-            e2e-scope: minimum
-            coverage-label: 最低 SDK 核心可达性
-          - api-level: 35
-            e2e-scope: full
-            coverage-label: 完整业务回归
-          - api-level: 36
-            e2e-scope: full
-            coverage-label: 完整业务回归
-
-    steps:
-      - name: 检出源码
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-
-      - name: 配置 JDK 17
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: 配置 Python 3.14（预编译打包 Python 字节码）
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
-        with:
-          python-version: "3.14"
-
-      - name: 配置 Go 1.27.1（编译内置 Tailscale）
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version: "1.27.1"
-          cache-dependency-path: native-ui/app/tailnet/go.sum
-
-      - name: 配置 Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
-        with:
-          packages: >-
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
-            cmake;3.22.1
-
-      - name: 配置 Gradle
-        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
-        with:
-          dependency-graph: disabled
-
-      - name: 启用 KVM
-        shell: bash
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - name: 运行核心设备 E2E
-        uses: reactivecircus/android-emulator-runner@e89f39f1abbbd05b1113a29cf4db69e7540cae5a # v2.37.0
-        env:
-          INFINITY_DEVICE_E2E_SCOPE: ${{ matrix.e2e-scope }}
-          # 托管模拟器无法完成 Tailscale 公网控制面的交互登录。
-          INFINITY_E2E_TAILNET_CONTROL_PLANE: skip
-        with:
-          api-level: ${{ matrix.api-level }}
-          target: default
-          arch: x86_64
-          profile: pixel_7_pro
-          emulator-options: >-
-            -no-window
-            -gpu swiftshader_indirect
-            -no-snapshot
-            -noaudio
-            -no-boot-anim
-            -camera-back none
-          disable-animations: true
-          emulator-boot-timeout: 600
-          script: scripts/ci/android-device-core-e2e.sh
-
-      - name: 上传设备 E2E 证据
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: android-ci-device-e2e-api-${{ matrix.api-level }}-${{ github.run_attempt }}
-          path: artifacts/android-device-api-${{ matrix.api-level }}-x86_64/
-          if-no-files-found: warn
-          retention-days: 14
+      - name: 运行静态检查
+        run: bash scripts/ci/android-static-checks.sh
