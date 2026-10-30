@@ -29,6 +29,13 @@ class SessionSecretVaultTest {
         assertTrue(vault.environment("s", "TOKEN without dollar").isEmpty())
     }
 
+    @Test fun `参数展开写法同样注入被引用的槽位`() {
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "test-token".toByteArray())
+        listOf("printf '%d' \"\${#TOKEN}\"", "echo \${TOKEN:-none}", "echo \${TOKEN%-token}", "echo \${TOKEN/test/x}", "echo \${!TOKEN}")
+            .forEach { assertEquals(it, mapOf("TOKEN" to "test-token"), vault.environment("s", it)) }
+        assertTrue(vault.environment("s", "echo \${TOKEN_SUFFIX:-x} \${#PATH}").isEmpty())
+    }
+
     @Test fun `销毁阻止引用并同步既有卡片`() = runBlocking {
         vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "test-token".toByteArray())
         vault.show("s", "assistant", "call", "TOKEN", "查看令牌")

@@ -52,7 +52,7 @@ class SessionSecretVault {
         }
     }
 
-    /** 仅匹配完整的环境变量引用，常规系统环境变量保持由执行器处理。 */
+    /** 仅匹配完整的环境变量名（含参数展开写法），常规系统环境变量保持由执行器处理。 */
     fun environment(sessionId: String, source: String): Map<String, String> = synchronized(lock) {
         val entries = sessions[sessionId]?.entries ?: return@synchronized emptyMap()
         val result = linkedMapOf<String, String>()
@@ -121,6 +121,7 @@ class SessionSecretVault {
     }
 
     private companion object {
-        val VARIABLE_REFERENCE = Regex("\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\$([A-Za-z_][A-Za-z0-9_]*)")
+        // 花括号形式只匹配到变量名，覆盖 ${#NAME}、${NAME:-x}、${NAME%x} 等参数展开写法。
+        val VARIABLE_REFERENCE = Regex("\\$\\{[#!]?([A-Za-z_][A-Za-z0-9_]*)|\\$([A-Za-z_][A-Za-z0-9_]*)")
     }
 }
