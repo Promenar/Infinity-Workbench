@@ -29,6 +29,8 @@ class SshToolsTest {
             "ssh_exec" to """{"host":"termux","command":"whoami"}""",
             "sftp_list" to """{"host":"termux","path":"/"}""",
             "sftp_read" to """{"host":"termux","path":"/note.txt"}""",
+            "sftp_upload" to """{"host":"termux","local_path":"/a.bin","remote_path":"/a.bin"}""",
+            "sftp_download" to """{"host":"termux","local_path":"/a.bin","remote_path":"/a.bin"}""",
             "sftp_write" to """{"host":"termux","path":"/note.txt","content":"正文"}""",
             "ssh_session_open" to """{"host":"termux"}""",
             "ssh_session_send" to """{"session_id":"pty","input":"whoami\n"}""",

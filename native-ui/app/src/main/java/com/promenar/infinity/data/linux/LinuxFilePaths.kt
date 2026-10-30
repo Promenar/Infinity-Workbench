@@ -8,7 +8,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 /** 普通绝对链接使用容器根；只有 proot 的隐藏链接允许引用当前 rootfs 内的宿主绝对路径。 */
-internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = LinuxFileIo(), private val rejectGuestLinks: Boolean = false) {
+internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = LinuxFileIo(), private val rejectGuestLinks: Boolean = false, private val workspaceNames: Boolean = false) {
     val root: Path = rootfs.parentFile!!.canonicalFile.toPath().resolve(rootfs.name)
     private val hostRoots = listOf(root, rootfs.absoluteFile.toPath().normalize()).distinct()
 
@@ -25,7 +25,7 @@ internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = L
 
     fun resolve(raw: String, followFinal: Boolean = true): Path {
         if (access.isLink(root)) outside()
-        var pending = normalize(raw).split('/').filter(String::isNotEmpty)
+        var pending = normalize(raw, workspaceNames).split('/').filter(String::isNotEmpty)
         var current = root
         var links = 0
         while (pending.isNotEmpty()) {
@@ -72,11 +72,13 @@ internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = L
     private fun requireInside(path: Path) {
         if (!path.startsWith(root)) outside()
         val relative = root.relativize(path)
-        if (relative.firstOrNull()?.toString() in setOf("workspace", "mnt")) outside()
+        if (!workspaceNames && relative.firstOrNull()?.toString() in setOf("workspace", "mnt")) outside()
     }
 
     companion object {
-        fun normalize(raw: String): String {
+        fun normalize(raw: String): String = normalize(raw, false)
+
+        fun normalize(raw: String, workspaceNames: Boolean): String {
             if (!raw.startsWith('/') || '\u0000' in raw) outside()
             val names = mutableListOf<String>()
             raw.split('/').forEach { part ->
@@ -86,7 +88,7 @@ internal class LinuxFilePaths(rootfs: File, internal val access: LinuxFileIo = L
                     else -> names += part
                 }
             }
-            if (names.firstOrNull() in setOf("workspace", "mnt")) outside()
+            if (!workspaceNames && names.firstOrNull() in setOf("workspace", "mnt")) outside()
             return names.joinToString("/", prefix = "/")
         }
 

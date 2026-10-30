@@ -11,6 +11,8 @@ import android.content.SharedPreferences
  * 两个集合都可能混用设置键（如 `file_read`）与运行时 id（如 `read_file`），读取时统一归一为运行时 id。
  */
 object BuiltinToolPreferences {
+    val SFTP_TRANSFER_TOOLS: Set<String> = setOf("sftp_upload", "sftp_download")
+
     const val ENABLED_KEY = "enabled_skills"
     const val KNOWN_KEY = "known_builtin_skills"
 

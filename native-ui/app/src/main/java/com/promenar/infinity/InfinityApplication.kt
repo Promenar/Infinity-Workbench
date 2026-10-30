@@ -1640,7 +1640,18 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.infinity.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.infinity.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("infinity_settings", MODE_PRIVATE))
             })
-            com.promenar.infinity.ui.chat.manager.skills.sshTools(sshRuntime, backgroundJobs).forEach(::register)
+            com.promenar.infinity.ui.chat.manager.skills.sshTools(sshRuntime, backgroundJobs,
+                com.promenar.infinity.ui.chat.manager.skills.SftpTransferAccess(
+                    workspaceFiles = com.promenar.infinity.data.workspace.SftpWorkspaceFiles(
+                        sessionRepository, workspaceRepository, externalFolderManager,
+                        sessionWorkspaceResolver::resolve, skillCatalog.userRoot,
+                        sessionWorkspaceResolver::resolveWorkspace, sessionWorkspaceResolver::backend,
+                        indexEvents = pendingDocumentIndexCoordinator,
+                    ),
+                    linux = linux.files,
+                    linuxAvailable = { BuildConfig.DISTRIBUTION == "sideload" && com.promenar.infinity.domain.tool.LinuxExecRouting.available },
+                ),
+            ).forEach(::register)
             com.promenar.infinity.ui.chat.manager.skills.sshHostManagementTools(
                 store = sshHostStore,
                 runtime = object : com.promenar.infinity.ui.chat.manager.skills.SshHostManagementRuntime {

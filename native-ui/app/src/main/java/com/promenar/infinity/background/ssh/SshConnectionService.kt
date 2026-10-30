@@ -29,6 +29,7 @@ import kotlinx.coroutines.Job
 class SshConnectionService : Service() {
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var stopping = false
+    @Volatile private var serviceTimedOut = false
     private var observedEpoch = -1L
     private var latestStartId = 0
     private var observer: Job? = null
@@ -45,6 +46,7 @@ class SshConnectionService : Service() {
         if (intent?.hasExtra(EXTRA_EPOCH) == true) {
             observedEpoch = intent.getLongExtra(EXTRA_EPOCH, -1L)
             stopping = false
+            serviceTimedOut = false
         }
         val runtime = (application as InfinityApplication).sshRuntime
         val type = if (BuildConfig.DISTRIBUTION == "sideload") ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -92,20 +94,21 @@ class SshConnectionService : Service() {
             .build()
     }
 
-    private fun release(all: Boolean = false) {
+    private fun release(all: Boolean = false, timeLimit: Boolean = false) {
         if (stopping) return
         stopping = true
         val expectedEpoch = observedEpoch
         val expectedStartId = latestStartId
         cleanupScope.launch {
             val runtime = (application as InfinityApplication).sshRuntime
-            try { if (all) runtime.disconnectAll() else runtime.closePersistent(expectedEpoch) } finally { stopSelf(expectedStartId) }
+            try { if (all) runtime.disconnectAll() else runtime.closePersistent(expectedEpoch, timeLimit) } finally { stopSelf(expectedStartId) }
         }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) { release(); super.onTaskRemoved(rootIntent) }
     override fun onTimeout(startId: Int, fgsType: Int) {
-        release()
+        serviceTimedOut = true
+        release(timeLimit = true)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         if (BuildConfig.DISTRIBUTION == "play") runCatching {
@@ -123,7 +126,7 @@ class SshConnectionService : Service() {
         val expectedEpoch = observedEpoch
         observer?.cancel()
         cleanupScope.launch {
-            try { runtime.closePersistent(expectedEpoch) } finally { cleanupScope.cancel() }
+            try { runtime.closePersistent(expectedEpoch, timeLimit = serviceTimedOut) } finally { cleanupScope.cancel() }
         }
         super.onDestroy()
     }

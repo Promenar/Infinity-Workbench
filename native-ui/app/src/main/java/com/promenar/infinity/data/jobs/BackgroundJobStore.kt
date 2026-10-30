@@ -41,10 +41,11 @@ data class BackgroundJobRecord(
     val commandResult: kotlinx.serialization.json.JsonObject? = null,
     /** SSH 任务的主机 ID；本地任务与旧记录为 null。 */
     val remoteHost: String? = null,
+    val transfer: SftpTransferRecord? = null,
 ) {
     /** 未知执行器按 SHELL 展示，持久化原值保留，不据此启动新命令。 */
     val runnerKind: BackgroundJobRunner get() = BackgroundJobRunner.entries.firstOrNull { it.name == runner } ?: BackgroundJobRunner.SHELL
-    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id",remoteHost)
+    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id",remoteHost,transfer?.value())
     val running: Boolean get() = state == "RUNNING"
 }
 
@@ -84,4 +85,27 @@ class BackgroundJobStore(private val root: File, private val now: () -> Long = S
     suspend fun all():List<BackgroundJobRecord> = locked { load().toList() }
     suspend fun put(record:BackgroundJobRecord) = locked { save(load().filterNot { it.id==record.id }+record) }
     suspend fun deleteSession(sessionId:String) = locked { save(load().filterNot{it.sessionId==sessionId}) }
+}
+
+/** 独立持久化 DTO，领域模型保持既定形状；旧 JSON 缺少 transfer 时为 null。 */
+@Serializable
+data class SftpTransferRecord(
+    val direction: String,
+    val localScope: String,
+    val localPath: String,
+    val remotePath: String,
+    val totalBytes: Long? = null,
+    val transferredBytes: Long = 0,
+    val bytesPerSecond: Long? = null,
+    val sha256: String? = null,
+    val failure: String? = null,
+    val remoteTemporaryPath: String? = null,
+    val remoteTemporaryIdentity: String? = null,
+) {
+    fun value() = SftpTransfer(SftpTransferDirection.valueOf(direction), localScope, localPath, remotePath,
+        totalBytes, transferredBytes, bytesPerSecond, sha256, failure?.let(SftpTransferFailure::valueOf))
+    companion object {
+        fun from(value: SftpTransfer) = SftpTransferRecord(value.direction.name, value.localScope, value.localPath,
+            value.remotePath, value.totalBytes, value.transferredBytes, value.bytesPerSecond, value.sha256, value.failure?.name)
+    }
 }

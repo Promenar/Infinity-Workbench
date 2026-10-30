@@ -8,7 +8,7 @@ object CommandToolClassification {
         "job_input" -> CommandToolBackend.LINUX
         "python_exec" -> CommandToolBackend.BUILTIN_PYTHON
         "termux_exec" -> CommandToolBackend.TERMUX
-        "ssh_exec", "ssh_session_open", "ssh_session_send" -> CommandToolBackend.SSH
+        "ssh_exec", "ssh_session_open", "ssh_session_send", "sftp_upload", "sftp_download" -> CommandToolBackend.SSH
         else -> null
     }
 }

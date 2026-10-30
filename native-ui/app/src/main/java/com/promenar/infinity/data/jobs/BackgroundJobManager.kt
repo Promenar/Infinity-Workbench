@@ -129,7 +129,8 @@ class BackgroundJobManager(
         for (record in store.all()) {
             if (!record.running || record.runnerKind == BackgroundJobRunner.TERMUX) continue
             if (record.runnerKind == BackgroundJobRunner.SSH) {
-                store.put(record.copy(state = "INTERRUPTED", endedAtMillis = now(), guidance = SSH_DISCONNECTED_GUIDANCE))
+                store.put(record.copy(state = "INTERRUPTED", endedAtMillis = now(), guidance = if (record.transfer == null) SSH_DISCONNECTED_GUIDANCE else "应用重启，传输已中断；请检查临时文件清理状态后重试。",
+                    transfer = record.transfer?.copy(bytesPerSecond = null, failure = SftpTransferFailure.NETWORK.name)))
                 continue
             }
             val cleaned=runner.interruptBackground(File(record.runDirectory,"pgid"))
@@ -158,7 +159,7 @@ class BackgroundJobManager(
         }
         return if(executionGate==null) checked() else executionGate.withNewSessionAdmission(sessionId) {checked()}
     }
-    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null):BackgroundJobRecord = gate.withLock {
+    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null, transfer: SftpTransferRecord? = null):BackgroundJobRecord = gate.withLock {
         com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root, subsystem = com.promenar.infinity.startup.StartupSubsystem.BACKGROUND_JOBS)
         executionGate?.requireSessionWritable(sessionId)
         require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
@@ -167,7 +168,7 @@ class BackgroundJobManager(
         if(running.count{it.sessionId==sessionId} >= 3) throw JobAccessException("JOB_SESSION_LIMIT","本会话已有 3 个运行中任务，请先用 job_wait 等待或用 job_stop 停止。")
         if(running.size >= 6) throw JobAccessException("JOB_GLOBAL_LIMIT","全局已有 6 个运行中任务，请先结束部分后台任务。")
         val id="job-${UUID.randomUUID()}"
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost).also {
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost,transfer=transfer).also {
             store.put(it); active[id]=Active().also { handle -> handle.sshControl = sshControl }; publish()
         }
     }
@@ -351,14 +352,32 @@ class BackgroundJobManager(
         }
     }
 
-    /** 前台复用 Agent 连接；让出后通道所在连接归任务持有，不受生成结束影响。 */
+    /** 临时路径与任务同一份持久记录保存，断连或重启后按主机身份回收。 */
+    internal suspend fun recordSftpTemporary(sessionId: String, jobId: String, path: String?, identity: String) {
+        owned(sessionId, jobId)
+        store.updateIfPresent(jobId) { current -> current.copy(transfer = current.transfer?.copy(
+            remoteTemporaryPath = path, remoteTemporaryIdentity = if (path == null) null else identity)) }
+    }
+
+    private suspend fun recoverSftpCleanup(runtime: SshRuntime, alias: String) {
+        for (record in store.all().filter { !it.running && it.remoteHost == alias && it.transfer?.remoteTemporaryPath != null }) {
+            val transfer = requireNotNull(record.transfer)
+            val cleaned = try { runtime.recoverTransferTemporary(alias, transfer.remotePath, requireNotNull(transfer.remoteTemporaryPath),
+                transfer.remoteTemporaryIdentity ?: continue) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
+            if (cleaned) store.updateIfPresent(record.id) { it.copy(transfer = it.transfer?.copy(remoteTemporaryPath = null, remoteTemporaryIdentity = null)) }
+        }
+    }
+
+    /** 前台命令复用 Agent 连接；传输及让出后的命令归任务持有。 */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun runSsh(
         runtime: SshRuntime, snapshot: SshHost, sessionId: String, root: String, source: String,
         timeoutSeconds: Int, maxOutputChars: Int, yieldSeconds: Int, background: Boolean,
         minutes: Int, action: BackgroundJobExitAction, live: ToolLiveOutputSink,
+        transfer: SftpTransfer? = null,
+        executeTransfer: (suspend (String, SshExecControl, suspend (Long, Long, Long?) -> Unit) -> com.promenar.infinity.domain.tool.CommandToolResult)? = null,
     ): SshJobRunResult = withContext(Dispatchers.IO) {
-        require(timeoutSeconds in 1..600 && yieldSeconds in 0..timeoutSeconds && minutes in 1..1440)
+        require(timeoutSeconds in 1..600 && minutes in 1..1440 && yieldSeconds in 0..(if (transfer == null) timeoutSeconds else minutes * 60))
         SshPolicy.outputLimit(maxOutputChars)
         if (source.isBlank() || source.length > 65_536 || '\u0000' in source) throw SshFailure("INVALID_COMMAND")
         val result = CompletableDeferred<com.promenar.infinity.domain.tool.CommandToolResult>()
@@ -370,13 +389,14 @@ class BackgroundJobManager(
         try {
             withContext(NonCancellable) {
                 initialize()
-                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias) }
+                recoverSftpCleanup(runtime, snapshot.alias)
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias, transfer?.let(SftpTransferRecord::from)) }
                 ownedRecord = record
                 val handle = active.getValue(record.id)
                 ownedHandle = handle
                 handle.sshControl = control
                 control.cancelPending = { if (!control.started.isCompleted) handle.worker?.cancel() }
-                if (background) runtime.registerJob(record.id, sessionId, snapshot.alias, control::requestStop)
+                if (background || transfer != null) runtime.registerJob(record.id, sessionId, snapshot.alias, control::requestStop, control::requestTimeLimit)
                 val release = live.retain()
                 val sink = liveOutput.open("job:${record.id}")
                 handle.sink = sink
@@ -393,15 +413,29 @@ class BackgroundJobManager(
                                 override fun onStop(stop: () -> Unit) { sink.onStop(stop); live.onStop(stop) }
                             }
                             runtime.withHostSnapshot(snapshot) {
-                                runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
-                                    timeoutSeconds, maxOutputChars, tee, control)
-                            }.commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
+                                if (executeTransfer != null) executeTransfer("job:${record.id}", control) { total, done, speed ->
+                                    store.updateIfPresent(record.id) { current -> current.copy(transfer = current.transfer?.copy(
+                                        totalBytes = total, transferredBytes = done, bytesPerSecond = speed)) }
+                                    publish()
+                                    val text = "\r已传 %.1f MiB / %.1f MiB · %.1f MiB/s".format(java.util.Locale.ROOT,
+                                        done / 1048576.0, total / 1048576.0, (speed ?: 0) / 1048576.0)
+                                    tee.emit(ToolOutputStream.STDOUT, text)
+                                } else runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
+                                    timeoutSeconds, maxOutputChars, tee, control).commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
+                            }.also { output ->
+                                if (transfer != null) tee.emit(if (output.errorCode == null) ToolOutputStream.STDOUT else ToolOutputStream.STDERR,
+                                    "\n" + (output.errorCode?.let { "$it: ${output.guidance}" } ?: "传输完成，SHA-256 校验通过。") + "\n")
+                            }
                         }
                         withContext(NonCancellable) {
-                            val settled = if (control.stopRequested.get()) value.copy(
+                            val settled = if (transfer == null && control.stopRequested.get()) value.copy(
                                 errorCode = "SSH_STOPPED", guidance = SSH_DISCONNECTED_GUIDANCE, exitCode = null, timedOut = false,
                             ) else value
-                            val terminal = record.copy(
+                            val current = store.all().first { it.id == record.id }
+                            val terminal = current.copy(
+                                transfer = current.transfer?.copy(bytesPerSecond = null,
+                                    sha256 = (settled.backendFields["sha256"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                                    failure = settled.errorCode?.let { sftpFailure(it).name }),
                                 state = when { settled.errorCode == "SSH_STOPPED" -> "STOPPED"; settled.timedOut -> "TIMED_OUT"; settled.errorCode != null -> "FAILED"; else -> "EXITED" },
                                 exitCode = settled.exitCode, endedAtMillis = now(), commandResult = settled.toJson(),
                                 guidance = settled.guidance,
@@ -414,12 +448,24 @@ class BackgroundJobManager(
                         }
                     } catch (failure: Throwable) {
                         withContext(NonCancellable) {
+                            val serviceLimited = transfer != null && control.stopCause.get() == "SERVICE_TIME_LIMIT"
                             val stoppedResult = if (control.stopRequested.get()) com.promenar.infinity.domain.tool.CommandToolResult(
-                                errorCode = "SSH_STOPPED", guidance = SSH_DISCONNECTED_GUIDANCE,
+                                errorCode = if (serviceLimited) "SSH_SERVICE_TIME_LIMIT" else "SSH_STOPPED",
+                                guidance = if (transfer != null) {
+                                    if (serviceLimited) "前台服务运行时限已到，传输已停止；请检查任务状态后手动重试。"
+                                    else "传输已停止；请检查任务状态后决定是否重试。"
+                                } else SSH_DISCONNECTED_GUIDANCE,
+                                timedOut = serviceLimited,
                             ) else null
-                            val terminal = record.copy(
-                                state = if (control.stopRequested.get()) "STOPPED" else if (failure is CancellationException) "INTERRUPTED" else "FAILED",
-                                endedAtMillis = now(), guidance = if (control.stopRequested.get() || failure is CancellationException) SSH_DISCONNECTED_GUIDANCE
+                            val current = store.all().first { it.id == record.id }
+                            val terminal = current.copy(
+                                transfer = current.transfer?.copy(bytesPerSecond = null, failure = when {
+                                    control.stopRequested.get() -> sftpFailure(control.stopCause.get() ?: "STOPPED").name
+                                    failure is CancellationException -> SftpTransferFailure.NETWORK.name
+                                    else -> sftpFailure((failure as? SshFailure)?.code ?: "SSH_OPERATION_FAILED").name
+                                }),
+                                state = if (serviceLimited) "TIMED_OUT" else if (control.stopRequested.get()) "STOPPED" else if (failure is CancellationException) "INTERRUPTED" else "FAILED",
+                                endedAtMillis = now(), guidance = stoppedResult?.guidance ?: if (failure is CancellationException) SSH_DISCONNECTED_GUIDANCE
                                     else "SSH 后台命令无法执行，请检查主机配置和网络；不要自动重试。",
                                 commandResult = stoppedResult?.toJson(),
                             )
