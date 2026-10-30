@@ -23,10 +23,17 @@ import kotlin.math.max
 internal class SshTerminalView(context: Context) : View(context) {
     var onInput: (String, Boolean, Boolean) -> Unit = { _, _, _ -> }
     var onGridChanged: (TerminalGrid) -> Unit = {}
+    /** 向上翻看历史（false）或回到最新输出（true）时回调，界面据此显示“最新输出”浮动按钮。 */
+    var onAtBottomChanged: (Boolean) -> Unit = {}
     private var buffer: RemoteTerminalBuffer? = null
     private var updateCallback: (() -> Unit)? = null
     private var activeConnection: BaseInputConnection? = null
     private var topRow = 0
+        set(value) {
+            val wasBottom = field == 0
+            field = value
+            if (wasBottom != (value == 0)) onAtBottomChanged(value == 0)
+        }
     private var scrollRemainder = 0f
     private val renderer = TerminalRenderer(
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, resources.displayMetrics).toInt(),
@@ -80,6 +87,7 @@ internal class SshTerminalView(context: Context) : View(context) {
         buffer = null
         onInput = { _, _, _ -> }
         onGridChanged = {}
+        onAtBottomChanged = {}
         activeConnection?.editable?.clear()
         activeConnection?.closeConnection()
         activeConnection = null
@@ -98,6 +106,11 @@ internal class SshTerminalView(context: Context) : View(context) {
         requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
             .showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    fun hideKeyboard() {
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(windowToken, 0)
     }
 
     fun scrollToLatest() {

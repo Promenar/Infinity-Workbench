@@ -2,7 +2,7 @@ package com.promenar.infinity.ui.chat
 
 /**
  * 会话的二级内容层级，与单一模态层队列相互独立：宽窗口下检视器展开时仍可继续对话，审批到来也不会把它收起。
- * - 资源管理器、Git 变更、Agent 浏览器（[isPage]）：窄窗口由 [com.promenar.infinity.ui.common.InfinityAdaptivePaneHost] 整页承载，宽窗口在检视器中；
+ * - 资源管理器、Git 变更、Agent 浏览器、远程连接（[isPage]）：窄窗口由 [com.promenar.infinity.ui.common.InfinityAdaptivePaneHost] 整页承载，宽窗口在检视器中；
  * - 运行、画布：只作为宽窗口检视器的页签；窄窗口仍用运行详情面板与画布列表，不进入层级。
  * 宽窗口下层级的根即检视器当前页签，层级为空表示检视器收起。
  */
@@ -12,6 +12,7 @@ enum class ChatPage(val token: String, val isPage: Boolean) {
     Git("git", isPage = true),
     Canvas("canvas", isPage = false),
     Browser("browser", isPage = true),
+    Remote("remote", isPage = true),
 }
 
 /** 从顶栏、检视器页签等会话入口打开：替换整个层级，以该页为根。 */
@@ -30,7 +31,7 @@ internal fun restoreChatPages(token: String): List<ChatPage> =
     token.split(',').mapNotNull { part -> ChatPage.entries.firstOrNull { it.token == part } }.distinct()
 
 /**
- * 整页承载的层级：资源管理器、Git、浏览器，窄窗口另加产物；任务只是检视器的页签。
+ * 整页承载的层级：资源管理器、Git、浏览器、远程，窄窗口另加产物；任务只是检视器的页签。
  * 宽窗口的产物由检视器自己的页签承载，不进整页层级。
  */
 internal fun chatPageStack(pages: List<ChatPage>, wideWindow: Boolean): List<ChatPage> =
@@ -54,7 +55,7 @@ internal val ChatPage.inspectorGroup: InspectorContentGroup
     get() = when (this) {
         ChatPage.Run -> InspectorContentGroup.Run
         ChatPage.Canvas -> InspectorContentGroup.Canvas
-        ChatPage.Explorer, ChatPage.Git, ChatPage.Browser -> InspectorContentGroup.Pages
+        ChatPage.Explorer, ChatPage.Git, ChatPage.Browser, ChatPage.Remote -> InspectorContentGroup.Pages
     }
 
 /** 页签切换方向：目标在底栏中更靠后时向前，新内容自右侧进入。 */

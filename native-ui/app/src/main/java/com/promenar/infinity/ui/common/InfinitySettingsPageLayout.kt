@@ -1,6 +1,7 @@
 package com.promenar.infinity.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +27,12 @@ import com.promenar.infinity.ui.theme.InfinitySpacing
 
 /** 宽屏设置右列的根层页面为 true：页面仍有标题，但不画返回按钮，离开它靠左列或主导航。 */
 val LocalInfinitySettingsPaneRoot = compositionLocalOf { false }
+
+/**
+ * 设置页嵌入另一页面（例如会话“远程”面板的分段）时给出外层留白：骨架不画顶栏、不贴系统栏，
+ * 只把这里的上下留白加在内容边距上。只作用于最外层骨架，页内再打开的设置页照常显示。
+ */
+val LocalInfinitySettingsEmbedded = compositionLocalOf<PaddingValues?> { null }
 
 /**
  * 设置层级页共用骨架。
@@ -47,6 +55,22 @@ fun InfinitySettingsPageLayout(
     search: InfinityPageSearch? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
+    val embedded = LocalInfinitySettingsEmbedded.current
+    if (embedded != null) {
+        Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            CompositionLocalProvider(LocalInfinitySettingsEmbedded provides null) {
+                content(
+                    PaddingValues(
+                        start = horizontalContentPadding,
+                        top = embedded.calculateTopPadding(),
+                        end = horizontalContentPadding,
+                        bottom = embedded.calculateBottomPadding() + InfinitySpacing.XLarge,
+                    ),
+                )
+            }
+        }
+        return
+    }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,

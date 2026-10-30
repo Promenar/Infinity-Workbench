@@ -67,25 +67,12 @@
     <string name="ssh_forward_running">Forwarding active on 127.0.0.1:%1$d</string>
     <string name="ssh_forward_start">Start forwarding</string>
     <string name="ssh_forward_stop">Stop forwarding</string>
-    <string name="ssh_terminal_title">Terminal: %1$s</string>
     <string name="ssh_terminal_connecting">Connecting…</string>
-    <string name="ssh_terminal_closed">Session closed</string>
-    <string name="ssh_terminal_error">Connection error: %1$s</string>
     <string name="ssh_terminal_truncated">Some output was dropped by the session limit. Reconnect if the screen is incomplete.</string>
     <string name="ssh_terminal_accessibility">Interactive SSH terminal. Tap to type; swipe vertically to review scrollback.</string>
-    <string name="ssh_terminal_keyboard">Show keyboard</string>
     <string name="ssh_terminal_bottom">Latest output</string>
     <string name="ssh_terminal_disconnect">Disconnect</string>
     <string name="ssh_terminal_reconnect">Reconnect</string>
-    <string name="ssh_terminal_controls">Terminal controls</string>
-    <string name="ssh_terminal_ctrl">Ctrl</string>
-    <string name="ssh_terminal_esc">Esc</string>
-    <string name="ssh_terminal_tab">Tab</string>
-    <string name="ssh_terminal_enter">Enter</string>
-    <string name="ssh_terminal_up">Up</string>
-    <string name="ssh_terminal_down">Down</string>
-    <string name="ssh_terminal_left">Left</string>
-    <string name="ssh_terminal_right">Right</string>
     <!-- 主机编辑与操作的错误文案；代码映射见 SshErrorMessages。 -->
     <string name="ssh_paste_key">Paste private key from clipboard</string>
     <string name="ssh_key_pasted">Private key loaded from the clipboard, and the clipboard was cleared. Save to store it securely on this device.</string>

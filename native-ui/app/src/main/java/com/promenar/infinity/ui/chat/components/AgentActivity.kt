@@ -379,6 +379,7 @@ private fun jobRunnerName(job: BackgroundJob): String = stringResource(
         BackgroundJobRunner.LINUX -> R.string.linux_runner_name
         BackgroundJobRunner.PYTHON -> R.string.agent_jobs_runner_python
         BackgroundJobRunner.TERMUX -> R.string.agent_jobs_runner_termux
+        BackgroundJobRunner.SSH -> R.string.ssh_remote_runner
     },
 )
 

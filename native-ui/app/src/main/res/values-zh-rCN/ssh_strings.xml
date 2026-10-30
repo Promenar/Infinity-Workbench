@@ -67,25 +67,12 @@
     <string name="ssh_forward_running">正在 127.0.0.1:%1$d 转发</string>
     <string name="ssh_forward_start">启动转发</string>
     <string name="ssh_forward_stop">停止转发</string>
-    <string name="ssh_terminal_title">终端：%1$s</string>
     <string name="ssh_terminal_connecting">正在连接…</string>
-    <string name="ssh_terminal_closed">会话已关闭</string>
-    <string name="ssh_terminal_error">连接错误：%1$s</string>
     <string name="ssh_terminal_truncated">会话达到输出上限，部分内容已丢弃。画面不完整时请重新连接。</string>
     <string name="ssh_terminal_accessibility">交互式 SSH 终端。轻点输入，垂直滑动查看历史输出。</string>
-    <string name="ssh_terminal_keyboard">显示键盘</string>
     <string name="ssh_terminal_bottom">最新输出</string>
     <string name="ssh_terminal_disconnect">断开连接</string>
     <string name="ssh_terminal_reconnect">重新连接</string>
-    <string name="ssh_terminal_controls">终端控制键</string>
-    <string name="ssh_terminal_ctrl">Ctrl</string>
-    <string name="ssh_terminal_esc">Esc</string>
-    <string name="ssh_terminal_tab">Tab</string>
-    <string name="ssh_terminal_enter">回车</string>
-    <string name="ssh_terminal_up">上</string>
-    <string name="ssh_terminal_down">下</string>
-    <string name="ssh_terminal_left">左</string>
-    <string name="ssh_terminal_right">右</string>
     <!-- 主机编辑与操作的错误文案；代码映射见 SshErrorMessages。 -->
     <string name="ssh_paste_key">从剪贴板粘贴私钥</string>
     <string name="ssh_key_pasted">私钥已从剪贴板载入内存，剪贴板已清空。保存后将加密存储在当前设备。</string>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_panel_title">Remote</string>
+    <string name="remote_panel_dot_agent">Agent is using SSH</string>
+    <string name="remote_panel_dot_attention">Tailscale needs attention</string>
+    <string name="remote_segment_ssh">SSH</string>
+    <string name="remote_segment_git">Git credentials</string>
+    <string name="remote_segment_tailscale">Tailscale</string>
+    <string name="remote_segment_network">Network</string>
+    <string name="remote_linux_git_hint">This session runs in Linux. Alpine\'s native git does not use these credentials; for authenticated push and pull, switch to built-in mode or sign in with gh inside Linux.</string>
+    <string name="remote_linux_network_hint">Commands in the Linux environment can reach the local network directly and are not limited by this allowlist.</string>
+    <string name="remote_more_settings">More settings</string>
+    <string name="remote_link_linux">Linux environment</string>
+    <string name="remote_link_termux">Termux</string>
+    <string name="remote_link_background">Background &amp; schedules</string>
+    <string name="remote_agent_section">Agent is using</string>
+    <string name="remote_agent_footer">Read-only: you can watch output and stop commands, but not type into the agent\'s sessions.</string>
+    <string name="remote_agent_view_in_terminal">View in terminal</string>
+    <string name="remote_agent_session">Interactive session</string>
+    <string name="remote_agent_job">Background command</string>
+    <string name="remote_conn_section">Active connections</string>
+    <string name="remote_conn_footer">Terminals stay connected until you disconnect, swipe the app away from recents, or exit the app.</string>
+    <string name="remote_conn_since">Since %1$s</string>
+    <string name="remote_conn_disconnect">Disconnect %1$s</string>
+    <string name="remote_conn_kind_terminal">Terminal</string>
+    <string name="remote_conn_kind_forward">Port forward</string>
+    <string name="remote_conn_kind_agent">Agent</string>
+    <string name="remote_conn_kind_job">Background command</string>
+    <string name="ssh_term_status_connected">Connected · %1$s</string>
+    <string name="ssh_term_status_closed">Disconnected</string>
+    <string name="ssh_term_tab_mine">My terminal</string>
+    <string name="ssh_term_tab_agent">Agent · read-only</string>
+    <string name="ssh_term_tab_agent_n">Agent %1$d · read-only</string>
+    <string name="ssh_term_tab_session">Session · read-only</string>
+    <string name="ssh_term_tab_session_n">Session %1$d · read-only</string>
+    <string name="ssh_term_closed_banner">Connection closed</string>
+    <string name="ssh_term_running">Running: %1$s</string>
+    <string name="ssh_term_readonly">Read-only: the agent\'s interactive session, input is disabled.</string>
+    <string name="ssh_term_stop">Stop</string>
+</resources>

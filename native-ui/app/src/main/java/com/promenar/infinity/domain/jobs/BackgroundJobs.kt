@@ -2,7 +2,7 @@ package com.promenar.infinity.domain.jobs
 
 import kotlinx.coroutines.flow.Flow
 
-enum class BackgroundJobRunner { SHELL, PYTHON, LINUX, TERMUX }
+enum class BackgroundJobRunner { SHELL, PYTHON, LINUX, TERMUX, SSH }
 
 enum class BackgroundJobState {
     RUNNING,

@@ -1,0 +1,12 @@
+<resources>
+    <string name="ssh_remote_runner">SSH</string>
+    <string name="ssh_remote_connected_title">SSH 已连接 %1$d 台</string>
+    <string name="ssh_remote_connection_row">%1$s · %2$s</string>
+    <string name="ssh_remote_kind_terminal">终端</string>
+    <string name="ssh_remote_kind_forward">转发</string>
+    <string name="ssh_remote_kind_job">后台命令</string>
+    <string name="ssh_remote_open">打开远程</string>
+    <string name="ssh_remote_disconnect_all">全部断开</string>
+    <string name="ssh_remote_timeout_title">SSH 已断开</string>
+    <string name="ssh_remote_timeout_body">已达到系统后台时限，回到应用后可重新连接</string>
+</resources>

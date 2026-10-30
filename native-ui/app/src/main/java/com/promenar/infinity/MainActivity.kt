@@ -146,6 +146,7 @@ open class MainActivity : ComponentActivity() {
         }
         stageShareIntent(intent, ShareDelivery.of(savedInstanceState != null, intent?.flags ?: 0))
         routeOpenGenerationIntent(intent)
+        routeOpenSshRemoteIntent(intent)
         val app = application as InfinityApplication
         setContent {
             val themePreferences by app.themePreferenceStore.state.collectAsStateWithLifecycle()
@@ -241,6 +242,13 @@ open class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        // SSH 连接通知的“打开远程”：启动就绪后打开 SSH 设置页（活动连接与终端入口）。
+                        val sshRemoteRequested by openSshRemoteRequest.collectAsStateWithLifecycle()
+                        LaunchedEffect(sshRemoteRequested, startupState) {
+                            if (!sshRemoteRequested || startupState != BackupStartupState.Ready) return@LaunchedEffect
+                            openSshRemoteRequest.value = false
+                            navController.navigate(NavDestinations.SSH_CONFIG) { launchSingleTop = true }
+                        }
                         LaunchedEffect(startupState, backStackEntry) {
                             currentSessionId = backStackEntry?.arguments?.getString("sessionId")
                             app.visibleSessionId = currentSessionId
@@ -299,7 +307,7 @@ open class MainActivity : ComponentActivity() {
         if (ShareIntentQueue.isShareIntent(intent)) {
             setIntent(intent)
             stageShareIntent(intent, ShareDelivery.of(restoredInstanceState = false, intentFlags = intent.flags))
-        } else if (!routeOpenGenerationIntent(intent) && currentShareSubmissionId == null) {
+        } else if (!routeOpenSshRemoteIntent(intent) && !routeOpenGenerationIntent(intent) && currentShareSubmissionId == null) {
             setIntent(intent)
         }
     }
@@ -359,6 +367,16 @@ open class MainActivity : ComponentActivity() {
 
     private fun cleanMainIntent() = Intent(this, MainActivity::class.java).apply {
         action = Intent.ACTION_MAIN
+    }
+
+    /** SSH 连接通知点按与“打开远程”按钮；消费后把 Activity intent 换成普通启动。 */
+    private val openSshRemoteRequest = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    private fun routeOpenSshRemoteIntent(candidate: Intent?): Boolean {
+        if (candidate?.action != com.promenar.infinity.background.ssh.SshConnectionService.ACTION_OPEN_REMOTE) return false
+        setIntent(cleanMainIntent())
+        openSshRemoteRequest.value = true
+        return true
     }
 
     private fun routeOpenGenerationIntent(candidate: Intent?): Boolean {

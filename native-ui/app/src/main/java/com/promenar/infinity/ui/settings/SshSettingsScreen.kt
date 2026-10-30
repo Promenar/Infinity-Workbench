@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -92,6 +93,7 @@ import com.promenar.infinity.ui.common.InfinityConfirmDialog
 import com.promenar.infinity.data.security.SshCredential
 import com.promenar.infinity.data.ssh.SshAuthType
 import com.promenar.infinity.data.ssh.SshAgentPreferences
+import com.promenar.infinity.data.ssh.SshActiveConnection
 import com.promenar.infinity.data.ssh.SshHost
 import com.promenar.infinity.data.ssh.SshHostKey
 import com.promenar.infinity.data.ssh.SshKeyGenerator
@@ -126,14 +128,23 @@ import com.promenar.infinity.ui.common.InfinityMetaLine
 private enum class SshPendingAction { VERIFY, TERMINAL, FORWARD }
 private data class SshTrustPrompt(val host: SshHost, val key: SshHostKey, val action: SshPendingAction)
 
+/**
+ * SSH 主机设置。[leadingContent] 插在列表最前，供会话“远程”面板放“智能体正在使用”；
+ * 嵌入面板时由 [com.promenar.infinity.ui.common.LocalInfinitySettingsEmbedded] 去掉顶栏。
+ */
 @Composable
-fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
+fun SshSettingsScreen(
+    onBack: () -> Unit,
+    onOpenTerminal: (String) -> Unit,
+    leadingContent: (LazyListScope.() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val app = context.applicationContext as InfinityApplication
     val store = app.sshHostStore
     val runtime = app.sshRuntime
     val hosts by remember(store) { store.observeHosts() }.collectAsState(initial = emptyList())
     val forwards by runtime.forwardStates.collectAsState()
+    val activity by runtime.activity.collectAsState()
     val cleanupWarnings by runtime.cleanupWarnings.collectAsState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -146,6 +157,14 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
     var statusIsError by remember { mutableStateOf(false) }
     val settingsPrefs = remember(context) { context.getSharedPreferences("infinity_settings", Context.MODE_PRIVATE) }
     var agentManagement by remember(settingsPrefs) { mutableStateOf(SshAgentPreferences.isHostManagementEnabled(settingsPrefs)) }
+    // 设置页与会话“远程”面板可能同时显示该开关，跟随偏好变化刷新。
+    DisposableEffect(settingsPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == SshAgentPreferences.HOST_MANAGEMENT_KEY) agentManagement = SshAgentPreferences.isHostManagementEnabled(prefs)
+        }
+        settingsPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { settingsPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     val copiedMessage = stringResource(R.string.ssh_public_key_copied)
     val verifiedMessage = stringResource(R.string.ssh_fingerprint_matches)
 
@@ -172,7 +191,11 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 status = verifiedMessage
                 statusIsError = false
             }
-            SshPendingAction.TERMINAL -> onOpenTerminal(host.alias)
+            SshPendingAction.TERMINAL -> {
+                // 用户明确打开终端：已断开的终端在此重新连接，其余情况沿用正在运行的终端。
+                com.promenar.infinity.ui.ssh.SshUserTerminals.open(app, host.alias)
+                onOpenTerminal(host.alias)
+            }
             SshPendingAction.FORWARD -> withContext(Dispatchers.IO) { runtime.startForward(host.alias) }
         }
     }
@@ -196,8 +219,14 @@ fun SshSettingsScreen(onBack: () -> Unit, onOpenTerminal: (String) -> Unit) {
                 status = status,
                 statusIsError = statusIsError,
                 agentManagementEnabled = agentManagement,
+                activeConnections = activity.connections,
             ),
+            leadingContent = leadingContent,
             actions = SshSettingsVisualActions(
+                onOpenConnectedTerminal = onOpenTerminal,
+                onDisconnect = { connection ->
+                    perform { withContext(Dispatchers.IO) { runtime.disconnect(connection.owner, connection.alias) } }
+                },
                 onAgentManagementChange = { value ->
                     settingsPrefs.edit().putBoolean(SshAgentPreferences.HOST_MANAGEMENT_KEY, value).apply()
                     agentManagement = value
@@ -348,6 +377,8 @@ internal data class SshSettingsVisualState(
     val status: String? = null,
     val statusIsError: Boolean = false,
     val agentManagementEnabled: Boolean = false,
+    /** 当前活动的 SSH 连接（终端、转发、智能体与后台命令）。 */
+    val activeConnections: List<SshActiveConnection> = emptyList(),
 )
 
 internal data class SshSettingsVisualActions(
@@ -360,6 +391,9 @@ internal data class SshSettingsVisualActions(
     val onCopyPublicKey: (SshHost) -> Unit = {},
     val onToggleForward: (SshHost) -> Unit = {},
     val onAgentManagementChange: (Boolean) -> Unit = {},
+    val onDisconnect: (SshActiveConnection) -> Unit = {},
+    /** 回到已连接的终端，不再核验指纹。 */
+    val onOpenConnectedTerminal: (String) -> Unit = {},
 )
 
 @Composable
@@ -368,6 +402,7 @@ internal fun SshSettingsContent(
     actions: SshSettingsVisualActions,
     modifier: Modifier = Modifier,
     initialActionHostId: String? = null,
+    leadingContent: (LazyListScope.() -> Unit)? = null,
 ) {
     InfinitySettingsPageLayout(
         title = stringResource(R.string.ssh_settings_title),
@@ -379,6 +414,17 @@ internal fun SshSettingsContent(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            leadingContent?.invoke(this)
+            if (state.activeConnections.isNotEmpty()) {
+                item("active") {
+                    SshActiveConnectionsSection(
+                        connections = state.activeConnections,
+                        enabled = !state.busy,
+                        onOpenTerminal = actions.onOpenConnectedTerminal,
+                        onDisconnect = actions.onDisconnect,
+                    )
+                }
+            }
             item("manage") {
                 // 主机列表：每台主机一行，常用的“打开终端”在行尾，其余操作收进主机操作面板。
                 InfinitySettingsSection(

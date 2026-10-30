@@ -184,7 +184,11 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
     val sshRuntime: com.promenar.infinity.data.ssh.SshRuntime by lazy {
         com.promenar.infinity.data.ssh.SshRuntime(sshHostStore, onPersistentActivity = { active ->
             com.promenar.infinity.background.ssh.SshConnectionService.update(this, active)
-        })
+        }, uiIdleTimeoutMs = {
+            com.promenar.infinity.data.ssh.SshTerminalIdlePolicy.read(
+                getSharedPreferences(com.promenar.infinity.data.ssh.SshTerminalIdlePolicy.PREFERENCES_NAME, MODE_PRIVATE),
+            ).timeoutMillis
+        }, liveOutput = toolLiveOutputStore)
     }
     /** 内置 Tailscale（tsnet 子进程，不占用系统 VPN）；创建时安装为全局 tailnet 路由。未打包可执行文件时报告不可用。 */
     val tailnetManager: com.promenar.infinity.data.tailnet.TailnetManager by lazy {
@@ -1636,7 +1640,7 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             register(com.promenar.infinity.ui.chat.manager.skills.TermuxExecSkill(termuxRuntime::executeRequest, backgroundJobs) {
                 com.promenar.infinity.data.termux.TermuxPreferences.isEnabled(getSharedPreferences("infinity_settings", MODE_PRIVATE))
             })
-            com.promenar.infinity.ui.chat.manager.skills.sshTools(sshRuntime).forEach(::register)
+            com.promenar.infinity.ui.chat.manager.skills.sshTools(sshRuntime, backgroundJobs).forEach(::register)
             com.promenar.infinity.ui.chat.manager.skills.sshHostManagementTools(
                 store = sshHostStore,
                 runtime = object : com.promenar.infinity.ui.chat.manager.skills.SshHostManagementRuntime {
