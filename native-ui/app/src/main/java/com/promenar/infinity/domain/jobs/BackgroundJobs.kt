@@ -51,6 +51,48 @@ data class BackgroundJob(
     val liveOutputKey: String,
     /** [BackgroundJobRunner.SSH] 任务所在的主机 ID，与运行环境标签一起显示；本地任务为 null。 */
     val remoteHost: String? = null,
+    /** SFTP 传输任务的方向、路径与进度；命令任务为 null。 */
+    val transfer: SftpTransfer? = null,
+)
+
+enum class SftpTransferDirection { UPLOAD, DOWNLOAD }
+
+/** 传输中断原因；正常完成或仍在进行时为 null。 */
+enum class SftpTransferFailure {
+    /** 连接断开或网络切换。 */
+    NETWORK,
+    /** 系统前台服务时限到期被断开（Play 版 dataSync）。 */
+    TIME_LIMIT,
+    /** 用户或 `job_stop` 停止。 */
+    STOPPED,
+    /** 传输完成但 SHA-256 与源文件不一致，目标未替换。 */
+    CHECKSUM_MISMATCH,
+    /** 目标已存在且未允许覆盖，或目标在传输期间被改动。 */
+    TARGET_CONFLICT,
+    /** 本地或远端空间不足。 */
+    NO_SPACE,
+    /** 其它错误，详情见任务日志。 */
+    OTHER,
+}
+
+/**
+ * 传输任务的界面描述。路径为模型可见路径：工作区以 `/` 为根，Linux 范围为 Linux 内的绝对路径。
+ * [transferredBytes] 由运行时节流更新（约每 500 毫秒或每 1 MiB 一次）。
+ */
+data class SftpTransfer(
+    val direction: SftpTransferDirection,
+    /** `workspace` 或 `linux`。 */
+    val localScope: String,
+    val localPath: String,
+    val remotePath: String,
+    /** 未知时为 null（远端 stat 尚未完成）。 */
+    val totalBytes: Long?,
+    val transferredBytes: Long,
+    /** 最近窗口的平均速度；刚开始或已结束时为 null。 */
+    val bytesPerSecond: Long?,
+    /** 完成且校验通过后的 SHA-256。 */
+    val sha256: String? = null,
+    val failure: SftpTransferFailure? = null,
 )
 
 data class BackgroundJobLog(val text: String, val truncated: Boolean)
