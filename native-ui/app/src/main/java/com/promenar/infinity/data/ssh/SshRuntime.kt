@@ -112,6 +112,8 @@ class SshRuntime(
     val cleanupWarnings: StateFlow<Set<String>> = _cleanupWarnings.asStateFlow()
     private data class RemoteJob(val sessionId: String, val id: String, val alias: String, val stop: () -> Unit, val timeLimit: () -> Unit = stop)
     private val remoteJobs = ConcurrentHashMap<String, RemoteJob>()
+    private data class TransferReturn(val connection: Connection, val agentOwner: String, val control: SshExecControl, val deadlineNanos: Long)
+    private val transferReturns = ConcurrentHashMap<String, TransferReturn>()
     private val _activity = MutableStateFlow(SshRuntimeActivity())
     val activity: StateFlow<SshRuntimeActivity> = _activity.asStateFlow()
     val hasPersistentResources: Boolean get() = connections.keys.any { it.owner == "ui" } || _forwards.value.isNotEmpty() || remoteJobs.isNotEmpty()
@@ -467,18 +469,25 @@ class SshRuntime(
         owner: String, alias: String, remotePath: String, local: SftpLocalFile, upload: Boolean,
         overwrite: Boolean, control: SshExecControl,
         approvedLocal: SftpLocalExpectation? = null, approvedRemote: SftpRemoteExpectation? = null,
+        agentOwner: String? = null,
+        verifySnapshot: ((SftpLocalStat?, SftpRemoteStat?) -> Unit)? = null,
         onTemporary: suspend (String?) -> Unit = {},
         progress: suspend (Long, Long, Long?) -> Unit = { _, _, _ -> },
     ): SftpTransferResult = withContext(Dispatchers.IO) {
         SshPolicy.path(remotePath)
         val startedAt = System.nanoTime()
+        val trace = currentCoroutineContext()[SftpTransferTrace] ?: SftpTransferTrace().apply { workerStarted() }
+        trace.next("stat_verify")
         val localBefore = local.stat()
         if (approvedLocal != null && localBefore != approvedLocal.stat) throw SshFailure("TARGET_CONFLICT")
-        if (upload) requireSftpSize(localBefore?.size ?: throw SshFailure("LOCAL_NOT_FOUND"))
+        if (upload && verifySnapshot == null) requireSftpSize(localBefore?.size ?: throw SshFailure("LOCAL_NOT_FOUND"))
         if (!upload && localBefore != null && !overwrite) throw SshFailure("TARGET_CONFLICT")
         if (pendingCleanup.size >= 128) throw SshFailure("CLEANUP_BACKLOG_LIMIT")
-        withConnection(owner, alias, "sftp-transfer") { connection ->
+        trace.next("connection")
+        withTransferConnection(owner, alias, agentOwner, control, startedAt + control.maxRuntimeSeconds * 1_000_000_000L, trace) { connection ->
+            trace.next("stat_verify")
             verifyCurrentConnection(connection)
+            trace.next("sftp_open")
             val channel = connection.session.openChannel("sftp") as ChannelSftp
             var temporary: String? = null
             val committed = AtomicReference<SftpTransferResult?>()
@@ -494,12 +503,16 @@ class SshRuntime(
                         if ((System.nanoTime() - startedAt) / 1_000_000_000L >= control.maxRuntimeSeconds) throw SshFailure("TIMEOUT")
                         if (!channel.isConnected) throw SshFailure("CONNECTION_FAILED")
                     }
+                    trace.next("stat_verify")
                     val old = transferAttributes(channel, remotePath)
                     val remoteBefore = old?.let { SftpRemoteStat(it.size, it.mTime, it.isReg && !it.isLink) }
                     if (approvedRemote != null && remoteBefore != approvedRemote.stat) throw SshFailure("TARGET_CONFLICT")
+                    // 审批字段使用这次 LSTAT，在任何本地或远端写入之前完整比对。
+                    verifySnapshot?.invoke(localBefore, remoteBefore)
                     if (old != null && (old.isDir || old.isLink || !old.isReg)) throw SshFailure("UNSUPPORTED_TRANSFER_TARGET")
-                    val size = if (upload) requireNotNull(localBefore).size else old?.size ?: throw SshFailure("REMOTE_NOT_FOUND")
+                    val size = if (upload) localBefore?.size ?: throw SshFailure("LOCAL_NOT_FOUND") else old?.size ?: throw SshFailure("REMOTE_NOT_FOUND")
                     requireSftpSize(size)
+                    checkTransfer()
                     var lastBytes = 0L
                     var lastTime = System.nanoTime()
                     suspend fun report(bytes: Long, force: Boolean = false) {
@@ -518,59 +531,71 @@ class SshRuntime(
                     }
                     val hash = if (upload) {
                         if (old != null && !overwrite) throw SshFailure("TARGET_CONFLICT")
-                        val parent = remotePath.substringBeforeLast('/', ".").ifEmpty { "/" }
-                        val parentAttributes = transferAttributes(channel, parent)
-                        if (parentAttributes == null || !parentAttributes.isDir) throw SshFailure("REMOTE_PARENT_MISSING")
+                        if (old == null) {
+                            // 新目标仍核对父目录类型：OPEN 能穿过父目录符号链接，不能代替 LSTAT 的拒绝语义。
+                            val parent = remotePath.substringBeforeLast('/', ".").ifEmpty { "/" }
+                            val attributes = transferAttributes(channel, parent)
+                            if (attributes == null || !attributes.isDir) throw SshFailure("REMOTE_PARENT_MISSING")
+                        }
                         val oldHash = old?.let { channel.get(remotePath).use { sftpHash(it, old.size, ::checkTransfer) } }
                         val path = "$remotePath.infinity-${UUID.randomUUID()}.tmp"
                         temporary = path
                         onTemporary(path)
                         pendingCleanup[path] = OwnedTemporary(connection.host, path)
-                        channel.put(path).use { }
-                        channel.chmod(384, path)
-                        val sourceHash = local.read { input ->
-                            channel.put(path).use { output -> copySftpBytes(input, output, size, ::checkTransfer, notify) }
+                        checkTransfer()
+                        trace.next("data_transfer")
+                        val output = channel.put(path)
+                        val sourceHash = output.use {
+                            // JSch 2.28.8 首次 write 才初始化 ACK 计数，此时没有待确认写请求。
+                            channel.chmod(384, path)
+                            checkTransfer()
+                            local.read { input -> copySftpBytes(input, it, size, ::checkTransfer, notify) }
                         }
+                        trace.next("verify_readback")
                         if (local.stat() != localBefore) throw SshFailure("SOURCE_CHANGED")
                         val targetHash = channel.get(path).use { sftpHash(it, size, ::checkTransfer) }
                         if (targetHash != sourceHash) throw SshFailure("CHECKSUM_MISMATCH")
-                        val current = transferAttributes(channel, remotePath)
-                        if (current?.isDir == true || current?.isLink == true || current != null && !current.isReg ||
-                            (old == null) != (current == null) || old != null &&
-                            (current!!.size != old.size || current.mTime != old.mTime ||
-                                channel.get(remotePath).use { sftpHash(it, old.size, ::checkTransfer) } != oldHash)) throw SshFailure("TARGET_CONFLICT")
-                        old?.let { channel.chmod(it.permissions and 4095, path) }
+                        trace.next("publish")
+                        if (old != null) {
+                            val current = transferAttributes(channel, remotePath)
+                            if (current == null || !current.isReg || current.isLink || current.size != old.size || current.mTime != old.mTime ||
+                                channel.get(remotePath).use { sftpHash(it, old.size, ::checkTransfer) } != oldHash) throw SshFailure("TARGET_CONFLICT")
+                            channel.chmod(old.permissions and 4095, path)
+                        }
                         checkTransfer()
                         verifyCurrentConnection(connection)
                         if (old != null) channel.rename(path, remotePath)
                         else {
-                            // JSch rename 会自动选 posix-rename（覆盖语义）；hardlink 的新名字必须不存在。
+                            // hardlink 的新名字必须不存在，省去新建目标的发布前 LSTAT。
                             if (channel.getExtension("hardlink@openssh.com") != "1") throw SshFailure("ATOMIC_PUBLISH_UNSUPPORTED")
                             try { channel.hardlink(path, remotePath) } catch (failure: com.jcraft.jsch.SftpException) {
                                 if (transferAttributes(channel, remotePath) != null) throw SshFailure("TARGET_CONFLICT")
                                 throw failure
                             }
-                            if (runCatching { channel.rm(path) }.isSuccess) {
-                                pendingCleanup.remove(path)
-                                temporary = null
-                            }
                         }
-                        if (old != null) { pendingCleanup.remove(path); temporary = null }
+                        // 发布后立即登记；清理和最终进度期间收到停止仍返回提交结果。
                         committed.set(result(size, sourceHash))
+                        if (old != null) { pendingCleanup.remove(path); temporary = null }
                         if (temporary == null) withContext(NonCancellable) { onTemporary(null) }
                         sourceHash
                     } else {
-                        local.write(size, overwrite, localBefore, ::checkTransfer, onCommitted = { hash -> committed.set(result(size, hash)) }) { output ->
+                        trace.next("data_transfer")
+                        local.write(size, overwrite, localBefore, ::checkTransfer,
+                            beforeCommit = { trace.next("publish") },
+                            onCommitted = { hash -> committed.set(result(size, hash)) }) { output ->
                             val sourceHash = channel.get(remotePath).use { input -> copySftpBytes(input, output, size, ::checkTransfer, notify) }
+                            trace.next("stat_verify")
                             val after = transferAttributes(channel, remotePath)
                             if (after == null || !after.isReg || after.isLink || after.size != old!!.size || after.mTime != old.mTime) throw SshFailure("SOURCE_CHANGED")
                             checkTransfer()
+                            trace.next("verify_readback")
                             sourceHash
                         }
                     }
                     report(size, true)
                     committed.get() ?: result(size, hash)
                 } finally {
+                    trace.next("cleanup")
                     control.finished.set(true)
                     temporary?.let { path ->
                         // 首先复用传输通道；断网时保留清理登记，由同一主机的下次连接处理。
@@ -582,6 +607,7 @@ class SshRuntime(
                         temporary?.takeIf(pendingCleanup::containsKey)?.let { cleanupTemporary(connection, it) }
                         if (temporary != null && !pendingCleanup.containsKey(temporary)) onTemporary(null)
                     }
+                    trace.next(null)
                 }
             }
             control.cancelPending = { worker.cancel(); scope.launch(Dispatchers.IO) { channel.disconnect() }; Unit }
@@ -604,7 +630,7 @@ class SshRuntime(
                     worker.cancelAndJoin()
                 }
                 committed.get()?.let { published ->
-                    committedSftpResult(published, failure)?.let { return@withConnection it }
+                    committedSftpResult(published, failure)?.let { return@withTransferConnection it }
                     throw classifySftpFailure(failure as? Exception ?: Exception())
                 }
                 if (control.stopRequested.get()) throw SshFailure(control.stopCause.get() ?: "STOPPED")
@@ -615,7 +641,7 @@ class SshRuntime(
                 withContext(NonCancellable) { watcher.cancelAndJoin() }
                 control.cancelPending = null
             }
-        }
+        }.let { it.copy(timingsMs = trace.snapshot(), connectionSource = trace.connectionSource) }
     }
 
     private fun transferAttributes(channel: ChannelSftp, path: String): com.jcraft.jsch.SftpATTRS? =
@@ -625,78 +651,80 @@ class SshRuntime(
 
     suspend fun openSession(owner: String, alias: String, columns: Int = 80, rows: Int = 24): SshSessionInfo = withContext(Dispatchers.IO) {
         size(columns, rows)
-        val connection = connection(owner, alias)
-        try { gate.withLock {
-            verifyCurrentConnection(connection)
-            if (owner == "ui") terminals.values.firstOrNull { it.owner == owner && it.connection === connection && !it.channel.isClosed }?.let {
-                return@withLock SshSessionInfo(it.id, alias)
-            }
-            if (terminals.size >= 8) throw SshFailure("SESSION_LIMIT")
-            val ref = AtomicReference<ChannelShell?>()
-            var created: Pty? = null
-            try {
-                val pty = io({ ref.get()?.disconnect() }) {
-                    val channel = (connection.session.openChannel("shell") as ChannelShell).also(ref::set)
-                    try {
-                        channel.setPty(true)
-                        channel.setPtyType("xterm-256color", columns, rows, 0, 0)
-                        val output = channel.inputStream
-                        val input = channel.outputStream
-                        channel.connect(CONNECT_TIMEOUT)
-                        val id = UUID.randomUUID().toString()
-                        val mirror = if (owner.startsWith("agent:")) liveOutput?.open("ssh_session:$id")?.also {
-                            // 激活只读槽，不登记停止回调，误发的停止请求不会影响远端 PTY。
-                            it.replace(ToolOutputStream.STDOUT, "")
-                        } else null
-                        Pty(id, owner, connection, channel, input, now(), mirror).also { pty ->
-                            created = pty
-                            val filter = connection.filter.stream()
-                            pty.reader = scope.launch {
-                                try {
-                                    InputStreamReader(output, Charsets.UTF_8).use { reader ->
-                                        val chars = CharArray(4096)
-                                        try {
-                                            while (isActive) {
-                                                val count = reader.read(chars)
-                                                if (count < 0) break
-                                                val clean = filter.feed(String(chars, 0, count))
-                                                pty.buffer.append(clean)
-                                                pty.mirror?.emit(ToolOutputStream.STDOUT, clean)
-                                                pty.used = now()
-                                                connection.used = pty.used
-                                            }
-                                        } finally { chars.fill('\u0000') }
+        withConnection(owner, alias) { connection ->
+            try { gate.withLock {
+                // 连接锁覆盖 PTY 创建，不能在创建过程中被任务转交。
+                verifyCurrentConnection(connection)
+                if (owner == "ui") terminals.values.firstOrNull { it.owner == owner && it.connection === connection && !it.channel.isClosed }?.let {
+                    return@withLock SshSessionInfo(it.id, alias)
+                }
+                if (terminals.size >= 8) throw SshFailure("SESSION_LIMIT")
+                val ref = AtomicReference<ChannelShell?>()
+                var created: Pty? = null
+                try {
+                    val pty = io({ ref.get()?.disconnect() }) {
+                        val channel = (connection.session.openChannel("shell") as ChannelShell).also(ref::set)
+                        try {
+                            channel.setPty(true)
+                            channel.setPtyType("xterm-256color", columns, rows, 0, 0)
+                            val output = channel.inputStream
+                            val input = channel.outputStream
+                            channel.connect(CONNECT_TIMEOUT)
+                            val id = UUID.randomUUID().toString()
+                            val mirror = if (owner.startsWith("agent:")) liveOutput?.open("ssh_session:$id")?.also {
+                                // 激活只读槽，不登记停止回调，误发的停止请求不会影响远端 PTY。
+                                it.replace(ToolOutputStream.STDOUT, "")
+                            } else null
+                            Pty(id, owner, connection, channel, input, now(), mirror).also { pty ->
+                                created = pty
+                                val filter = connection.filter.stream()
+                                pty.reader = scope.launch {
+                                    try {
+                                        InputStreamReader(output, Charsets.UTF_8).use { reader ->
+                                            val chars = CharArray(4096)
+                                            try {
+                                                while (isActive) {
+                                                    val count = reader.read(chars)
+                                                    if (count < 0) break
+                                                    val clean = filter.feed(String(chars, 0, count))
+                                                    pty.buffer.append(clean)
+                                                    pty.mirror?.emit(ToolOutputStream.STDOUT, clean)
+                                                    pty.used = now()
+                                                    connection.used = pty.used
+                                                }
+                                            } finally { chars.fill('\u0000') }
+                                        }
+                                    } catch (_: Exception) { } finally {
+                                        val tail = filter.feed("", end = true)
+                                        pty.buffer.append(tail)
+                                        pty.mirror?.emit(ToolOutputStream.STDOUT, tail)
+                                        pty.buffer.closed = true
+                                        pty.mirror?.let { liveOutput?.close(pty.liveOutputKey, it) }
+                                        scope.launch { gate.withLock { publishPersistent() } }
                                     }
-                                } catch (_: Exception) { } finally {
-                                    val tail = filter.feed("", end = true)
-                                    pty.buffer.append(tail)
-                                    pty.mirror?.emit(ToolOutputStream.STDOUT, tail)
-                                    pty.buffer.closed = true
-                                    pty.mirror?.let { liveOutput?.close(pty.liveOutputKey, it) }
-                                    scope.launch { gate.withLock { publishPersistent() } }
                                 }
                             }
-                        }
-                    } catch (failure: Exception) { channel.disconnect(); throw failure }
+                        } catch (failure: Exception) { channel.disconnect(); throw failure }
+                    }
+                    terminals[pty.id] = pty
+                    publishPersistent()
+                    SshSessionInfo(pty.id, alias)
+                } catch (failure: Throwable) {
+                    created?.let { removePty(it) }
+                    withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
+                    if (terminals.values.none { it.connection === connection }) drop(connection)
+                    throw failure
                 }
-                terminals[pty.id] = pty
-                publishPersistent()
-                SshSessionInfo(pty.id, alias)
+            }
             } catch (failure: Throwable) {
-                created?.let { removePty(it) }
-                withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() }
-                if (terminals.values.none { it.connection === connection }) drop(connection)
+                withContext(NonCancellable + Dispatchers.IO) {
+                    gate.withLock {
+                        if (terminals.values.none { it.connection === connection }) drop(connection)
+                        publishPersistent()
+                    }
+                }
                 throw failure
             }
-        }
-        } catch (failure: Throwable) {
-            withContext(NonCancellable + Dispatchers.IO) {
-                gate.withLock {
-                    if (terminals.values.none { it.connection === connection }) drop(connection)
-                    publishPersistent()
-                }
-            }
-            throw failure
         }
     }
 
@@ -793,9 +821,10 @@ class SshRuntime(
     }
 
     /** 等待执行锁后重新核对归属；先前命令让出时，后续操作必须取得新的 Agent 连接。 */
-    private suspend fun <T> withConnection(owner: String, alias: String, purpose: String = "", block: suspend (Connection) -> T): T {
+    private suspend fun <T> withConnection(owner: String, alias: String, purpose: String = "",
+        source: (Boolean) -> Unit = {}, block: suspend (Connection) -> T): T {
         while (true) {
-            val connection = connection(owner, alias, purpose)
+            val connection = connection(owner, alias, purpose, source)
             var locked = false
             while (connection.key.owner == owner && connections[connection.key] === connection) {
                 if (connection.lock.tryLock()) { locked = true; break }
@@ -807,6 +836,52 @@ class SshRuntime(
                 if (connection.key.owner == owner && connections[connection.key] === connection) return block(connection)
             } finally { connection.lock.unlock() }
         }
+    }
+
+    /** 仅借用同一会话的空闲文件槽；持锁改键后，Agent 回收与 PTY 创建均不能触及任务。 */
+    private suspend fun <T> withTransferConnection(owner: String, alias: String, agentOwner: String?, control: SshExecControl,
+        deadlineNanos: Long, trace: SftpTransferTrace, block: suspend (Connection) -> T): T {
+        val returnOwner = agentOwner?.takeIf { it.startsWith("agent:") && owner.startsWith("job:") &&
+            remoteJobs[owner]?.sessionId == it.removePrefix("agent:") }
+        val key = PoolKey(owner, alias, "sftp-transfer")
+        val borrowed = if (returnOwner == null) null else gate.withLock {
+            val current = host(alias)
+            val candidate = connections[PoolKey(returnOwner, alias)]
+            if (control.stopRequested.get()) throw SshFailure(control.stopCause.get() ?: "STOPPED")
+            if (connections[key] != null || candidate == null || candidate.host != current || !candidate.session.isConnected ||
+                terminals.values.any { it.connection === candidate } || !candidate.lock.tryLock()) return@withLock null
+            try {
+                connections.remove(candidate.key, candidate)
+                candidate.key = key
+                connections[key] = candidate
+                publishPersistent()
+                candidate
+            } catch (failure: Throwable) { drop(candidate); candidate.lock.unlock(); throw failure }
+        }
+        suspend fun use(connection: Connection): T {
+            var succeeded = false
+            try {
+                return block(connection).also { succeeded = true }
+            } finally {
+                withContext(NonCancellable) {
+                    gate.withLock {
+                        if (succeeded && returnOwner != null && !control.stopRequested.get() && System.nanoTime() - deadlineNanos < 0 &&
+                            connection.session.isConnected && connections[key] === connection && remoteJobs.containsKey(owner)) {
+                            // finishJob 在同一个 gate 内检查停止状态并归还，消除归还与服务停止之间的窗口。
+                            transferReturns[owner] = TransferReturn(connection, returnOwner, control, deadlineNanos)
+                        } else if (!succeeded || control.stopRequested.get() || System.nanoTime() - deadlineNanos >= 0) {
+                            drop(connection)
+                            publishPersistent()
+                        }
+                    }
+                }
+            }
+        }
+        if (borrowed != null) {
+            trace.connectionSource = "transferred"
+            try { return use(borrowed) } finally { borrowed.lock.unlock() }
+        }
+        return withConnection(owner, alias, "sftp-transfer", { created -> trace.connectionSource = if (created) "new" else "reused" }) { use(it) }
     }
 
     internal suspend fun registerJob(jobId: String, sessionId: String, alias: String, stop: () -> Unit, timeLimit: () -> Unit = stop) = withContext(Dispatchers.IO) {
@@ -835,6 +910,20 @@ class SshRuntime(
     internal suspend fun finishJob(jobId: String) = withContext(Dispatchers.IO) {
         gate.withLock {
             val owner = "job:$jobId"
+            transferReturns.remove(owner)?.let { lease ->
+                val connection = lease.connection
+                val agentKey = PoolKey(lease.agentOwner, connection.host.alias)
+                val current = try { store.find(connection.host.alias) } catch (_: Exception) { null }
+                if (!stopped.get() && !lease.control.stopRequested.get() && System.nanoTime() - lease.deadlineNanos < 0 &&
+                    connection.session.isConnected && current == connection.host &&
+                    connections[connection.key] === connection && !connection.lock.isLocked && connections[agentKey] == null &&
+                    terminals.values.none { it.connection === connection }) {
+                    connections.remove(connection.key, connection)
+                    connection.key = agentKey
+                    connection.used = now()
+                    connections[agentKey] = connection
+                }
+            }
             remoteJobs.remove(owner)
             connections.values.filter { it.key.owner == owner }.forEach(::drop)
             publishPersistent()
@@ -867,14 +956,14 @@ class SshRuntime(
         } catch (failure: SshFailure) { throw failure
         } catch (_: Exception) { throw SshFailure("HOST_UNAVAILABLE") }
     }
-    private suspend fun connection(owner: String, alias: String, purpose: String = ""): Connection = withContext(Dispatchers.IO) {
+    private suspend fun connection(owner: String, alias: String, purpose: String = "", source: (Boolean) -> Unit = {}): Connection = withContext(Dispatchers.IO) {
         val host = host(alias)
         gate.withLock {
             if (stopped.get()) throw SshFailure("RUNTIME_CLOSED")
             if (host(alias) != host) throw SshFailure("HOST_CONFIGURATION_CHANGED")
             val key = PoolKey(owner, alias, purpose)
             connections[key]?.let {
-                if (it.host == host && it.session.isConnected) { it.used = now(); return@withLock it }
+                if (it.host == host && it.session.isConnected) { it.used = now(); source(false); return@withLock it }
                 drop(it)
             }
             if (connections.size >= 8) throw SshFailure("CONNECTION_LIMIT")
@@ -891,6 +980,7 @@ class SshRuntime(
             }
             var outputFilter: SshOutputFilter? = null
             try {
+                source(true)
                 io({ session.disconnect() }) {
                     val credential = store.credential(host) ?: throw SshFailure("CREDENTIAL_MISSING")
                     try {

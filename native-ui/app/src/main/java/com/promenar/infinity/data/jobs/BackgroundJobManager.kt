@@ -376,7 +376,7 @@ class BackgroundJobManager(
         minutes: Int, action: BackgroundJobExitAction, live: ToolLiveOutputSink,
         transfer: SftpTransfer? = null,
         executeTransfer: (suspend (String, SshExecControl, suspend (Long, Long, Long?) -> Unit) -> com.promenar.infinity.domain.tool.CommandToolResult)? = null,
-    ): SshJobRunResult = withContext(Dispatchers.IO) {
+    ): SshJobRunResult = runSshOnIo(transfer) { trace ->
         require(timeoutSeconds in 1..600 && minutes in 1..1440 && yieldSeconds in 0..(if (transfer == null) timeoutSeconds else minutes * 60))
         SshPolicy.outputLimit(maxOutputChars)
         if (source.isBlank() || source.length > 65_536 || '\u0000' in source) throw SshFailure("INVALID_COMMAND")
@@ -400,7 +400,8 @@ class BackgroundJobManager(
                 val release = live.retain()
                 val sink = liveOutput.open("job:${record.id}")
                 handle.sink = sink
-                sink.onStop(control::requestStop)
+                if (transfer == null) sink.onStop(control::requestStop)
+                else sink.onStop { scope.launch { stop(record.id) } }
                 handle.worker = scope.launch(Dispatchers.IO, start = CoroutineStart.ATOMIC) {
                     try {
                         val value = RotatingJobLog(logFile(record)).use { log ->
@@ -412,19 +413,33 @@ class BackgroundJobManager(
                                 }
                                 override fun onStop(stop: () -> Unit) { sink.onStop(stop); live.onStop(stop) }
                             }
-                            runtime.withHostSnapshot(snapshot) {
-                                if (executeTransfer != null) executeTransfer("job:${record.id}", control) { total, done, speed ->
-                                    store.updateIfPresent(record.id) { current -> current.copy(transfer = current.transfer?.copy(
-                                        totalBytes = total, transferredBytes = done, bytesPerSecond = speed)) }
-                                    publish()
-                                    val text = "\r已传 %.1f MiB / %.1f MiB · %.1f MiB/s".format(java.util.Locale.ROOT,
-                                        done / 1048576.0, total / 1048576.0, (speed ?: 0) / 1048576.0)
-                                    tee.emit(ToolOutputStream.STDOUT, text)
-                                } else runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
-                                    timeoutSeconds, maxOutputChars, tee, control).commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
-                            }.also { output ->
-                                if (transfer != null) tee.emit(if (output.errorCode == null) ToolOutputStream.STDOUT else ToolOutputStream.STDERR,
-                                    "\n" + (output.errorCode?.let { "$it: ${output.guidance}" } ?: "传输完成，SHA-256 校验通过。") + "\n")
+                            if (transfer != null) tee.emit(ToolOutputStream.STDOUT, sftpProgressText(transfer.totalBytes))
+                            trace?.workerStarted()
+                            try {
+                                withContext(trace ?: kotlin.coroutines.EmptyCoroutineContext) {
+                                    runtime.withHostSnapshot(snapshot) {
+                                        if (executeTransfer != null) executeTransfer("job:${record.id}", control) { total, done, speed ->
+                                            store.updateIfPresent(record.id) { current -> current.copy(transfer = current.transfer?.copy(
+                                                totalBytes = total, transferredBytes = done, bytesPerSecond = speed)) }
+                                            publish()
+                                            val text = sftpProgressText(total, done, speed)
+                                            tee.emit(ToolOutputStream.STDOUT, text)
+                                        } else runtime.exec(if (background) "job:${record.id}" else "agent:$sessionId", snapshot.alias, source,
+                                            timeoutSeconds, maxOutputChars, tee, control).commandResult(if (control.background) control.maxRuntimeSeconds else timeoutSeconds)
+                                    }
+                                }.let { output ->
+                                    trace?.next(null)
+                                    if (trace == null) output else output.copy(backendFields = kotlinx.serialization.json.JsonObject(output.backendFields + trace.fields()))
+                                }.also { output ->
+                                    if (transfer != null) tee.emit(if (output.errorCode == null) ToolOutputStream.STDOUT else ToolOutputStream.STDERR,
+                                        "\n" + (output.errorCode?.let { "$it: ${output.guidance}" } ?: "传输完成，SHA-256 校验通过。") + "\n")
+                                }
+                            } catch (failure: Throwable) {
+                                if (transfer != null) tee.emit(ToolOutputStream.STDERR,
+                                    "\n传输失败：${control.stopCause.get() ?: (failure as? SshFailure)?.code ?: "SSH_OPERATION_FAILED"}\n")
+                                throw failure
+                            } finally {
+                                trace?.let { it.next(null); tee.emit(ToolOutputStream.STDOUT, "\n${it.summary()}\n") }
                             }
                         }
                         withContext(NonCancellable) {
@@ -440,8 +455,12 @@ class BackgroundJobManager(
                                 exitCode = settled.exitCode, endedAtMillis = now(), commandResult = settled.toJson(),
                                 guidance = settled.guidance,
                             )
-                            runtime.finishJob(record.id)
-                            store.put(terminal); publish(); handle.terminal.complete(Unit); result.complete(settled)
+                            handle.inputGate.withLock {
+                                // 先持久化终态，再归还连接；job_stop 在同一把任务锁内重新核对状态。
+                                store.put(terminal)
+                                runtime.finishJob(record.id)
+                                publish(); handle.terminal.complete(Unit); result.complete(settled)
+                            }
                             if (ownership.await() && sessionAllowed(record) && !handle.suppressCompletion) {
                                 try { completion.dispatch(terminal, readJobLogTail(logFile(terminal))) } catch (_: Exception) { }
                             }
@@ -456,6 +475,7 @@ class BackgroundJobManager(
                                     else "传输已停止；请检查任务状态后决定是否重试。"
                                 } else SSH_DISCONNECTED_GUIDANCE,
                                 timedOut = serviceLimited,
+                                backendFields = trace?.fields() ?: kotlinx.serialization.json.JsonObject(emptyMap()),
                             ) else null
                             val current = store.all().first { it.id == record.id }
                             val terminal = current.copy(
@@ -491,14 +511,14 @@ class BackgroundJobManager(
             if (background) {
                 detached = true
                 ownership.complete(true)
-                return@withContext SshJobRunResult(job = record)
+                return@runSshOnIo SshJobRunResult(job = record)
             }
             // 建连与等待连接锁不消耗让出阈值；执行超时仍由 SSH 运行时约束。
             kotlinx.coroutines.selects.select<Unit> { result.onAwait { }; control.started.onAwait { } }
             val completed = if (yieldSeconds == 0) result.await() else withTimeoutOrNull(yieldSeconds * 1_000L) { result.await() }
             if (completed != null) {
                 ownership.complete(false)
-                return@withContext SshJobRunResult(command = completed)
+                return@runSshOnIo SshJobRunResult(command = completed)
             }
             currentCoroutineContext().ensureActive()
             val promoted = withContext(NonCancellable) {
@@ -508,7 +528,7 @@ class BackgroundJobManager(
             }
             if (!promoted) {
                 ownership.complete(false)
-                return@withContext SshJobRunResult(command = result.await())
+                return@runSshOnIo SshJobRunResult(command = result.await())
             }
             // 与取消清理串行交接；一旦归属已转移，调用者取消不再终止任务。
             detached = true
@@ -530,6 +550,11 @@ class BackgroundJobManager(
             }
             throw failure
         }
+    }
+
+    private suspend fun <T> runSshOnIo(transfer: SftpTransfer?, block: suspend (SftpTransferTrace?) -> T): T {
+        val trace = transfer?.let { SftpTransferTrace() }
+        return withContext(Dispatchers.IO) { block(trace) }
     }
 
     suspend fun input(sessionId: String, id: String, text: String, newline: Boolean = true, eof: Boolean = false): BackgroundJobStatus = withContext(Dispatchers.IO) {
@@ -745,7 +770,11 @@ class BackgroundJobManager(
         val record=store.all().find{it.id==jobId && it.running} ?: return@withContext false
         val handle=active[jobId]
         if (record.runnerKind == BackgroundJobRunner.SSH) {
-            handle?.sshControl?.requestStop()
+            val accepted = if (handle == null) false else handle.inputGate.withLock {
+                if (store.all().none { it.id == jobId && it.running }) false
+                else { handle.sshControl?.requestStop(); true }
+            }
+            if (!accepted) return@withContext false
         } else if(record.runnerKind==BackgroundJobRunner.TERMUX) {
             refreshGate.withLock {
                 val latest=store.all().find{it.id==jobId} ?: return@withLock

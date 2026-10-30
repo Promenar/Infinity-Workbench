@@ -84,33 +84,35 @@ private class SftpTransferSkill(
             } else (access.workspaceFiles ?: throw SshFailure("WORKSPACE_UNAVAILABLE")).resolve(
                 context.sessionId, context.workspaceRootUuid, localPath, !upload)
             val snapshot = runtime.hostSnapshot(host)
-            if (context.isApprovalBoundExecution || context.approvedExecutionTarget != null) {
-                val target = ToolExecutionTargets.extract(toProtocolTool(), args.toString(), resolvedPaths = mapOf("sftp:local-identity" to boundLocal.identity), sshIdentities = mapOf(host to snapshot.executionIdentity()))
-                val approved = context.approvedExecutionTarget
-                if (target == null || approved == null || target != ToolExecutionTargets.withoutSftpPreview(approved)) throw SshFailure("HOST_AUTHORIZATION_CHANGED")
-            }
-            val preview = runtime.withHostSnapshot(snapshot) { sftpApprovalSnapshot(runtime, context.sessionId, host, remote,
-                boundLocal.file, upload, overwrite) }
-            if (context.isApprovalBoundExecution || context.approvedExecutionTarget != null) {
-                val target = ToolExecutionTargets.extract(toProtocolTool(), args.toString(),
-                    mapOf("sftp:local-identity" to boundLocal.identity), mapOf(host to snapshot.executionIdentity()))
-                if (target == null || ToolExecutionTargets.withSftpPreview(target, preview.fields) != context.approvedExecutionTarget) throw SshFailure("TARGET_CONFLICT")
-            }
+            val boundApproval = context.isApprovalBoundExecution || context.approvedExecutionTarget != null
+            val approved = context.approvedExecutionTarget
+            val target = if (boundApproval) ToolExecutionTargets.extract(toProtocolTool(), args.toString(),
+                resolvedPaths = mapOf("sftp:local-identity" to boundLocal.identity), sshIdentities = mapOf(host to snapshot.executionIdentity())) else null
+            if (boundApproval && (target == null || approved == null || target != ToolExecutionTargets.withoutSftpPreview(approved)))
+                throw SshFailure("HOST_AUTHORIZATION_CHANGED")
+            val total = if (boundApproval) {
+                (Json.parseToJsonElement(requireNotNull(approved)).jsonArray.last().jsonObject["bytes_total"] as? JsonPrimitive)?.longOrNull
+            } else if (upload) boundLocal.file.stat()?.size ?: throw SshFailure("LOCAL_NOT_FOUND") else null
+            total?.let(::requireSftpSize)
             val transfer = SftpTransfer(if (upload) SftpTransferDirection.UPLOAD else SftpTransferDirection.DOWNLOAD,
-                scope, localPath, remote, preview.fields.getValue("bytes_total").jsonPrimitive.long, 0, null)
+                scope, localPath, remote, total, 0, null)
             val manager = jobs ?: throw JobAccessException("JOB_UNAVAILABLE", "后台任务服务不可用，请重新打开应用。")
             val summary = if (upload) "上传 ${localPath.substringAfterLast('/')} → $remote" else "下载 ${remote.substringAfterLast('/')} → $localPath"
             val run = manager.runSsh(runtime, snapshot, context.sessionId, context.workspaceRootUuid, summary, 600, 32_000,
                 threshold, args.backgroundRequested(), minutes, action, context.liveOutput, transfer) { owner, control, progress ->
                 try {
                     if (scope == "linux" && !access.linuxAvailable()) throw SshFailure("LINUX_SCOPE_UNAVAILABLE")
-                    val value = runtime.transfer(owner, host, remote, boundLocal.file, upload, overwrite, control, SftpLocalExpectation(preview.local), SftpRemoteExpectation(preview.remote), onTemporary = { path ->
+                    val value = runtime.transfer(owner, host, remote, boundLocal.file, upload, overwrite, control,
+                        agentOwner = "agent:${context.sessionId}", verifySnapshot = { localStat, remoteStat ->
+                            if (boundApproval && ToolExecutionTargets.withSftpPreview(requireNotNull(target),
+                                sftpApprovalFields(localStat, remoteStat, upload, overwrite)) != approved) throw SshFailure("TARGET_CONFLICT")
+                        }, onTemporary = { path ->
                         manager.recordSftpTemporary(context.sessionId, owner.removePrefix("job:"), path, snapshot.executionIdentity().digest)
                     }, progress = progress)
                     CommandToolResult(exitCode = 0, backendFields = value.toJson())
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (failure: Exception) {
-                    val code = transferErrorCode(failure)
+                    val code = transferErrorCode(failure).let { if (it == "HOST_CONFIGURATION_CHANGED") "HOST_AUTHORIZATION_CHANGED" else it }
                     CommandToolResult(errorCode = if (code.startsWith("SSH_")) code else "SSH_$code", guidance = sshGuidance(code), timedOut = code in setOf("TIMEOUT", "SERVICE_TIME_LIMIT"))
                 }
             }
@@ -176,12 +178,18 @@ internal suspend fun sftpApprovalSnapshot(runtime: SshRuntime, sessionId: String
     val size = if (upload) localStat?.size ?: throw SshFailure("LOCAL_NOT_FOUND") else remoteStat?.size ?: throw SshFailure("REMOTE_NOT_FOUND")
     requireSftpSize(size)
     if (remoteStat?.regular == false) throw SshFailure("UNSUPPORTED_TRANSFER_TARGET")
+    return SftpApprovalSnapshot(localStat, remoteStat, sftpApprovalFields(localStat, remoteStat, upload, overwrite))
+}
+
+/** 审批卡和传输前核验共用全部字段；缺失源也参与比对，不能绕过冲突检查。 */
+internal fun sftpApprovalFields(localStat: SftpLocalStat?, remoteStat: SftpRemoteStat?, upload: Boolean, overwrite: Boolean): JsonObject {
+    val size = if (upload) localStat?.size else remoteStat?.size
     val exists = if (upload) remoteStat != null else localStat != null
     val targetRevision = if (upload) remoteStat?.let { "${it.modifiedSeconds}:${it.size}" } else localStat?.revision
     val sourceRevision = if (upload) localStat?.revision else remoteStat?.let { "${it.modifiedSeconds}:${it.size}" }
-    return SftpApprovalSnapshot(localStat, remoteStat, buildJsonObject {
-        put("bytes_total", size); put("target_exists", exists); put("will_overwrite", exists && overwrite)
+    return buildJsonObject {
+        put("bytes_total", size?.let(::JsonPrimitive) ?: JsonNull); put("target_exists", exists); put("will_overwrite", exists && overwrite)
         put("source_revision", sourceRevision?.let(::JsonPrimitive) ?: JsonNull)
         put("target_revision", targetRevision?.let(::JsonPrimitive) ?: JsonNull)
-    })
+    }
 }

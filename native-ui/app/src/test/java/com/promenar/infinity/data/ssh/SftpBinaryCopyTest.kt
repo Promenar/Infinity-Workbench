@@ -69,4 +69,12 @@ class SftpBinaryCopyTest {
         assertThat(committedSftpResult(null, SshFailure("STOPPED"))).isNull()
     }
 
+    @Test fun `小文件和未知速度使用真实字节且按1024换单位`() {
+        assertThat(sftpProgressText(14)).isEqualTo("\r已传 0 B / 14 B")
+        assertThat(sftpProgressText(14, 14, 7)).isEqualTo("\r已传 14 B / 14 B · 7 B/s")
+        assertThat(sftpProgressText(2048, 1024, 0)).isEqualTo("\r已传 1.0 KiB / 2.0 KiB")
+        assertThat(sftpProgressText(1073741824, 1048576, 1048576)).isEqualTo("\r已传 1.0 MiB / 1.0 GiB · 1.0 MiB/s")
+        assertThat(sftpProgressText(null)).isEqualTo("\r已传 0 B / 未知")
+    }
+
 }

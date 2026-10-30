@@ -86,9 +86,11 @@ class SftpTransferIntegrationTest {
         val source = File(local, "source").apply { writeBytes(byteArrayOf(0, 1, 2)) }
         File(remote, "data").writeText("原文")
         File(remote, "directory").mkdir()
+        Files.createSymbolicLink(File(remote, "parent-link").toPath(), java.nio.file.Path.of("directory"))
         Files.createSymbolicLink(File(remote, "link").toPath(), File(remote, "data").toPath())
         for ((path, overwrite, code) in listOf(Triple("/data", false, "TARGET_CONFLICT"), Triple("/directory", true, "UNSUPPORTED_TRANSFER_TARGET"),
-            Triple("/link", true, "UNSUPPORTED_TRANSFER_TARGET"), Triple("/missing/data", false, "REMOTE_PARENT_MISSING"))) {
+            Triple("/link", true, "UNSUPPORTED_TRANSFER_TARGET"), Triple("/missing/data", false, "REMOTE_PARENT_MISSING"),
+            Triple("/parent-link/data", false, "REMOTE_PARENT_MISSING"))) {
             val failure = runCatching { runtime.transfer("agent:s", "nas", path, endpoint(source), true, overwrite, SshExecControl(60)) }.exceptionOrNull()
             assertThat((failure as SshFailure).code).isEqualTo(code)
         }
@@ -253,4 +255,51 @@ class SftpTransferIntegrationTest {
             assertThat(ended.transfer!!.sha256).isNotEmpty()
         } finally { runtime.disconnectAll(); scope.cancel() }
     }
+    @Test fun `单次打开临时文件先登记收紧权限再写正文且失败可清理`() = runBlocking<Unit> {
+        val source = File(local, "source").apply { writeText("private body") }
+        for (fail in listOf(false, true)) {
+            var temporary: String? = null
+            val port = object : SftpLocalFile by endpoint(source) {
+                override suspend fun <T> read(reader: (InputStream) -> T): T {
+                    val temp = File(remote, requireNotNull(temporary).removePrefix("/"))
+                    assertThat(temp.length()).isEqualTo(0L)
+                    assertThat(Files.getPosixFilePermissions(temp.toPath())).containsExactly(
+                        java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                        java.nio.file.attribute.PosixFilePermission.OWNER_WRITE)
+                    if (fail) throw SshFailure("LOCAL_IO_FAILED")
+                    return source.inputStream().use(reader)
+                }
+            }
+            val path = "/permissions-$fail"
+            val failure = runCatching { runtime.transfer("agent:s", "nas", path, port, true, false, SshExecControl(60), onTemporary = {
+                temporary = it
+                if (it != null) assertThat(File(remote, it.removePrefix("/")).exists()).isFalse()
+            }) }.exceptionOrNull()
+            if (fail) assertThat((failure as SshFailure).code).isEqualTo("LOCAL_IO_FAILED")
+            else {
+                assertThat(failure).isNull()
+                assertThat(File(remote, path.removePrefix("/")).readText()).isEqualTo("private body")
+            }
+            assertThat(temporary).isNull()
+            assertThat(remote.list()!!.none { it.endsWith(".tmp") }).isTrue()
+        }
+    }
+
+    @Test fun `第一次远端核验后审批回调拒绝时两端没有写入`() = runBlocking<Unit> {
+        File(remote, "data").writeText("remote")
+        val target = File(local, "destination").apply { writeText("local") }
+        for (upload in listOf(true, false)) {
+            val failure = runCatching { runtime.transfer("job:conflict", "nas", "/data", endpoint(target), upload, true,
+                SshExecControl(60), verifySnapshot = { localStat, remoteStat ->
+                    assertThat(localStat!!.size).isEqualTo(5)
+                    assertThat(remoteStat!!.size).isEqualTo(6)
+                    throw SshFailure("TARGET_CONFLICT")
+                }, onTemporary = { error("审批失败不得登记临时文件") }) }.exceptionOrNull()
+            assertThat((failure as SshFailure).code).isEqualTo("TARGET_CONFLICT")
+            assertThat(target.readText()).isEqualTo("local")
+            assertThat(File(remote, "data").readText()).isEqualTo("remote")
+            assertThat(remote.list()!!.toList()).containsExactly("data")
+        }
+    }
+
 }
