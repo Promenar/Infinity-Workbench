@@ -158,7 +158,7 @@ class BackgroundJobManager(
         }
         return if(executionGate==null) checked() else executionGate.withNewSessionAdmission(sessionId) {checked()}
     }
-    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null):BackgroundJobRecord = gate.withLock {
+    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null):BackgroundJobRecord = gate.withLock {
         com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root, subsystem = com.promenar.infinity.startup.StartupSubsystem.BACKGROUND_JOBS)
         executionGate?.requireSessionWritable(sessionId)
         require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
@@ -167,7 +167,7 @@ class BackgroundJobManager(
         if(running.count{it.sessionId==sessionId} >= 3) throw JobAccessException("JOB_SESSION_LIMIT","本会话已有 3 个运行中任务，请先用 job_wait 等待或用 job_stop 停止。")
         if(running.size >= 6) throw JobAccessException("JOB_GLOBAL_LIMIT","全局已有 6 个运行中任务，请先结束部分后台任务。")
         val id="job-${UUID.randomUUID()}"
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH).also {
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost).also {
             store.put(it); active[id]=Active().also { handle -> handle.sshControl = sshControl }; publish()
         }
     }
@@ -370,7 +370,7 @@ class BackgroundJobManager(
         try {
             withContext(NonCancellable) {
                 initialize()
-                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control) }
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias) }
                 ownedRecord = record
                 val handle = active.getValue(record.id)
                 ownedHandle = handle
@@ -652,7 +652,7 @@ class BackgroundJobManager(
             catch(_:Exception) { /* 完成通知失败不能改写真实进程终态。 */ }
         }
     }
-    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,when(record.runnerKind) { BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON; BackgroundJobRunner.LINUX -> ExecRunKind.LINUX; else -> ExecRunKind.SHELL },record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true)
+    private fun runInfo(record:BackgroundJobRecord)=ExecRunInfo(record.id,execRunKind(record.runnerKind),record.summary,record.maxRuntimeMinutes*60,record.startedAtMillis,background=true,host=record.remoteHost)
     private fun logFile(record:BackgroundJobRecord):File =
         if (record.logMigrationDeferred) BackgroundJobLogs.legacyFile(record) ?: BackgroundJobLogs.file(record, runRoot)
         else BackgroundJobLogs.file(record, runRoot)
@@ -757,4 +757,12 @@ class BackgroundJobManager(
             }
         }
     }
+}
+
+/** 后台任务在运行通知与运行详情中的类型；SSH 有自己的类型，不当作本机 shell 显示。 */
+internal fun execRunKind(runner: BackgroundJobRunner): ExecRunKind = when (runner) {
+    BackgroundJobRunner.PYTHON -> ExecRunKind.PYTHON
+    BackgroundJobRunner.LINUX -> ExecRunKind.LINUX
+    BackgroundJobRunner.SSH -> ExecRunKind.SSH
+    BackgroundJobRunner.SHELL, BackgroundJobRunner.TERMUX -> ExecRunKind.SHELL
 }

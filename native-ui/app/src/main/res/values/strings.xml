@@ -1368,6 +1368,7 @@
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
     <string name="exec_notification_kind_linux">Linux</string>
+    <string name="exec_notification_kind_ssh">SSH</string>
     <string name="exec_notification_kind_terminal">Terminal</string>
     <string name="exec_notification_stop">Stop</string>
     <string name="exec_notification_stop_all">Stop all</string>

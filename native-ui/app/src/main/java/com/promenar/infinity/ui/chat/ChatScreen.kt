@@ -307,6 +307,8 @@ data class ChatScreenState(
     val browser: com.promenar.infinity.data.browser.BrowserUiState? = null,
     /** 远程页签与菜单项的圆点：智能体正在使用 SSH 或 Tailscale 需要处理；都没有时为 null。 */
     val remote: RemoteDot? = null,
+    /** 远程面板等处请求打开后台任务列表的次数；每次加一，打开运行详情的“后台”页。 */
+    val backgroundJobsRequest: Int = 0,
 )
 
 data class ChatScreenActions(
@@ -795,6 +797,19 @@ fun ChatScreenContent(
             // 运行坞：计划、生成、审批、后台任务与状态面板合成一行，清单收进运行详情，统计挂在回复下方。
             var runSheetTab by remember(uiState.session?.id) { mutableStateOf<com.promenar.infinity.ui.chat.components.RunDetailTab?>(null) }
             var runSheetOpen by remember(uiState.session?.id) { mutableStateOf(false) }
+            // 后台任务只有运行详情“后台”页一份列表：宽窗口切到检视器“运行”页签，窄窗口打开运行详情。
+            // 记下已处理的请求，重新进入组合时不再重复打开。
+            var handledJobsRequest by remember { mutableIntStateOf(state.backgroundJobsRequest) }
+            LaunchedEffect(state.backgroundJobsRequest) {
+                if (state.backgroundJobsRequest == handledJobsRequest) return@LaunchedEffect
+                handledJobsRequest = state.backgroundJobsRequest
+                if (inspectorMode) {
+                    actions.onSetInspectorPages(openChatPageRoot(ChatPage.Run))
+                } else {
+                    runSheetTab = com.promenar.infinity.ui.chat.components.RunDetailTab.BACKGROUND
+                    runSheetOpen = true
+                }
+            }
             val agentActivity = com.promenar.infinity.ui.chat.components.rememberAgentActivityState(fastTick = runSheetOpen || inspectorRoot == ChatPage.Run)
             val activitySummary = agentActivity?.summary
             val boardTitle = state.stateBoard?.board?.title
@@ -1445,8 +1460,9 @@ fun ChatScreenContent(
                                     },
                                     hasRunContent = hasRunContent,
                                 ) {
+                                    key(state.backgroundJobsRequest) {
                                     com.promenar.infinity.ui.chat.components.RunDetailContent(
-                                        initialTab = null,
+                                        initialTab = com.promenar.infinity.ui.chat.components.RunDetailTab.BACKGROUND.takeIf { state.backgroundJobsRequest > 0 },
                                         plan = sidePlan,
                                         isGenerating = uiState.isGenerating,
                                         turnStartedAt = turnStartedAt,
@@ -1461,6 +1477,7 @@ fun ChatScreenContent(
                                         onRemoveState = actions.onRemoveState,
                                         modifier = Modifier.fillMaxSize(),
                                     )
+                                    }
                                 }
                                 ChatPage.Canvas -> if (sideArtifacts.isEmpty() && sideCandidates.isEmpty()) {
                                     ChatInspectorCanvasEmpty()

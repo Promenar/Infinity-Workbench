@@ -72,6 +72,12 @@ Release 构建需要安全注入既有四个 `INFINITY_*` 签名变量，在获�
 
 升级 tailscale.com 或 Go：在 `native-ui/app/tailnet/` 修改 `go.mod` 后运行 `go mod tidy` 更新 `go.sum`，同步 `build.gradle.kts` 的 `tailnetGoVersion` 与两个工作流的 `go-version`，重新生成 `docs/legal/tailnet/go-modules-LICENSES.txt`，再运行 `TailnetDeviceTest`（沙箱启动、待登录链接、代理凭据与回环监听、公网直连、stdin 关闭后自行退出；需要设备能访问公网）。
 
+## GitHub 浏览器登录
+
+“Git 凭据 › 用浏览器登录 GitHub”使用 GitHub OAuth App 的设备码流程（Device Flow），应用里只放 client_id，不需要 client_secret。client_id 由 Gradle 属性 `infinity.githubOAuthClientId` 在构建时写入 `BuildConfig.GITHUB_OAUTH_CLIENT_ID`，只允许字母、数字、`.`、`_` 与 `-`；仓库不保存该值，可在 `~/.gradle/gradle.properties` 或命令行 `-Pinfinity.githubOAuthClientId=<client_id>` 提供。未提供时界面不显示该入口，只保留手动添加令牌。
+
+OAuth App 需在 GitHub 的 App 设置中勾选 “Enable Device Flow”。应用申请 `repo` 范围；授权得到的令牌以主机 `github.com`、GitHub 登录名为用户名存入 Git 凭据，内置 git 的 HTTPS 凭据注入代理按 `Authorization: Basic` 使用，与手动保存的个人访问令牌走同一路径。
+
 ## 内置 Linux 环境
 
 只有侧载渠道且变体包含 arm64-v8a 时接入 Linux 制品；Play 变体与纯 x86_64 变体不接入，运行时分别报告 `Unavailable(DISTRIBUTION)` 与 `Unavailable(UNSUPPORTED_ABI)`（`DistributionCapabilities.linuxRuntimeAvailable`）。固定输入登记在 `native-ui/app/linux/linux-runtime.properties`：termux/proot 提交、talloc 2.4.4 与 Alpine 3.24.3 aarch64 minirootfs 的下载地址和 SHA-256。

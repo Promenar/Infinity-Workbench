@@ -5,8 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** [LINUX] 为在 Linux 环境中运行的 shell 命令，[TERMINAL] 为本地终端会话。 */
-enum class ExecRunKind { SHELL, PYTHON, LINUX, TERMINAL }
+/** [LINUX] 为在 Linux 环境中运行的 shell 命令，[TERMINAL] 为本地终端会话，[SSH] 为远程主机上的命令。 */
+enum class ExecRunKind { SHELL, PYTHON, LINUX, TERMINAL, SSH }
 
 /** 运行中内置命令的展示信息；[summary] 已压缩为单行，可直接放进通知。 */
 data class ExecRunInfo(
@@ -16,6 +16,8 @@ data class ExecRunInfo(
     val timeoutSeconds: Int,
     val startedAtMillis: Long,
     val background: Boolean = false,
+    /** [ExecRunKind.SSH] 的主机 ID；本地命令为 null。 */
+    val host: String? = null,
 ) {
     companion object {
         const val SUMMARY_MAX_CHARS = 80

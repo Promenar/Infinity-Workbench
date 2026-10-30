@@ -21,6 +21,25 @@ class BackgroundJobStoreTest {
             assertThat(BackgroundJobStore(root).all().single{it.id=="linux"}.job().runner).isEqualTo(BackgroundJobRunner.LINUX)
         } finally { root.deleteRecursively() }
     }
+    @Test fun `SSH任务的主机ID随记录持久化，旧记录读作本地任务`() = runBlocking<Unit> {
+        val root=Files.createTempDirectory("job-host").toFile()
+        try {
+            java.io.File(root,"records.json").writeText("""[{"id":"legacy","sessionId":"s","workspaceRootUuid":"root","runner":"SSH","summary":"uptime","startedAtMillis":1,"maxRuntimeMinutes":120,"onExit":"none","logWorkspacePath":null,"runDirectory":"unused"}]""")
+            val store=BackgroundJobStore(root)
+            assertThat(store.all().single().job().remoteHost).isNull()
+            store.put(record("ssh").copy(runner="SSH",remoteHost="nas"))
+            val job=BackgroundJobStore(root).all().single{it.id=="ssh"}.job()
+            assertThat(job.runner).isEqualTo(BackgroundJobRunner.SSH)
+            assertThat(job.remoteHost).isEqualTo("nas")
+        } finally { root.deleteRecursively() }
+    }
+    @Test fun `后台任务的运行类型：SSH 独立，Termux 与未知执行器按 shell`() {
+        assertThat(execRunKind(BackgroundJobRunner.SSH)).isEqualTo(com.promenar.infinity.data.exec.ExecRunKind.SSH)
+        assertThat(execRunKind(BackgroundJobRunner.LINUX)).isEqualTo(com.promenar.infinity.data.exec.ExecRunKind.LINUX)
+        assertThat(execRunKind(BackgroundJobRunner.PYTHON)).isEqualTo(com.promenar.infinity.data.exec.ExecRunKind.PYTHON)
+        assertThat(execRunKind(BackgroundJobRunner.TERMUX)).isEqualTo(com.promenar.infinity.data.exec.ExecRunKind.SHELL)
+        assertThat(execRunKind(BackgroundJobRunner.SHELL)).isEqualTo(com.promenar.infinity.data.exec.ExecRunKind.SHELL)
+    }
     @Test fun `任务记录原子持久化并按会话删除`() = runBlocking<Unit> {
         val root=Files.createTempDirectory("job-store").toFile()
         try {

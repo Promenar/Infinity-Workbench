@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.promenar.infinity.InfinityApplication
@@ -56,6 +56,7 @@ import com.promenar.infinity.ui.common.LocalInfinitySettingsEmbedded
 import com.promenar.infinity.ui.settings.GitCredentialSettingsScreen
 import com.promenar.infinity.ui.settings.NetworkAccessSettingsScreen
 import com.promenar.infinity.ui.settings.SshSettingsScreen
+import com.promenar.infinity.data.tailnet.TailnetPeer
 import com.promenar.infinity.ui.settings.TailscaleSettingsScreen
 import com.promenar.infinity.ui.ssh.SshTerminalScreen
 import com.promenar.infinity.ui.theme.InfinitySpacing
@@ -82,12 +83,15 @@ internal fun RemotePage(
     linuxMode: Boolean,
     onBack: (() -> Unit)?,
     onOpenSettings: ((RemoteSettingsLink) -> Unit)?,
+    onOpenBackgroundJobs: (() -> Unit)? = null,
 ) {
     val app = LocalContext.current.applicationContext as InfinityApplication
     val tailscale by app.tailnetManager.state.collectAsState()
     var segment by rememberSaveable(sessionId) { mutableStateOf(RemoteSegment.SSH.token) }
     var terminalAlias by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
     var terminalTab by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
+    // Tailscale 分段里点“SSH”的设备：切到 SSH 分段后由主机设置打开预填的新建面板。
+    var importPeer by remember(sessionId) { mutableStateOf<TailnetPeer?>(null) }
     // 打开面板时智能体正在用 SSH，直接落在 SSH 分段。
     LaunchedEffect(Unit) { if (usage.active) segment = RemoteSegment.SSH.token }
 
@@ -108,7 +112,7 @@ internal fun RemotePage(
         return
     }
 
-    val agentItems: LazyListScope.() -> Unit = { remoteAgentUsageItems(usage, onOpenTerminal = openTerminal) }
+    val agentItems: LazyListScope.() -> Unit = { remoteAgentUsageItems(usage, onOpenTerminal = openTerminal, onOpenBackgroundJobs = onOpenBackgroundJobs) }
     // 窄窗口整页在会话内容之外组合，实时输出存储需在此重新提供。
     CompositionLocalProvider(LocalToolLiveOutput provides app.toolLiveOutputStore) {
     RemotePageContent(
@@ -125,9 +129,18 @@ internal fun RemotePage(
                 onBack = {},
                 onOpenTerminal = { alias -> openTerminal(alias, null) },
                 leadingContent = agentItems.takeIf { usage.active },
+                importPeer = importPeer,
+                onImportConsumed = { importPeer = null },
+                onOpenTailscale = { segment = RemoteSegment.TAILSCALE.token },
             )
             RemoteSegment.GIT -> GitCredentialSettingsScreen(onBack = {}, onOpenSsh = { segment = RemoteSegment.SSH.token })
-            RemoteSegment.TAILSCALE -> TailscaleSettingsScreen(onBack = {})
+            RemoteSegment.TAILSCALE -> TailscaleSettingsScreen(
+                onBack = {},
+                onAddSshHost = { peer ->
+                    importPeer = peer
+                    segment = RemoteSegment.SSH.token
+                },
+            )
             RemoteSegment.NETWORK -> NetworkAccessSettingsScreen(onBack = {}, onOpenTailscale = { segment = RemoteSegment.TAILSCALE.token })
         }
     }
@@ -250,10 +263,14 @@ private fun RemoteSettingsLinks(onOpen: (RemoteSettingsLink) -> Unit) {
 }
 
 /**
- * SSH 分段最前的“智能体正在使用”：运行中的命令带实时尾部，可停止；交互会话与后台命令可在终端只读页签查看。
- * 用户不能向智能体的会话输入。
+ * SSH 分段最前的“智能体正在使用”：运行中的命令带实时尾部，可停止；交互会话可在终端只读页签查看。
+ * SSH 后台命令与本地后台任务同在运行详情的“后台”列表，这里只给一行计数入口。用户不能向智能体的会话输入。
  */
-internal fun LazyListScope.remoteAgentUsageItems(usage: RemoteAgentUsage, onOpenTerminal: (alias: String, tab: String?) -> Unit) {
+internal fun LazyListScope.remoteAgentUsageItems(
+    usage: RemoteAgentUsage,
+    onOpenTerminal: (alias: String, tab: String?) -> Unit,
+    onOpenBackgroundJobs: (() -> Unit)?,
+) {
     item("agent_usage") {
         InfinitySettingsSection(
             title = stringResource(R.string.remote_agent_section),
@@ -282,17 +299,17 @@ internal fun LazyListScope.remoteAgentUsageItems(usage: RemoteAgentUsage, onOpen
                     showChevron = true,
                 )
             }
-            usage.jobs.forEach { job ->
-                Column {
-                    InfinitySettingsItem(
-                        icon = Icons.Rounded.Schedule,
-                        title = stringResource(R.string.remote_agent_job),
-                        subtitle = job.summary,
-                        subtitleIsIdentifier = true,
-                        onClick = {},
-                    )
-                    Box(Modifier.padding(horizontal = InfinitySpacing.Medium)) { RunningToolLiveOutput(job.liveOutputKey, showStop = false) }
-                }
+            if (usage.jobs.isNotEmpty()) {
+                InfinitySettingsItem(
+                    icon = Icons.Rounded.Schedule,
+                    title = stringResource(R.string.remote_agent_jobs),
+                    subtitle = pluralStringResource(R.plurals.remote_agent_jobs_running, usage.jobs.size, usage.jobs.size),
+                    onClick = onOpenBackgroundJobs ?: {},
+                    enabled = onOpenBackgroundJobs != null,
+                    onClickLabel = stringResource(R.string.remote_agent_jobs_open),
+                    showChevron = onOpenBackgroundJobs != null,
+                    modifier = Modifier.testTag(RemoteTags.AGENT_JOBS),
+                )
             }
         }
     }
@@ -301,6 +318,7 @@ internal fun LazyListScope.remoteAgentUsageItems(usage: RemoteAgentUsage, onOpen
 internal object RemoteTags {
     const val PAGE = "remote_page"
     const val AGENT_USAGE = "remote_agent_usage"
+    const val AGENT_JOBS = "remote_agent_jobs"
     const val LINUX_HINT = "remote_linux_hint"
     fun segment(segment: RemoteSegment) = "remote_segment_${segment.token}"
     fun link(link: RemoteSettingsLink) = "remote_link_${link.name.lowercase()}"

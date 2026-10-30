@@ -378,6 +378,8 @@ fun ChatRoute(
     val chatPages = restoreChatPages(chatPagesToken)
     // 二级页面由检视器还是整页承载，以会话宿主自身的宽度为准：内屏三列的会话列虽在宽窗口里，自身仍是窄窗口。
     var paneInspector by remember { mutableStateOf(wideWindow) }
+    // 远程面板请求打开后台任务列表的次数，交给会话页打开运行详情的“后台”页。
+    var backgroundJobsRequest by remember(sessionId) { mutableIntStateOf(0) }
     // 窄窗口整页与检视器“文件”“Git”页签共用的层级；收起时仍按最后的层级渲染，退场动画期间内容不消失。
     val pageStack = chatPageStack(chatPages, paneInspector)
     var lastPageStack by remember { mutableStateOf(pageStack) }
@@ -819,6 +821,11 @@ fun ChatRoute(
                                 linuxMode = runModeStatus?.mode == com.promenar.infinity.domain.model.SessionRunMode.LINUX,
                                 onBack = closeTopChatPage.takeUnless { inInspector },
                                 onOpenSettings = settingsNavigation?.openRemoteSettings,
+                                onOpenBackgroundJobs = {
+                                    // 窄窗口先收起整页远程面板；宽窗口由会话页把检视器切到“运行”页签。
+                                    if (!inInspector) closeTopChatPage()
+                                    backgroundJobsRequest++
+                                },
                             )
                             ChatPage.Canvas -> com.promenar.infinity.ui.canvas.CanvasListPage(
                                 onBack = closeTopChatPage.takeUnless { inInspector },
@@ -905,6 +912,7 @@ fun ChatRoute(
                 inspectorPages = chatPages,
                 browser = browserState,
                 remote = remoteDotState,
+                backgroundJobsRequest = backgroundJobsRequest,
             ),
             actions = ChatScreenActions(
                 onOpenStartupIssues = { showStartupIssues = true },

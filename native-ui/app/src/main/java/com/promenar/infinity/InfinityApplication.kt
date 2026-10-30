@@ -2930,6 +2930,14 @@ open class InfinityApplication : Application(), SingletonImageLoader.Factory,
             .build()
     }
 
+    val gitHubDeviceLogin: com.promenar.infinity.data.git.remote.GitHubDeviceLogin by lazy {
+        com.promenar.infinity.data.git.remote.OAuthDeviceLogin(
+            BuildConfig.GITHUB_OAUTH_CLIENT_ID,
+            gitRemoteHttpClient,
+            com.promenar.infinity.data.git.remote.LazyGitCredentialStore { gitCredentialStore },
+        )
+    }
+
     /**
      * 内置 git 的远端认证代理（HTTPS 凭据注入 + SSH 桥），由内置执行后端按命令签发 nonce。
      * 装配可能发生在主线程：凭据存储与 SshRuntime 都延迟到首次使用（在 IO 线程）再创建。

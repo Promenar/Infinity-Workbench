@@ -126,9 +126,10 @@ class ExecForegroundService : Service() {
                             ExecRunKind.PYTHON -> R.string.exec_notification_kind_python
                             ExecRunKind.LINUX -> R.string.exec_notification_kind_linux
                             ExecRunKind.TERMINAL -> R.string.exec_notification_kind_terminal
+                            ExecRunKind.SSH -> R.string.exec_notification_kind_ssh
                         },
                     )
-                    setContentText("$kind · ${latest.summary}")
+                    setContentText(listOfNotNull(kind, latest.host, latest.summary).joinToString(" · "))
                     setWhen(latest.startedAtMillis)
                     setUsesChronometer(true)
                     setShowWhen(true)

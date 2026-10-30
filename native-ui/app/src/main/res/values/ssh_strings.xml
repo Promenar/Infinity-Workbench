@@ -24,10 +24,6 @@
     <string name="ssh_generate_save_copy">Generate key, save and copy public key</string>
     <string name="ssh_generate_help">After saving, add the public key to the server\'s authorized_keys.</string>
     <string name="ssh_keep_credential_hint">Leave credential fields empty to keep the saved credential. Import or generate a key to replace it.</string>
-    <string name="ssh_keep_terminal">Keep terminal on exit</string>
-    <string name="ssh_keep_terminal_help">Keeps the terminal when you leave; disconnects after 10 idle minutes.</string>
-    <string name="ssh_keep_enabled">Terminal kept on exit; 10-minute idle timeout.</string>
-    <string name="ssh_close_on_exit">Terminal closes when leaving this page.</string>
     <string name="ssh_open_terminal">Open terminal</string>
     <string name="ssh_verify">Verify fingerprint</string>
     <string name="ssh_trusted">Host fingerprint saved</string>
@@ -55,7 +51,7 @@
     <string name="ssh_agent_manage_title">Let agents manage SSH hosts</string>
     <string name="ssh_agent_manage_summary_on">Every change needs your approval</string>
     <string name="ssh_agent_manage_summary_off">Agents can only connect to configured hosts</string>
-    <string name="ssh_agent_manage_description">Every change needs your approval. You always enter passwords and confirm fingerprints yourself.</string>
+    <string name="ssh_agent_manage_description">On by default. Agents need your approval every time they save or delete a host or install a public key. You always enter passwords and confirm fingerprints yourself.</string>
     <string name="ssh_cancel">Cancel</string>
     <string name="ssh_forward_configure">Local port forwarding</string>
     <string name="ssh_forward_loopback_only">Only this device can reach this port.</string>

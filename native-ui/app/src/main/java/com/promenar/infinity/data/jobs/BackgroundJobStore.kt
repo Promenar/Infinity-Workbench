@@ -39,10 +39,12 @@ data class BackgroundJobRecord(
     /** 让出任务在原工作区持锁运行，由前台服务对账，不执行快照合入。 */
     val directWorkspace: Boolean = false,
     val commandResult: kotlinx.serialization.json.JsonObject? = null,
+    /** SSH 任务的主机 ID；本地任务与旧记录为 null。 */
+    val remoteHost: String? = null,
 ) {
     /** 未知执行器按 SHELL 展示，持久化原值保留，不据此启动新命令。 */
     val runnerKind: BackgroundJobRunner get() = BackgroundJobRunner.entries.firstOrNull { it.name == runner } ?: BackgroundJobRunner.SHELL
-    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id")
+    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id",remoteHost)
     val running: Boolean get() = state == "RUNNING"
 }
 

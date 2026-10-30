@@ -199,7 +199,7 @@ private fun RunningJobCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SmallTag(jobRunnerName(job), MaterialTheme.colorScheme.surfaceContainerHighest)
+                        SmallTag(jobRunnerLabel(job), MaterialTheme.colorScheme.surfaceContainerHighest)
                         Text(
                             jobStateText(job, nowMillis),
                             style = InfinityTypography.labelSmall.copy(fontFeatureSettings = "tnum"),
@@ -370,7 +370,11 @@ private fun JobStateIcon(job: BackgroundJob, modifier: Modifier) {
 }
 
 @Composable
-private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> = listOf(jobRunnerName(job), jobStateText(job, nowMillis))
+private fun jobMetaSegments(job: BackgroundJob, nowMillis: Long): List<String> = listOf(jobRunnerLabel(job), jobStateText(job, nowMillis))
+
+/** 运行环境标签；SSH 任务后接主机 ID，与本地任务在同一列表里区分。 */
+@Composable
+private fun jobRunnerLabel(job: BackgroundJob): String = listOfNotNull(jobRunnerName(job), job.remoteHost).joinToString(" · ")
 
 @Composable
 private fun jobRunnerName(job: BackgroundJob): String = stringResource(

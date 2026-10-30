@@ -1363,6 +1363,7 @@
     <string name="exec_notification_kind_shell">Shell</string>
     <string name="exec_notification_kind_python">Python</string>
     <string name="exec_notification_kind_linux">Linux</string>
+    <string name="exec_notification_kind_ssh">SSH</string>
     <string name="exec_notification_kind_terminal">终端</string>
     <string name="exec_notification_stop">停止</string>
     <string name="exec_notification_stop_all">全部停止</string>

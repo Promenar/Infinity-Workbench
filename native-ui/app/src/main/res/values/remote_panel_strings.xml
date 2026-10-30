@@ -17,7 +17,12 @@
     <string name="remote_agent_footer">Read-only: you can watch output and stop commands, but not type into the agent\'s sessions.</string>
     <string name="remote_agent_view_in_terminal">View in terminal</string>
     <string name="remote_agent_session">Interactive session</string>
-    <string name="remote_agent_job">Background command</string>
+    <string name="remote_agent_jobs">Background jobs</string>
+    <plurals name="remote_agent_jobs_running">
+        <item quantity="one">%d SSH background command running</item>
+        <item quantity="other">%d SSH background commands running</item>
+    </plurals>
+    <string name="remote_agent_jobs_open">Open background jobs</string>
     <string name="remote_conn_section">Active connections</string>
     <string name="remote_conn_footer">Terminals stay connected until you disconnect, swipe the app away from recents, or exit the app.</string>
     <string name="remote_conn_since">Since %1$s</string>

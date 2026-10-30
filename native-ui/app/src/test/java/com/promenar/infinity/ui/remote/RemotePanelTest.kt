@@ -87,7 +87,7 @@ class RemotePanelTest {
         assertThat(runningSshJobs(jobs, "chat").map { it.id }).containsExactly("a")
     }
 
-    @Test fun `活动连接：终端在前，其后转发、智能体与后台命令，同类按连接先后`() {
+    @Test fun `活动连接：终端在前，其后转发与智能体，同类按连接先后；后台命令只在后台任务列表`() {
         val connections = listOf(
             connection("job", SshConnectionKind.JOB, 1),
             connection("b", SshConnectionKind.TERMINAL, 5),
@@ -95,7 +95,7 @@ class RemotePanelTest {
             connection("a", SshConnectionKind.TERMINAL, 3),
             connection("fwd", SshConnectionKind.FORWARD, 4),
         )
-        assertThat(sortedActiveConnections(connections).map { it.alias }).containsExactly("a", "b", "fwd", "agent", "job").inOrder()
+        assertThat(sortedActiveConnections(connections).map { it.alias }).containsExactly("a", "b", "fwd", "agent").inOrder()
     }
 
     private fun sshCall(id: String, host: String, command: String) = ExecutionStep(

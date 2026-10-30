@@ -41,8 +41,8 @@ SSH 路线复用 SSH 主机管理：在 Termux 安装 `openssh`、配置密码�
 
 Termux 路径：在 Termux 安装 OpenSSH，运行 `whoami` 获取用户名、设置密码后运行 `sshd`。在 Infinity Workbench 配置主机 `127.0.0.1`、端口 `8022` 和该用户名，核对 Termux 中 `ssh-keygen -lf "$PREFIX/etc/ssh/ssh_host_ed25519_key.pub" -E sha256` 显示的指纹后打开终端。需要密钥认证时，把 Infinity Workbench 复制的公钥添加到 Termux 的 `~/.ssh/authorized_keys`。
 
-Agent 协助配置：开启“允许 Agent 管理 SSH 主机”后，模型可使用 `ssh_host_list`、`ssh_host_save`、`ssh_host_delete` 与 `ssh_host_install_key`。保存密码主机且没有密码时弹窗请用户输入，保存密钥主机且没有密钥时生成 Ed25519 并只返回公钥；修改主机名或端口会清除已信任指纹。`ssh_host_install_key` 依次确认指纹、使用已存或弹窗输入的密码、生成新密钥并追加到远端 `~/.ssh/authorized_keys`（目录 700、文件 600、已存在则不重复），再用新密钥验证登录，成功后切换为密钥认证，失败则恢复原密码认证。后台限制可能暂停 Termux 自身，需按设备设置允许其运行。
+Agent 协助配置：“允许 Agent 管理 SSH 主机”默认开启（用户可关闭），开启时模型可使用 `ssh_host_list`、`ssh_host_save`、`ssh_host_delete` 与 `ssh_host_install_key`。保存密码主机且没有密码时弹窗请用户输入，保存密钥主机且没有密钥时生成 Ed25519 并只返回公钥；修改主机名或端口会清除已信任指纹。`ssh_host_install_key` 依次确认指纹、使用已存或弹窗输入的密码、生成新密钥并追加到远端 `~/.ssh/authorized_keys`（目录 700、文件 600、已存在则不重复），再用新密钥验证登录，成功后切换为密钥认证，失败则恢复原密码认证。后台限制可能暂停 Termux 自身，需按设备设置允许其运行。
 
-Agent 工具只接受已配置别名，不接受地址或凭据。`ssh_exec` 默认 60 秒、最多 600 秒，stdout/stderr 合计采集有上限（超限时两路分配额度并保留开头），结果与 `termux_exec` 使用同一格式，退出码非 0 或超时记为失败；`sftp_read` 按 UTF-16 偏移分页，拒绝二进制与大于 16 MiB 的文件。`sftp_write` 支持 `expected_sha256` 冲突检查，以临时文件发布并保留目标权限，但 SFTP 不保证跨客户端原子比较写入。取消上传时会尝试删除临时文件；连接中断导致清理失败时，主机页显示提示，之后用相同配置连接会重试。
+Agent 工具只接受已配置别名，不接受地址或凭据。`ssh_exec` 默认 60 秒、最多 600 秒，stdout/stderr 合计采集有上限（超限时两路分配额度并保留开头），结果与 `termux_exec` 使用同一格式，退出码非 0 或超时记为失败；与 `shell_exec` 一样支持让出与 `background=true`，后台命令与本地后台任务同列在运行详情“后台”页，运行环境标签为“SSH · 主机 ID”，停止只断开通道；`sftp_read` 按 UTF-16 偏移分页，拒绝二进制与大于 16 MiB 的文件。`sftp_write` 支持 `expected_sha256` 冲突检查，以临时文件发布并保留目标权限，但 SFTP 不保证跨客户端原子比较写入。取消上传时会尝试删除临时文件；连接中断导致清理失败时，主机页显示提示，之后用相同配置连接会重试。
 
 终端离开页面默认断开，可为单个主机选择保持；用户终端和本地转发运行时使用前台通知，可从通知停止。PTY 闲置 10 分钟自动关闭；Agent 生成结束释放连接，待审批期间最多保留 10 分钟，显式停止或删除会话会关闭所属连接。进程结束不恢复终端或转发，页面状态以运行时资源为准。

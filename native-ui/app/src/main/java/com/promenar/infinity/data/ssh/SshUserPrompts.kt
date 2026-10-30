@@ -18,7 +18,8 @@ object SshAgentPreferences {
     const val HOST_MANAGEMENT_KEY = "ssh_agent_host_management"
     val HOST_MANAGEMENT_TOOLS = setOf("ssh_host_list", "ssh_host_save", "ssh_host_delete", "ssh_host_install_key")
 
-    fun isHostManagementEnabled(settings: SharedPreferences): Boolean = settings.getBoolean(HOST_MANAGEMENT_KEY, false)
+    /** 默认开启：主机变更每次仍需用户审批；用户显式关闭后保留其选择。 */
+    fun isHostManagementEnabled(settings: SharedPreferences): Boolean = settings.getBoolean(HOST_MANAGEMENT_KEY, true)
 }
 
 /** 用户终端的全局空闲策略；只在最后输入或输出后计时。 */

@@ -487,6 +487,10 @@ class SshRuntimeIntegrationTest {
         val result = exec.execute(Json.parseToJsonElement("""{"host":"termux","command":"stream","background":true,"on_exit":"none"}""").jsonObject, context)
         val id = Json.parseToJsonElement(result.content).jsonObject.getValue("job_id").jsonPrimitive.content
         assertThat(jobs.status("chat", id).record.running).isTrue()
+        // 与本地后台任务同一列表，靠运行环境与主机 ID 区分。
+        val listed = jobs.list("chat").single { it.id == id }.job()
+        assertThat(listed.runner).isEqualTo(com.promenar.infinity.domain.jobs.BackgroundJobRunner.SSH)
+        assertThat(listed.remoteHost).isEqualTo("termux")
         runtime.closeOwner("agent:chat")
         withTimeout(5_000) { while (jobs.status("chat", id).tail.text.contains("tail").not()) delay(10) }
         assertThat(jobs.status("chat", id).tail.text).doesNotContain("synthetic-password")
@@ -637,7 +641,8 @@ class SshRuntimeIntegrationTest {
         val directory = root.resolve("jobs-test").toFile()
         val jobs = com.promenar.infinity.data.jobs.BackgroundJobManager(
             scope, com.promenar.infinity.data.jobs.BackgroundJobStore(java.io.File(directory, "store")), java.io.File(directory, "runs"),
-            com.promenar.infinity.data.exec.BuiltinCommandRunner(),
+            // SSH 任务不经本机命令执行器，这里只为满足构造参数。
+            com.promenar.infinity.data.exec.BuiltinCommandRunner(listOf("/bin/sh"), "/bin/sh", { _, _ -> }, { java.io.File(directory, "scratch") }),
             prepareWorkspace = { error("SSH 不准备本机工作区") }, prepareCommand = { _, _, _, _, _ -> error("SSH 不运行本机命令") },
             completion = completion,
         )

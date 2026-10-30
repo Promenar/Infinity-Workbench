@@ -21,7 +21,9 @@ class BackgroundSshRecoveryTest {
             File(run, "output.log").writeText("已遮蔽的远端输出")
             store.put(BackgroundJobRecord("job-test", "chat", "root", "SSH", "远端命令", startedAtMillis = System.currentTimeMillis(),
                 maxRuntimeMinutes = 120, onExit = "none", logWorkspacePath = "job-log:job-test", runDirectory = run.path))
-            val manager = BackgroundJobManager(scope, store, File(root, "runs"), BuiltinCommandRunner(),
+            val manager = BackgroundJobManager(scope, store, File(root, "runs"),
+                // SSH 任务不经本机命令执行器，这里只为满足构造参数。
+                BuiltinCommandRunner(listOf("/bin/sh"), "/bin/sh", { _, _ -> }, { File(root, "scratch") }),
                 prepareWorkspace = { error("SSH 不使用本机工作区") }, prepareCommand = { _, _, _, _, _ -> error("SSH 不执行本机命令") },
                 reconcile = { _, _, _ -> error("SSH 不执行本机恢复") })
             manager.initialize()

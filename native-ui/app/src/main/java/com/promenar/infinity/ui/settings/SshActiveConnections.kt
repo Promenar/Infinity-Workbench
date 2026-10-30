@@ -25,9 +25,12 @@ import com.promenar.infinity.ui.common.InfinitySettingsSection
 import com.promenar.infinity.ui.theme.InfinitySpacing
 import java.util.Date
 
-/** 活动连接排序：用户自己的终端在前，其次转发、后台命令与智能体；同类按连接先后。 */
+/**
+ * 活动连接排序：用户自己的终端在前，其次转发与智能体；同类按连接先后。
+ * 后台命令的连接只在会话的后台任务列表里出现，这里不重复列出。
+ */
 internal fun sortedActiveConnections(connections: List<SshActiveConnection>): List<SshActiveConnection> =
-    connections.sortedWith(compareBy<SshActiveConnection> { it.kind.ordinal }.thenBy { it.connectedAtMillis }.thenBy { it.alias })
+    connections.filter { it.kind != SshConnectionKind.JOB }.sortedWith(compareBy<SshActiveConnection> { it.kind.ordinal }.thenBy { it.connectedAtMillis }.thenBy { it.alias })
 
 private val SshConnectionKind.icon: ImageVector
     get() = when (this) {
@@ -64,12 +67,12 @@ internal fun SshActiveConnectionsSection(
         footer = stringResource(R.string.remote_conn_footer),
     ) {
         sortedActiveConnections(connections).forEach { connection ->
-            val since = stringResource(R.string.remote_conn_since, DateFormat.getTimeFormat(context).format(Date(connection.connectedAtMillis)))
+            val detail = stringResource(R.string.remote_conn_since, DateFormat.getTimeFormat(context).format(Date(connection.connectedAtMillis)))
             val terminal = connection.kind == SshConnectionKind.TERMINAL
             InfinitySettingsItem(
                 icon = connection.kind.icon,
                 title = connection.alias,
-                subtitleSegments = listOf(connection.kind.label(), since),
+                subtitleSegments = listOf(connection.kind.label(), detail),
                 onClick = { if (terminal) onOpenTerminal(connection.alias) },
                 enabled = enabled,
                 onClickLabel = if (terminal) stringResource(R.string.ssh_open_terminal) else null,

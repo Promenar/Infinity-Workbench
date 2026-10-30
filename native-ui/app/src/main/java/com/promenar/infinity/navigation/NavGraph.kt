@@ -689,6 +689,7 @@ internal fun NavGraphBuilder.settingsDestinations(navigator: SettingsNavigator) 
             com.promenar.infinity.ui.settings.SshSettingsScreen(
                 onBack = { navigator.back() },
                 onOpenTerminal = { alias -> navigator.open("ssh_terminal/${android.net.Uri.encode(alias)}") },
+                onOpenTailscale = { navigator.open(NavDestinations.TAILSCALE_CONFIG) },
             )
         }
     }
