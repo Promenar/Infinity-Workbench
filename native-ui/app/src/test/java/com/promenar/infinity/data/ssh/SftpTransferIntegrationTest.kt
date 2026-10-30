@@ -215,6 +215,17 @@ class SftpTransferIntegrationTest {
         assertThat(target.readBytes()).isEqualTo(byteArrayOf(0, -1, 2))
     }
 
+    @Test fun `上传审批快照在远端目标不存在时给出新建预览`() = runBlocking<Unit> {
+        val source = File(local, "source").apply { writeBytes(ByteArray(5) { it.toByte() }) }
+        val snapshot = runtime.hostSnapshot("nas")
+        val preview = runtime.withHostSnapshot(snapshot) {
+            com.promenar.infinity.ui.chat.manager.skills.sftpApprovalSnapshot(runtime, "s", "nas", "/missing.bin", endpoint(source), true, false)
+        }
+        assertThat(preview.remote).isNull()
+        assertThat(preview.fields["target_exists"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(preview.fields["bytes_total"]!!.jsonPrimitive.long).isEqualTo(5)
+    }
+
     @Test fun `让出后台观察进度且job_status返回transfer`() = runBlocking<Unit> {
         val source = File(local, "source").apply { writeBytes(ByteArray(2 * 1024 * 1024)) }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

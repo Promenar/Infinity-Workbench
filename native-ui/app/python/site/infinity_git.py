@@ -92,7 +92,7 @@ def _usage():
         "  共享文件夹的仓库自动设置 core.symlinks=false、core.filemode=false、core.ignorecase=true，",
         "  符号链接检出为普通文件，仅大小写不同的路径只保留一个。",
         "远端：HTTPS 与 SSH（git@<主机>:<路径>、ssh://）。",
-        "  私有仓库的 HTTPS 凭据请在 Infinity Workbench 设置 → 工具 → Git 凭据 中按主机保存（用户名 + 令牌），内置 git 自动使用；",
+        "  私有仓库的 HTTPS 凭据请在 Infinity Workbench 设置 → 执行环境与连接 → Git 凭据 中按主机保存（用户名 + 令牌），内置 git 自动使用；",
         "  不要把令牌写进 URL、命令或文件（URL 中自带的凭据仍可用但不推荐，会写入仓库配置）。",
         "  SSH 远端使用 设置 → 工具 → SSH 主机 中已固定主机密钥的主机（例如主机 github.com、用户 git），私钥不离开 App。",
         FALLBACK,
@@ -109,7 +109,7 @@ ENV_CREDENTIAL_HOSTS = "INFINITY_GIT_CREDENTIAL_HOSTS"
 ENV_SSH_BRIDGE = "INFINITY_GIT_SSH_BRIDGE"
 NONCE_HEADER = "X-Infinity-Git-Nonce"
 PROXY_ERROR_HEADER = "X-Infinity-Git-Error"
-CREDENTIAL_SETTINGS = "设置 → 工具 → Git 凭据"
+CREDENTIAL_SETTINGS = "设置 → 执行环境与连接 → Git 凭据"
 SSH_UNAVAILABLE = "当前环境没有 SSH 桥（只在 Infinity Workbench 的 shell_exec / python_exec 中可用），请改用 HTTPS 地址。"
 
 

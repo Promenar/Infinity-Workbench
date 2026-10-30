@@ -941,17 +941,18 @@ class SshRuntime(
     private suspend fun <T> sftp(owner: String, alias: String, path: String, block: (ChannelSftp, Connection) -> T): T {
         SshPolicy.path(path)
         val ref = AtomicReference<ChannelSftp?>()
+        // 结果本身可以为 null（远端不存在），先装箱再判超时，避免把“不存在”误报成 TIMEOUT。
         return try {
-            withTimeoutOrNull(60_000) {
+            (withTimeoutOrNull(60_000) {
                 withConnection(owner, alias) { connection ->
                     verifyCurrentConnection(connection)
                     io({ ref.get()?.disconnect() }) {
                         val channel = (connection.session.openChannel("sftp") as ChannelSftp).also(ref::set)
-                        try { channel.connect(CONNECT_TIMEOUT); block(channel, connection)
+                        try { channel.connect(CONNECT_TIMEOUT); SftpCompleted(block(channel, connection))
                         } finally { channel.disconnect(); connection.used = now() }
                     }
                 }
-            } ?: throw SshFailure("TIMEOUT")
+            } ?: throw SshFailure("TIMEOUT")).value
         } finally { withContext(NonCancellable + Dispatchers.IO) { ref.get()?.disconnect() } }
     }
     private fun fileHash(channel: ChannelSftp, path: String): String {
@@ -1100,3 +1101,6 @@ private class TextRing(private val limit: Int) {
     @Synchronized fun drain(): SshSessionOutput = SshSessionOutput(text.toString(), closed, truncated).also { text.setLength(0); truncated = false }
     @Synchronized fun clear() { for (index in text.indices) text.setCharAt(index, '\u0000'); text.setLength(0); closed = true }
 }
+
+/** SFTP 调用已完成的标记；value 允许为 null。 */
+private class SftpCompleted<T>(val value: T)

@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.1-beta] - 2026-10-30
+
+### 修复
+
+- `sftp_upload` 上传到远端尚不存在的路径时，审批卡显示“未能确认执行目标”、批准后返回 `SSH_HOST_AUTHORIZATION_CHANGED`。远端 stat 对“目标不存在”返回的空结果被当成超时；现在按新建目标给出审批预览，正常上传。
+- 凭据注入代理的 401/403 说明与内置 git 帮助中的设置路径更正为“设置 → 执行环境与连接 → Git 凭据”。
+
 ## [0.6.0-beta] - 2026-10-30
 
 ### 新增
@@ -3258,8 +3265,6 @@ All notable changes to this project will be documented in this file.
 - 移除占位用的“工作台”功能。
 
 ## [Unreleased]
-
-## [0.6.0-beta] - 2026-10-30
 
 ### 新增
 - **智能上下文管理**:

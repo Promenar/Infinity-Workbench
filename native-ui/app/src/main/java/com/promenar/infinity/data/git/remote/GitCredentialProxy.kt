@@ -251,7 +251,7 @@ class GitCredentialProxy(
     companion object {
         const val NONCE_HEADER = "X-Infinity-Git-Nonce"
         const val ERROR_HEADER = "X-Infinity-Git-Error"
-        private const val CREDENTIAL_SETTINGS = "设置 → 工具 → Git 凭据"
+        private const val CREDENTIAL_SETTINGS = "设置 → 执行环境与连接 → Git 凭据"
         private const val INFO_REFS = "/info/refs"
         private val SMART_SERVICES = listOf("git-upload-pack", "git-receive-pack")
         private val SMART_QUERIES = SMART_SERVICES.map { "service=$it" }.toSet()

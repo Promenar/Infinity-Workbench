@@ -1711,7 +1711,7 @@ class CredentialProxyCloneTest(unittest.TestCase):
         result = self.git("ls-remote", "https://git.test/repo.git")
         self.assertEqual(result.returncode, infinity_git.FATAL_EXIT)
         self.assertIn("CREDENTIAL_REJECTED", result.stderr)
-        self.assertIn("设置 → 工具 → Git 凭据", result.stderr)
+        self.assertIn("设置 → 执行环境与连接 → Git 凭据", result.stderr)
 
     def test_redirect_to_proxy_keeps_original_host(self) -> None:
         self.proxy.mode = "redirect"
