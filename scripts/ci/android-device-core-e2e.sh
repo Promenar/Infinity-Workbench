@@ -52,6 +52,7 @@ PENDING_NOTIFICATION_SCREENSHOT_EXPECTED=""
 SSH_HELPER="${REPO_ROOT}/scripts/ci/ssh-device-session.py"
 SSH_REVERSE_PORT=""
 SSH_REVERSE_ACTIVE=false
+SHARED_STORAGE_ACCESS_GRANTED=false
 if [[ -n "${INFINITY_SSH_TEST_SESSION:-}" ]]; then
     if [[ "${INFINITY_SSH_TEST_SESSION}" != /* ]]; then
         export INFINITY_SSH_TEST_SESSION="${PWD}/${INFINITY_SSH_TEST_SESSION}"
@@ -149,6 +150,9 @@ restore_rotation_state() {
 
 finish_run() {
     local exit_code="$1"
+    if [[ "${SHARED_STORAGE_ACCESS_GRANTED}" == "true" ]]; then
+        adb shell appops set "${TARGET_PACKAGE}" MANAGE_EXTERNAL_STORAGE default >/dev/null 2>&1 || true
+    fi
     if [[ "${SSH_REVERSE_ACTIVE}" == "true" ]]; then
         adb reverse --remove "tcp:${SSH_REVERSE_PORT}" >/dev/null 2>&1 || true
         SSH_REVERSE_ACTIVE=false
@@ -455,6 +459,14 @@ printf '%s\n' "${APP_RUNNER}" > "${ARTIFACT_DIR}/app-runner.txt"
 printf '%s\n' "${MAIN_ACTIVITY_RUNNER}" > "${ARTIFACT_DIR}/mainactivity-runner.txt"
 
 adb logcat -c
+
+# 专用设备测试包已在上方重新安装，共享卷用例需要真实的所有文件访问权限。
+adb shell appops set "${TARGET_PACKAGE}" MANAGE_EXTERNAL_STORAGE allow
+SHARED_STORAGE_ACCESS_GRANTED=true
+run_test shared-storage-file-tools "${APP_RUNNER}" \
+    -e class com.promenar.infinity.data.storage.SharedStorageFileToolsDeviceTest
+adb shell appops set "${TARGET_PACKAGE}" MANAGE_EXTERNAL_STORAGE default
+SHARED_STORAGE_ACCESS_GRANTED=false
 
 run_test workspace-filesystem-contracts "${APP_RUNNER}" \
     -e class com.promenar.infinity.data.repository.AndroidSecureWorkspaceFileOpsTest

@@ -82,6 +82,22 @@ class LinuxSessionFileSkillTest {
 
     @After fun cleanup() { com.promenar.infinity.startup.StartupWriteBarrier.resetForTesting(); unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
 
+    @Test fun `手机存储的workspace路径写入映射到所选目录根`() = runBlocking {
+        selected = SessionWorkspace.Directory(
+            WorkspaceEntity("shared", WorkspaceEntity.KIND_SHARED, "手机存储", externalDirectory.path, 0), externalDirectory,
+        )
+        val bytes = "shared-data".toByteArray()
+        coEvery { mounts.write("one", "/probe.txt", bytes, null, true) } coAnswers {
+            assertThat(kotlinx.coroutines.currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds?.get(""))
+                .isEqualTo(ExternalMountPaths.workspaceMountId("shared"))
+            entry("shared-file", "/probe.txt", externalDirectory.path)
+        }
+        access.write("one", "/workspace/probe.txt", bytes, null, true)
+        coVerify(exactly = 1) { mounts.write("one", "/probe.txt", bytes, null, true) }
+        assertThat(File(roots.getValue("one").physicalRootPath, "probe.txt").exists()).isFalse()
+        assertThat(File(rootfsDirectory, "workspace/probe.txt").exists()).isFalse()
+    }
+
     @Test fun `Linux目录相对文件使用选中根且绝对别名保持一致`() = runBlocking {
         val identity = com.promenar.infinity.data.repository.PersistentFileIdentity.encode("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "ino=1")
         selected = SessionWorkspace.Directory(WorkspaceEntity("linux", WorkspaceEntity.KIND_LINUX_HOME, "app", "/opt/app#$identity", 0), externalDirectory)
