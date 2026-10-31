@@ -32,6 +32,17 @@
   - 上游模型原始输出已经缺少真实换行，只剩标题、列表、表格等 Markdown 标记压在同一行。
 - 对第一类问题优先检查渲染库配置（例如 `eolAsNewLine`、段落 padding）；对第二类问题优先检查流式/协议层是否丢换行，再考虑在 `MarkdownText` 预处理层做窄范围边界修复，且必须保护行内代码、链接和缩进代码块。
 
+### 构建效率
+
+构建与出包必须复用 Gradle 增量编译、守护进程和构建缓存，不为“干净”付出冷构建代价：
+
+- 签名包用 `python3 scripts/release/build-signed-local.py --sha <提交>` 构建。脚本在仓库同级的长期发行工作树 `Nexara-release` 中切换到目标提交，不新建也不丢弃工作树，并且不加 `--no-daemon`、`--no-parallel`。
+- 只装真机时只构建侧载渠道；对外发布或用户要求时，加 `--play` 同时构建 Play 渠道并检查发行清单。
+- 截图参考先在预览里确认窄屏、大字号与中英文布局，再只运行一次 `:app:updateSideloadDebugScreenshotTest`。
+- 改变既有行为前，先检索测试中的旧预期并同步修改，避免第一轮定向测试白跑。
+- 改动只涉及界面、逻辑已有单测覆盖时，跳过 `deviceTest` 变体构建，直接在真机验收。
+- 清理开发缓存时只修剪过期条目，不整体删除活跃的 `~/.gradle/caches`。
+
 ## 5. 交付 Git 闭环
 
 - 用户已授权：每轮任务完成验证、准备向用户交付前，必须将本轮应纳管成果提交并推送当前工作分支，不再等待用户逐次提醒。
@@ -52,4 +63,4 @@
 - 对外发布：版本提交推送 `main` 后，经用户授权推送注释标签 `v<versionName>`，由 `.github/workflows/release.yml` 构建、验签并发布 GitHub Release；发布说明取自 `CHANGELOG.md` 对应版本小节。流程见 [docs/distribution-builds.md](docs/distribution-builds.md)。
 
 ---
-*规范更新于 2026-10-29。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
+*规范更新于 2026-10-31。请每次开启新会话时首先阅读本文件，并检查 `.agent/handover.md` 的 Next Steps！*
