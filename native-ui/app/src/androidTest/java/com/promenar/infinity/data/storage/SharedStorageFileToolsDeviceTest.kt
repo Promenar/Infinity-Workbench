@@ -1,6 +1,12 @@
 package com.promenar.infinity.data.storage
 
 import android.os.Environment
+import android.os.Bundle
+import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
+import android.system.ErrnoException
+import com.promenar.infinity.data.repository.AndroidWorkspaceFileMoves
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -24,6 +30,10 @@ import com.promenar.infinity.ui.chat.manager.registry.SkillDefinition
 import com.promenar.infinity.ui.chat.manager.skills.LinuxSessionExternalWorkspaceAccess
 import com.promenar.infinity.ui.chat.manager.skills.MountedWorkspaceSkill
 import java.io.File
+import java.io.FilterInputStream
+import java.io.InputStream
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -62,6 +72,46 @@ class SharedStorageFileToolsDeviceTest {
         assertEquals(listOf(".gitignore"), File(directory, ".infinity").list()!!.toList())
     }
 
+    @Test fun appUidReadAndRenameProbe() {
+        fun report(label: String, value: Any) {
+            InstrumentationRegistry.getInstrumentation().sendStatus(1, Bundle().apply {
+                putString("stream", "shared-storage-probe $label=$value\n")
+            })
+        }
+        report("uid", android.os.Process.myUid())
+        val file = File(directory, "probe.txt").apply { writeText("probe") }
+        val fd = Os.open(file.path, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW, 0)
+        try {
+            report("path-before", Os.lstat(file.path))
+            report("fd-before", Os.fstat(fd))
+            val buffer = ByteArray(8192)
+            while (Os.read(fd, buffer, 0, buffer.size) > 0) { /* 读至 EOF，触发透传路径。 */ }
+            report("fd-after", Os.fstat(fd))
+            report("path-after", Os.lstat(file.path))
+        } finally { Os.close(fd) }
+        val nested = File(directory, "nested").apply { check(mkdir()) }
+        val from = ParcelFileDescriptor.open(directory, ParcelFileDescriptor.MODE_READ_ONLY)
+        val to = ParcelFileDescriptor.open(nested, ParcelFileDescriptor.MODE_READ_ONLY)
+        from.use { source -> to.use { target ->
+            report("shared-filesystem-fuse", AndroidWorkspaceFileMoves.isFuse(source.fd))
+            for ((label, targetFd, targetName) in listOf(
+                Triple("same-directory", source.fd, "renamed.txt"),
+                Triple("cross-directory", target.fd, "moved.txt"),
+            )) {
+                val sourceName = if (label == "same-directory") "probe.txt" else "renamed.txt"
+                try {
+                    AndroidWorkspaceFileMoves.moveReplacing(source.fd, sourceName, targetFd, targetName)
+                    report(label, "renameat result=0 errno=0")
+                } catch (failure: ErrnoException) {
+                    report(label, "renameat result=-1 errno=${failure.errno}")
+                    throw failure
+                }
+            }
+        } }
+        assertFalse(file.exists())
+        assertEquals("probe", File(nested, "moved.txt").readText())
+    }
+
     @Test fun existingTargetIsNeverOverwritten() = runBlocking {
         File(directory, "file.txt").writeText("other-writer")
         expectCode("CONFLICT") { backend.write("/file.txt", "ours".toByteArray(), createOnly = true) }
@@ -72,6 +122,9 @@ class SharedStorageFileToolsDeviceTest {
         val root = File(context.filesDir, "private-file-tools-${UUID.randomUUID()}").canonicalFile.apply { check(mkdirs()) }
         try {
             val privateBackend = RealPathExternalFolderBackend(root)
+            ParcelFileDescriptor.open(root, ParcelFileDescriptor.MODE_READ_ONLY).use {
+                assertFalse("私有目录必须使用严格校验", AndroidWorkspaceFileMoves.isFuse(it.fd))
+            }
             privateBackend.createDirectory("/tree")
             val original = privateBackend.write("/tree/file", "original".toByteArray(), createOnly = true)
             privateBackend.write("/tree/file", "changed".toByteArray(), original.sha256)
@@ -93,12 +146,102 @@ class SharedStorageFileToolsDeviceTest {
 
     @Test fun movesAndRenamesSharedFile() = runBlocking {
         File(directory, "file.txt").writeText("original")
+        val originalId = Os.lstat(File(directory, "file.txt").path).let { "${it.st_dev}:${it.st_ino}" }
         backend.createDirectory("/destination")
         backend.move("/file.txt", "/destination/file.txt")
         backend.move("/destination/file.txt", "/destination/renamed.txt")
         assertEquals("original", File(directory, "destination/renamed.txt").readText())
         assertFalse(File(directory, "file.txt").exists())
         assertFalse(File(directory, "destination/file.txt").exists())
+        assertEquals("同卷移动应保留对象身份", originalId,
+            Os.lstat(File(directory, "destination/renamed.txt").path).let { "${it.st_dev}:${it.st_ino}" })
+    }
+
+    @Test fun injectedFdDriftAndExdevKeepOneCopy() = runBlocking {
+        val fs = InjectedSharedFileSystem()
+        val injected = RealPathExternalFolderBackend(directory, emptySet(), { true }, fs)
+        val created = injected.write("/source", "original".toByteArray(), createOnly = true)
+        injected.write("/source", "patched".toByteArray(), created.sha256)
+        injected.createDirectory("/notes")
+        injected.move("/source", "/notes/moved")
+        injected.move("/notes/moved", "/notes/renamed")
+        assertFalse(File(directory, "source").exists())
+        assertFalse(File(directory, "notes/moved").exists())
+        assertEquals("patched", File(directory, "notes/renamed").readText())
+    }
+
+    @Test fun injectedTargetVerificationFailureRollsBackCreatedCopy() = runBlocking {
+        File(directory, "source").writeText("original")
+        var failed = false
+        val fs = InjectedSharedFileSystem { name ->
+            if (name == "target" && !failed) { failed = true; throw IOException("目标校验失败") }
+        }
+        val injected = RealPathExternalFolderBackend(directory, emptySet(), { true }, fs)
+        assertNotNull(runCatching { injected.move("/source", "/target") }.exceptionOrNull())
+        assertTrue(failed)
+        assertEquals("original", File(directory, "source").readText())
+        assertFalse(File(directory, "target").exists())
+    }
+
+    @Test fun injectedSecondReadMutationStillConflicts() = runBlocking {
+        File(directory, "source").writeText("original")
+        var reads = 0
+        val fs = InjectedSharedFileSystem { name ->
+            if (name == "source" && ++reads == 2) File(directory, "source").writeText("modified")
+        }
+        val injected = RealPathExternalFolderBackend(directory, emptySet(), { true }, fs)
+        expectCode("CONFLICT") { injected.stat("/source") }
+        assertEquals("modified", File(directory, "source").readText())
+    }
+
+    @Test fun injectedErrorAfterSourceUnlinkConfirmsMoveWithRealFd() = runBlocking {
+        File(directory, "source").writeText("original")
+        val fs = InjectedSharedFileSystem().apply {
+            afterDelete = { name -> if (name == "source") throw IOException("源已解除链接后返回错误") }
+        }
+        val injected = RealPathExternalFolderBackend(directory, emptySet(), { true }, fs)
+        injected.move("/source", "/target")
+        assertFalse(File(directory, "source").exists())
+        assertEquals("original", File(directory, "target").readText())
+    }
+
+    /** 只注入平台差异，读写、身份与清理仍使用应用 UID 的真实共享卷句柄。 */
+    private class InjectedSharedFileSystem(private val afterRead: (String) -> Unit = {}) : RealPathFileSystem {
+        var afterDelete: (String) -> Unit = {}
+        override fun openFileSystemRoot(): BoundRealPathDirectory = Directory(AndroidRealPathFileSystem.openFileSystemRoot())
+        private inner class Directory(val delegate: BoundRealPathDirectory) : BoundRealPathDirectory by delegate {
+            override val readTimestampsMayDrift: Boolean get() = true
+            override fun openDirectory(name: String): BoundRealPathDirectory = Directory(delegate.openDirectory(name))
+            override fun openRead(name: String): BoundRealPathRead {
+                val original = delegate.openRead(name)
+                var completed = false
+                val stream = object : FilterInputStream(original.input) {
+                    private fun finish(count: Int): Int {
+                        if (count < 0 && !completed) { completed = true; afterRead(name) }
+                        return count
+                    }
+                    override fun read(): Int = finish(super.read())
+                    override fun read(bytes: ByteArray, offset: Int, length: Int): Int = finish(`in`.read(bytes, offset, length))
+                }
+                return object : BoundRealPathRead {
+                    override val input: InputStream = stream
+                    override fun state(): RealPathFileState = original.state().let {
+                        if (completed) it.copy(revision = "${it.revision}:ctime-drift") else it
+                    }
+                    override fun close() = original.close()
+                }
+            }
+            override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+                throw AtomicMoveNotSupportedException(source, target, "注入共享卷能力差异")
+            }
+            override fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+                throw ErrnoException("renameat", OsConstants.EXDEV)
+            }
+            override fun deleteFile(name: String) {
+                delegate.deleteFile(name)
+                afterDelete(name)
+            }
+        }
     }
 
     @Test fun movesSharedDirectoryWithNestedContent() = runBlocking {

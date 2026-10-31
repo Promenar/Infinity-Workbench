@@ -81,15 +81,11 @@ class RealPathExternalFolderBackend internal constructor(
         withRoot { root ->
             withParent(root, normalized) { parent, name ->
                 requireFile(parent.stat(name) ?: fail("NOT_FOUND", "文件不存在"))
-                parent.openRead(name).use { source ->
-                    val before = source.state()
-                    requireFile(before)
-                    if (before.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
+                readVerifiedRealPath(parent, name, maxBytes) { input ->
                     val output = ByteArrayOutputStream()
-                    copyBounded(source.input, output, maxBytes)
-                    if (source.state().revision != before.revision) fail("CONFLICT", "文件在读取期间发生变化")
+                    copyBounded(input, output, maxBytes)
                     output.toByteArray()
-                }
+                }.value
             }
         }
     }
@@ -101,33 +97,8 @@ class RealPathExternalFolderBackend internal constructor(
         withRoot { root ->
             withParent(root, normalized) { parent, name ->
                 requireFile(parent.stat(name) ?: fail("NOT_FOUND", "文件不存在"))
-                parent.openRead(name).use { source ->
-                    val before = source.state()
-                    requireFile(before)
-                    if (before.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
-                    val result = consume(BoundedInput(source.input, maxBytes))
-                    if (source.state().revision != before.revision) fail("CONFLICT", "文件在读取期间发生变化")
-                    result
-                }
+                readVerifiedRealPath(parent, name, maxBytes, consume).value
             }
-        }
-    }
-
-    /** 读满 [limit] 后再读到数据即判定超限，防止读取期间文件被追加。 */
-    private class BoundedInput(private val input: InputStream, private val limit: Long) : InputStream() {
-        private var total = 0L
-        override fun read(): Int {
-            val value = input.read()
-            if (value >= 0 && ++total > limit) fail("TOO_LARGE", "文件超过读取上限")
-            return value
-        }
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-            val count = input.read(buffer, offset, length)
-            if (count > 0) {
-                total += count
-                if (total > limit) fail("TOO_LARGE", "文件超过读取上限")
-            }
-            return count
         }
     }
 
@@ -152,9 +123,7 @@ class RealPathExternalFolderBackend internal constructor(
                         currentCoroutineContext().ensureActive()
                         val current = snapshot(parent, name, normalized, hash = true)
                         checkVersion(current, expectedSha256, createOnly)
-                        if (current?.identity != original?.identity || current?.sha256 != original?.sha256) {
-                            fail("CONFLICT", "文件在写入期间发生变化，请重新读取")
-                        }
+                        checkEntry(original, current)
                         if (original != null) {
                             val quarantine = ".infinity-replace-${UUID.randomUUID()}"
                             try { parent.moveNew(name, internal, quarantine) }
@@ -173,7 +142,7 @@ class RealPathExternalFolderBackend internal constructor(
                         cleanupOwnedFile(internal, temporary, temporaryId)
                         temporaryId = null
                         val published = snapshot(parent, name, normalized, hash = true) ?: fail("UNAVAILABLE", "写入后的文档不可用")
-                        if (parent.stat(name)?.objectId != publishedId || published.sha256 != sha256(content)) fail("CONFLICT", "发布文档在校验期间发生变化")
+                        checkPublished(publishedId, parent.stat(name)?.objectId, sha256(content), published.sha256)
                         isolated?.let { quarantine ->
                             verifyIsolated(internal, quarantine, normalized, original!!, originalState!!)
                             internal.deleteFile(quarantine)
@@ -197,7 +166,7 @@ class RealPathExternalFolderBackend internal constructor(
         val normalized = mutationPath(path)
         withRoot { root ->
             withParent(root, normalized) { parent, name ->
-                if (parent.stat(name) != null) fail("CONFLICT", "同名文件或目录已经存在")
+                if (parent.stat(name) != null) realPathReadConflict("identity")
                 parent.createDirectory(name)
                 parent.openDirectory(name).use { entry(normalized, it.state()) }
             }
@@ -211,10 +180,10 @@ class RealPathExternalFolderBackend internal constructor(
             withParent(root, normalized) { parent, name ->
                 val original = snapshot(parent, name, normalized, hash = true) ?: fail("NOT_FOUND", "文件或目录不存在")
                 val originalState = stateFor(parent, name, original)
-                if (expectedSha256 != null && (original.isDirectory || original.sha256 != expectedSha256)) fail("CONFLICT", "文件版本已经变化，请重新读取")
+                if (expectedSha256 != null && (original.isDirectory || original.sha256 != expectedSha256)) realPathReadConflict("sha256=$expectedSha256 -> ${original.sha256}")
                 preflightDelete(parent, name, normalized)
                 val current = snapshot(parent, name, normalized, hash = true)
-                if (current?.identity != original.identity || current?.sha256 != original.sha256) fail("CONFLICT", "文件在删除期间发生变化")
+                checkEntry(original, current)
                 withInternalDirectory(root) { internal -> deleteBound(parent, name, normalized, internal, original, originalState) }
             }
         }
@@ -227,14 +196,7 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    override suspend fun move(sourcePath: String, targetPath: String) {
-        try { moveBound(sourcePath, targetPath) }
-        catch (_: CheckedMoveAcrossVolumes) {
-            // 普通 rename 明确未提交且跨卷，释放根锁后复用有界复制、校验和补偿。
-            com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_move_copy_fallback", mapOf("reason" to "EXDEV"))
-            ExternalTreeTransfer.move(this, sourcePath, this, targetPath)
-        }
-    }
+    override suspend fun move(sourcePath: String, targetPath: String) = moveBound(sourcePath, targetPath)
 
     private suspend fun moveBound(sourcePath: String, targetPath: String) = io {
         val source = mutationPath(sourcePath)
@@ -246,18 +208,25 @@ class RealPathExternalFolderBackend internal constructor(
                 requireSupported(original)
                 rejectInsideSource(original, source, target)
                 preflightDelete(sourceParent, sourceName, source)
-                withParent(root, target, original.takeIf { it.isDirectory }?.objectId) { targetParent, targetName ->
+                withParent(root, target, original.takeIf { it.isDirectory }?.objectId) destination@ { targetParent, targetName ->
                     if (targetParent.stat(targetName) != null) fail("NAME_EXISTS", "同名文件或目录已经存在")
-                    if (sourceParent.stat(sourceName)?.revision != original.revision) fail("CONFLICT", "移动来源在校验期间发生变化")
+                    checkRealPathReadState(original, sourceParent.stat(sourceName))
                     currentCoroutineContext().ensureActive()
                     var moved: RealPathFileState? = null
                     try {
                         moveChecked(sourceParent, sourceName, targetParent, targetName, original, allowCopyFallback = true)
-                        moved = targetParent.stat(targetName) ?: fail("CONFLICT", "移动目标在提交后消失")
+                        moved = targetParent.stat(targetName) ?: realPathReadConflict("identity")
                         requireSupported(moved)
-                        if (!sameMovedObject(moved, original)) fail("CONFLICT", "移动来源在提交期间被替换或修改")
+                        checkMovedState(original, moved)
                     } catch (raw: Throwable) {
-                        if (raw is CheckedMoveAcrossVolumes) throw raw
+                        if (raw is CheckedMoveAcrossVolumes) {
+                            com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_move_copy_fallback", mapOf(
+                                "reason" to "EXDEV", "errno" to raw.errno,
+                                "same_directory" to (source.substringBeforeLast('/') == target.substringBeforeLast('/')),
+                            ))
+                            RealPathCopyMove.move(sourceParent, sourceName, source, original, targetParent, targetName, target)
+                            return@destination
+                        }
                         val failure = moveFailure(raw)
                         if (moved == null && (raw is FileAlreadyExistsException || raw is NoSuchFileException ||
                                 raw is ErrnoException && raw.errno == OsConstants.EXDEV)) throw failure
@@ -303,8 +272,8 @@ class RealPathExternalFolderBackend internal constructor(
                             }
                             created.name = targetName
                             createdParent = targetParent
-                            val published = targetParent.stat(targetName) ?: fail("CONFLICT", "复制目标在发布后消失")
-                            if (!sameMovedObject(published, checkNotNull(created.state))) fail("CONFLICT", "复制目标在发布期间被替换或修改")
+                            val published = targetParent.stat(targetName) ?: realPathReadConflict("identity")
+                            checkMovedState(checkNotNull(created.state), published)
                         } catch (failure: Throwable) {
                             withContext(NonCancellable) {
                                 try { rollbackCopy(createdParent, created, internal) }
@@ -339,11 +308,11 @@ class RealPathExternalFolderBackend internal constructor(
         requireSupported(original)
         if (original.isDirectory) {
             sourceParent.openDirectory(sourceName).use { source ->
-                if (source.state().objectId != original.objectId) fail("CONFLICT", "复制来源目录被替换")
+                if (source.state().objectId != original.objectId) realPathReadConflict("identity")
                 targetParent.createDirectory(created.name)
-                created.state = targetParent.stat(created.name) ?: fail("CONFLICT", "新建目标目录消失")
+                created.state = targetParent.stat(created.name) ?: realPathReadConflict("identity")
                 targetParent.openDirectory(created.name).use { target ->
-                    if (target.state().objectId != created.state?.objectId) fail("CONFLICT", "复制目标目录被替换")
+                    if (target.state().objectId != created.state?.objectId) realPathReadConflict("identity")
                     for (name in source.names().sorted()) {
                         if (!visibleName(name)) fail("INVALID_PATH", "复制范围包含内部恢复文件或保留目录")
                         val child = CopiedNode(name).also { created.children += it }
@@ -351,25 +320,28 @@ class RealPathExternalFolderBackend internal constructor(
                     }
                     created.state = target.state()
                 }
-                if (targetParent.stat(created.name)?.objectId != created.state?.objectId) fail("CONFLICT", "复制目标目录被替换")
+                if (targetParent.stat(created.name)?.objectId != created.state?.objectId) realPathReadConflict("identity")
             }
         } else {
-            sourceParent.openRead(sourceName).use { source ->
-                val before = source.state()
-                requireFile(before)
-                if (before.revision != original.revision) fail("CONFLICT", "复制来源文件被替换")
-                targetParent.createFile(created.name).use { target ->
-                    created.state = target.state()
-                    try {
-                        copyBounded(source.input, target.output, Long.MAX_VALUE)
-                        target.sync()
-                        if (source.state().revision != before.revision) fail("CONFLICT", "复制期间来源文件发生变化")
-                        if (target.state().size != before.size) fail("IO", "目标副本长度不一致")
-                    } finally {
-                        created.state = target.state()
+            targetParent.createFile(created.name).use { target ->
+                created.state = target.state()
+                var copiedHash: String? = null
+                try {
+                    val verified = readVerifiedRealPath(sourceParent, sourceName) { input ->
+                        copyBounded(input, target.output, Long.MAX_VALUE)
                     }
+                    checkRealPathReadState(original, verified.state, timestamps = !sourceParent.readTimestampsMayDrift)
+                    copiedHash = verified.sha256
+                    target.sync()
+                    if (target.state().size != verified.state.size) realPathReadConflict("size=${verified.state.size} -> ${target.state().size}")
+                } finally {
+                    created.state = target.state()
                 }
-                if (targetParent.stat(created.name)?.revision != created.state?.revision) fail("CONFLICT", "复制目标文件被替换或修改")
+                if (targetParent.readTimestampsMayDrift) {
+                    val checked = snapshot(targetParent, created.name, sourcePath, hash = true) ?: realPathReadConflict("identity=missing")
+                    checkPublished(created.state!!.objectId, targetParent.stat(created.name)?.objectId, copiedHash, checked.sha256)
+                    created.state = stateFor(targetParent, created.name, checked)
+                } else checkRealPathReadState(created.state!!, targetParent.stat(created.name))
             }
         }
     }
@@ -454,8 +426,14 @@ class RealPathExternalFolderBackend internal constructor(
     private fun moveChecked(source: BoundRealPathDirectory, sourceName: String, target: BoundRealPathDirectory,
         targetName: String, expected: RealPathFileState, allowCopyFallback: Boolean = false) {
         try { source.moveNew(sourceName, target, targetName) }
+        catch (failure: ErrnoException) {
+            if (!allowCopyFallback || failure.errno != OsConstants.EXDEV) throw failure
+            checkRealPathReadState(expected, source.stat(sourceName))
+            if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
+            throw CheckedMoveAcrossVolumes(failure)
+        }
         catch (failure: AtomicMoveNotSupportedException) {
-            if (source.stat(sourceName)?.revision != expected.revision) fail("CONFLICT", "移动来源在校验期间发生变化")
+            checkRealPathReadState(expected, source.stat(sourceName))
             if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
             try { source.moveReplacing(sourceName, target, targetName) }
             catch (failure: ErrnoException) {
@@ -465,7 +443,7 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    private class CheckedMoveAcrossVolumes(cause: ErrnoException) : IOException(cause)
+    private class CheckedMoveAcrossVolumes(cause: ErrnoException) : IOException(cause) { val errno = cause.errno }
 
     private suspend fun replaceChecked(parent: BoundRealPathDirectory, name: String, path: String,
         original: ExternalFolderEntry, originalState: RealPathFileState, content: ByteArray): ExternalFolderEntry {
@@ -478,15 +456,16 @@ class RealPathExternalFolderBackend internal constructor(
                 copyBounded(content.inputStream(), destination.output, content.size.toLong())
                 destination.sync()
             }
-            val staged = snapshot(parent, temporary, path, hash = true) ?: fail("CONFLICT", "写入暂存已经消失")
-            if (parent.stat(temporary)?.objectId != temporaryId || staged.sha256 != sha256(content)) fail("CONFLICT", "写入暂存被修改或替换")
+            val staged = snapshot(parent, temporary, path, hash = true) ?: realPathReadConflict("identity")
+            checkPublished(temporaryId, parent.stat(temporary)?.objectId, sha256(content), staged.sha256)
             val current = snapshot(parent, name, path, hash = true)
-            if (current?.identity != original.identity || current?.sha256 != original.sha256) fail("CONFLICT", "文件在写入期间发生变化，请重新读取")
+            checkEntry(original, current)
             currentCoroutineContext().ensureActive()
-            if (parent.stat(name)?.revision != originalState.revision || parent.stat(temporary)?.revision != staged.identity) fail("CONFLICT", "文件在提交前发生变化")
+            checkRealPathReadState(originalState, parent.stat(name), timestamps = !parent.readTimestampsMayDrift)
+            stateFor(parent, temporary, staged)
             parent.atomicReplace(temporary, name)
-            val published = snapshot(parent, name, path, hash = true) ?: fail("CONFLICT", "写入后的文档不可用")
-            if (parent.stat(name)?.objectId != temporaryId || published.sha256 != staged.sha256) fail("CONFLICT", "发布文档在校验期间发生变化")
+            val published = snapshot(parent, name, path, hash = true) ?: realPathReadConflict("identity")
+            checkPublished(temporaryId, parent.stat(name)?.objectId, staged.sha256, published.sha256)
             return published
         } finally { cleanupOwnedFile(parent, temporary, temporaryId) }
     }
@@ -522,18 +501,17 @@ class RealPathExternalFolderBackend internal constructor(
             parent.createFile(name).use { destination ->
                 targetCreated = true
                 createdId = destination.state().objectId
-                sourceParent.openRead(temporary).use { source ->
-                    if (source.state().revision != original.revision) fail("CONFLICT", "发布源在复制前发生变化")
-                    copyBounded(source.input, destination.output, original.size)
-                    if (source.state().revision != original.revision) fail("CONFLICT", "发布源在复制期间发生变化")
+                val verified = readVerifiedRealPath(sourceParent, temporary, original.size) { input ->
+                    copyBounded(input, destination.output, original.size)
                 }
+                checkRealPathReadState(original, verified.state, timestamps = !sourceParent.readTimestampsMayDrift)
+                if (verified.sha256 != captured.sha256) realPathReadConflict("sha256=${captured.sha256} -> ${verified.sha256}")
                 destination.sync()
             }
-            if (sourceParent.stat(temporary)?.revision != original.revision ||
-                snapshot(sourceParent, temporary, name, hash = true)?.sha256 != captured.sha256 ||
-                parent.stat(name)?.objectId != createdId || snapshot(parent, name, name, hash = true)?.sha256 != captured.sha256) {
-                fail("CONFLICT", "发布源或目标在复制期间发生变化")
-            }
+            checkRealPathReadState(original, sourceParent.stat(temporary), timestamps = !sourceParent.readTimestampsMayDrift)
+            val sourceHash = snapshot(sourceParent, temporary, name, hash = true)?.sha256
+            if (sourceHash != captured.sha256) realPathReadConflict("sha256=${captured.sha256} -> $sourceHash")
+            checkPublished(createdId, parent.stat(name)?.objectId, captured.sha256, snapshot(parent, name, name, hash = true)?.sha256)
             return createdId!!
         } catch (exception: Throwable) {
             // 共享卷没有按身份删除目录项的原语；保留用户目标与暂存，避免清理窗口误删并发替换者。
@@ -591,7 +569,7 @@ class RealPathExternalFolderBackend internal constructor(
                         if (!visibleName(child)) fail("INVALID_PATH", "删除范围包含内部恢复文件或保留目录")
                         deleteBound(directory, child, join(path, child), internal)
                     }
-                    if (internal.stat(quarantine)?.objectId != state.objectId) fail("CONFLICT", "隔离目录在删除期间被替换")
+                    if (internal.stat(quarantine)?.objectId != state.objectId) realPathReadConflict("identity")
                     internal.deleteDirectory(quarantine)
                 }
             } else {
@@ -608,41 +586,44 @@ class RealPathExternalFolderBackend internal constructor(
     private suspend fun deleteChecked(parent: BoundRealPathDirectory, name: String, path: String,
         internal: BoundRealPathDirectory, expected: ExternalFolderEntry, state: RealPathFileState) {
         val current = snapshot(parent, name, path, hash = true)
-        if (current?.identity != expected.identity || current?.sha256 != expected.sha256 ||
-            parent.stat(name)?.revision != state.revision) fail("CONFLICT", "删除目标在校验期间发生变化")
+        checkEntry(expected, current)
+        checkRealPathReadState(state, parent.stat(name), timestamps = !parent.readTimestampsMayDrift)
         if (state.isDirectory) {
             parent.openDirectory(name).use { directory ->
-                if (directory.state().objectId != state.objectId) fail("CONFLICT", "删除目录被替换")
+                if (directory.state().objectId != state.objectId) realPathReadConflict("identity")
                 for (child in directory.names()) {
                     if (!visibleName(child)) fail("INVALID_PATH", "删除范围包含内部恢复文件或保留目录")
                     deleteBound(directory, child, join(path, child), internal)
                 }
                 currentCoroutineContext().ensureActive()
-                if (parent.stat(name)?.objectId != state.objectId) fail("CONFLICT", "删除目录被替换")
+                if (parent.stat(name)?.objectId != state.objectId) realPathReadConflict("identity")
                 parent.deleteDirectory(name)
             }
         } else {
             currentCoroutineContext().ensureActive()
-            if (parent.stat(name)?.revision != state.revision) fail("CONFLICT", "删除目标在提交前发生变化")
+            checkRealPathReadState(state, parent.stat(name), timestamps = !parent.readTimestampsMayDrift)
             parent.deleteFile(name)
         }
     }
 
     private fun stateFor(parent: BoundRealPathDirectory, name: String, entry: ExternalFolderEntry): RealPathFileState {
-        val state = parent.stat(name) ?: fail("CONFLICT", "目标在校验期间消失")
-        val identity = if (state.isDirectory) state.objectId else state.revision
-        if (state.isDirectory != entry.isDirectory || identity != entry.identity) fail("CONFLICT", "目标在校验期间被修改或替换")
+        val state = parent.stat(name) ?: realPathReadConflict("identity")
+        val identity = if (state.isDirectory || parent.readTimestampsMayDrift) state.objectId else state.revision
+        if (state.isDirectory != entry.isDirectory || identity != entry.identity || !state.isDirectory && state.size != entry.size) {
+            realPathReadConflict("identity=${entry.identity} -> $identity, size=${entry.size} -> ${state.size}")
+        }
         return state
     }
 
     private suspend fun verifyIsolated(parent: BoundRealPathDirectory, name: String, path: String, expected: ExternalFolderEntry, state: RealPathFileState) {
-        val isolated = parent.stat(name) ?: fail("CONFLICT", "隔离目标已经消失")
+        val isolated = parent.stat(name) ?: realPathReadConflict("identity")
         requireSupported(isolated)
-        if (isolated.objectId != state.objectId || isolated.isDirectory != state.isDirectory || isolated.contentVersion != state.contentVersion) {
-            fail("CONFLICT", "目标在提交期间被修改或替换")
+        checkRealPathReadState(state, isolated, timestamps = false)
+        if (!parent.readTimestampsMayDrift && isolated.contentVersion != state.contentVersion) {
+            realPathReadConflict("mtime=${state.modifiedTime} -> ${isolated.modifiedTime}")
         }
         if (!isolated.isDirectory && snapshot(parent, name, path, hash = true)?.sha256 != expected.sha256) {
-            fail("CONFLICT", "目标内容在提交期间发生变化")
+            realPathReadConflict("sha256")
         }
     }
 
@@ -670,7 +651,7 @@ class RealPathExternalFolderBackend internal constructor(
         val restored = snapshot(parent, name, path, hash = true) ?: return false
         if (parent.stat(name)?.objectId != restoredId || restored.sha256 != captured.sha256) return false
         val current = internal.stat(quarantine) ?: return restoredId == isolated.objectId
-        if (current.objectId != isolated.objectId || current.contentVersion != isolated.contentVersion ||
+        if (current.objectId != isolated.objectId || !internal.readTimestampsMayDrift && current.contentVersion != isolated.contentVersion ||
             snapshot(internal, quarantine, path, hash = true)?.sha256 != captured.sha256) return false
         internal.deleteFile(quarantine)
         return true
@@ -681,22 +662,11 @@ class RealPathExternalFolderBackend internal constructor(
     private suspend fun snapshot(parent: BoundRealPathDirectory, name: String, path: String, hash: Boolean, smallOnly: Boolean = false): ExternalFolderEntry? {
         val metadata = parent.stat(name) ?: return null
         requireSupported(metadata)
-        if (metadata.isDirectory || !hash || (smallOnly && metadata.size > STAT_HASH_LIMIT)) return entry(path, metadata)
-        parent.openRead(name).use { source ->
-            val before = source.state()
-            requireFile(before)
-            if (smallOnly && before.size > STAT_HASH_LIMIT) return entry(path, before)
-            val digest = MessageDigest.getInstance("SHA-256")
-            val buffer = ByteArray(8192)
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val count = source.input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-            if (source.state().revision != before.revision) fail("CONFLICT", "文件在校验期间发生变化")
-            return entry(path, before, digest.digest().joinToString("") { "%02x".format(it) })
+        if (metadata.isDirectory || !hash || (smallOnly && metadata.size > STAT_HASH_LIMIT)) {
+            return entry(path, metadata, stableIdentity = parent.readTimestampsMayDrift)
         }
+        val verified = readVerifiedRealPath(parent, name) { }
+        return entry(path, verified.state, verified.sha256, stableIdentity = parent.readTimestampsMayDrift)
     }
 
     private suspend fun copyBounded(input: InputStream, output: OutputStream, limit: Long) {
@@ -727,7 +697,7 @@ class RealPathExternalFolderBackend internal constructor(
         val existing = root.stat(name)
         if (existing != null) requireSupported(existing) else root.createDirectory(name)
         root.openDirectory(name).use { directory ->
-            if (root.stat(name)?.objectId != directory.state().objectId) fail("CONFLICT", "内部暂存目录在打开期间被替换")
+            if (root.stat(name)?.objectId != directory.state().objectId) realPathReadConflict("identity")
             if (existing == null) {
                 directory.createFile(".gitignore").use { ignore ->
                     ignore.output.write("*\n".toByteArray())
@@ -807,9 +777,9 @@ class RealPathExternalFolderBackend internal constructor(
                 requireSupported(original)
                 withInternalDirectory(root) { internal ->
                     withLegacyDirectory(internal, parentPath) { target ->
-                        if (target.stat(name) != null) fail("CONFLICT", "旧暂存迁移目标已经存在，已保留原副本")
+                        if (target.stat(name) != null) realPathReadConflict("identity")
                         moveChecked(parent, name, target, name, original)
-                        val moved = target.stat(name) ?: fail("CONFLICT", "旧暂存迁移后消失")
+                        val moved = target.stat(name) ?: realPathReadConflict("identity")
                         if (!sameMovedObject(moved, original)) {
                             val failure = ExternalFolderException("CONFLICT", "旧暂存在迁移期间发生变化")
                             restoreMoved(target, name, parent, name, moved, failure)
@@ -832,7 +802,7 @@ class RealPathExternalFolderBackend internal constructor(
                 val child = directory.openDirectory(name)
                 if (directory.stat(name)?.objectId != child.state().objectId) {
                     child.close()
-                    fail("CONFLICT", "旧暂存目标目录在打开期间被替换")
+                    realPathReadConflict("identity")
                 }
                 opened += child
                 directory = child
@@ -846,12 +816,28 @@ class RealPathExternalFolderBackend internal constructor(
         return withDirectory(root, path.substringBeforeLast('/').ifEmpty { "/" }, excludedDirectoryId) { action(it, path.substringAfterLast('/')) }
     }
     private fun checkVersion(current: ExternalFolderEntry?, expected: String?, createOnly: Boolean) {
-        if (current?.isDirectory == true || (createOnly && current != null)) fail("CONFLICT", "同名文件或目录已经存在")
-        if (expected != null && current?.sha256 != expected) fail("CONFLICT", "文件版本已经变化，请重新读取")
+        if (current?.isDirectory == true || (createOnly && current != null)) realPathReadConflict("identity")
+        if (expected != null && current?.sha256 != expected) realPathReadConflict("sha256=$expected -> ${current?.sha256}")
     }
-    private fun entry(path: String, state: RealPathFileState, sha256: String? = null): ExternalFolderEntry =
+    private fun checkEntry(expected: ExternalFolderEntry?, actual: ExternalFolderEntry?) {
+        if (expected?.identity != actual?.identity || expected?.isDirectory != actual?.isDirectory) {
+            realPathReadConflict("identity=${expected?.identity} -> ${actual?.identity}")
+        }
+        if (expected?.sha256 != actual?.sha256) realPathReadConflict("sha256=${expected?.sha256} -> ${actual?.sha256}")
+    }
+    private fun checkPublished(expectedId: String?, actualId: String?, expectedHash: String?, actualHash: String?) {
+        if (expectedId != actualId) realPathReadConflict("identity=$expectedId -> $actualId")
+        if (expectedHash != actualHash) realPathReadConflict("sha256=$expectedHash -> $actualHash")
+    }
+    private fun checkMovedState(expected: RealPathFileState, actual: RealPathFileState) {
+        checkRealPathReadState(expected, actual, timestamps = false)
+        if (!actual.isDirectory && actual.contentVersion != expected.contentVersion) {
+            realPathReadConflict("mtime=${expected.modifiedTime} -> ${actual.modifiedTime}")
+        }
+    }
+    private fun entry(path: String, state: RealPathFileState, sha256: String? = null, stableIdentity: Boolean = false): ExternalFolderEntry =
         ExternalFolderEntry(path, if (path == "/") rootPath.fileName.toString() else path.substringAfterLast('/'), state.isDirectory,
-            if (state.isDirectory) 0 else state.size, state.lastModified, sha256, if (state.isDirectory) state.objectId else state.revision)
+            if (state.isDirectory) 0 else state.size, state.lastModified, sha256, if (state.isDirectory || stableIdentity && sha256 != null) state.objectId else state.revision)
     private fun requireFile(state: RealPathFileState) { requireSupported(state); if (state.isDirectory) fail("IS_DIRECTORY", "目标是目录") }
     private fun requireSupported(state: RealPathFileState) {
         if (state.isSymbolicLink) fail("INVALID_PATH", "不允许通过符号链接访问目录")
@@ -921,6 +907,7 @@ internal object ExternalFolderLegacyTemporaries {
 /** 句柄操作只接受单段名称，必须保持目录绑定，不能重新解析原绝对路径。 */
 internal interface RealPathFileSystem { fun openFileSystemRoot(): BoundRealPathDirectory }
 internal interface BoundRealPathDirectory : Closeable {
+    val readTimestampsMayDrift: Boolean get() = false
     fun state(): RealPathFileState
     fun stat(name: String): RealPathFileState?
     fun names(): List<String>
@@ -938,7 +925,8 @@ internal interface BoundRealPathDirectory : Closeable {
 internal interface BoundRealPathRead : Closeable { val input: InputStream; fun state(): RealPathFileState }
 internal interface BoundRealPathWrite : Closeable { val output: OutputStream; fun state(): RealPathFileState; fun sync() }
 internal data class RealPathFileState(val isDirectory: Boolean, val isRegularFile: Boolean, val isSymbolicLink: Boolean,
-    val size: Long, val lastModified: Long, val objectId: String, val revision: String, val contentVersion: String = "$lastModified:$size")
+    val size: Long, val lastModified: Long, val objectId: String, val revision: String, val contentVersion: String = "$lastModified:$size",
+    val modifiedTime: String = lastModified.toString(), val changedTime: String = revision, val linkCount: Long = 1)
 
 /** 从系统根逐段打开目录，全部子操作固定在持有的目录 fd，避免中间目录交换后逃逸。 */
 internal object AndroidRealPathFileSystem : RealPathFileSystem {
@@ -955,6 +943,7 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
         } finally { Os.close(fd) }
     }
     private class AndroidDirectory(private val descriptor: ParcelFileDescriptor) : BoundRealPathDirectory {
+        override val readTimestampsMayDrift: Boolean by lazy { AndroidWorkspaceFileMoves.isFuse(descriptor.fd) }
         private val base: String get() = "/proc/self/fd/${descriptor.fd}"
         private fun child(name: String): String {
             if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name || '\u0000' in name) throw ExternalFolderException("INVALID_PATH", "目录句柄只接受单段名称")
@@ -1037,6 +1026,7 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
         val revision = "$objectId:${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}:${stat.st_size}"
         return RealPathFileState(OsConstants.S_ISDIR(stat.st_mode), OsConstants.S_ISREG(stat.st_mode), OsConstants.S_ISLNK(stat.st_mode),
             stat.st_size, stat.st_mtim.tv_sec * 1000 + stat.st_mtim.tv_nsec / 1_000_000, objectId, revision,
-            "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_size}")
+            "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_size}",
+            "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}", "${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}", stat.st_nlink)
     }
 }

@@ -4,6 +4,7 @@ import com.promenar.infinity.domain.storage.ExternalFolderException
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.FilterInputStream
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -26,8 +27,14 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
     val movedDirectories = mutableMapOf<Path, Path>()
     val reads = mutableListOf<Path>()
     var beforeOperation: ((String, Path) -> Unit)? = null
+    var afterOperation: ((String, Path) -> Unit)? = null
     var supportHardLinks = false
     var supportAtomicMoves = true
+    var readStateAfterRead: ((Path, RealPathFileState) -> RealPathFileState)? = null
+    var afterRead: ((Path) -> Unit)? = null
+    var renameAcrossVolumes: ((Path, Path) -> Boolean)? = null
+    var emulateFuse = false
+    private val unlinkedObjects = mutableSetOf<String>()
 
     fun backend(root: File, forbiddenRoots: Set<Path> = emptySet(), permissionCheck: () -> Boolean = { true }): RealPathExternalFolderBackend =
         RealPathExternalFolderBackend(root, forbiddenRoots, permissionCheck, this)
@@ -40,8 +47,10 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
     }
 
     private inner class Directory(private val openedPath: Path) : BoundRealPathDirectory {
+        private val openedState = attributes(bound(openedPath))
+        override val readTimestampsMayDrift: Boolean get() = emulateFuse
         private fun child(name: String): Path = bound(openedPath).resolve(name)
-        override fun state(): RealPathFileState = attributes(bound(openedPath))
+        override fun state(): RealPathFileState = heldState(bound(openedPath), openedState)
         override fun stat(name: String): RealPathFileState? = child(name).let { if (Files.exists(it, NOFOLLOW_LINKS)) attributes(it) else null }
         override fun names(): List<String> {
             beforeOperation?.invoke("list", openedPath)
@@ -58,10 +67,24 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
             beforeOperation?.invoke("read", openedPath.resolve(name))
             reads.add(openedPath.resolve(name))
             val channel = FileChannel.open(child(name), READ, NOFOLLOW_LINKS)
-            val stream = Channels.newInputStream(channel)
+            val openedState = attributes(child(name))
+            var completed = false
+            val stream = object : FilterInputStream(Channels.newInputStream(channel)) {
+                private fun finish(count: Int): Int {
+                    if (count < 0 && !completed) {
+                        completed = true
+                        afterRead?.invoke(child(name))
+                    }
+                    return count
+                }
+                override fun read(): Int = finish(super.read())
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int = finish(`in`.read(bytes, offset, length))
+            }
             return object : BoundRealPathRead {
                 override val input: InputStream = stream
-                override fun state(): RealPathFileState = attributes(child(name))
+                override fun state(): RealPathFileState = heldState(child(name), openedState).let {
+                    if (completed) readStateAfterRead?.invoke(child(name), it) ?: it else it
+                }
                 override fun close() = stream.close()
             }
         }
@@ -103,21 +126,37 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
         override fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
             beforeOperation?.invoke("checked-move", openedPath.resolve(source))
             val destination = targetDirectory as Directory
+            if (renameAcrossVolumes?.invoke(child(source), destination.child(target)) == true) {
+                throw android.system.ErrnoException("renameat", android.system.OsConstants.EXDEV)
+            }
             Files.move(child(source), destination.child(target), ATOMIC_MOVE, REPLACE_EXISTING)
         }
         override fun deleteFile(name: String) {
             beforeOperation?.invoke("delete", openedPath.resolve(name))
+            val state = attributes(child(name))
             Files.delete(child(name))
+            unlinkedObjects += state.objectId
+            afterOperation?.invoke("delete", openedPath.resolve(name))
         }
-        override fun deleteDirectory(name: String) { Files.delete(child(name)) }
+        override fun deleteDirectory(name: String) {
+            val state = attributes(child(name))
+            Files.delete(child(name))
+            unlinkedObjects += state.objectId
+        }
         override fun close() = Unit
     }
+
+    private fun heldState(path: Path, opened: RealPathFileState): RealPathFileState =
+        if (Files.exists(path, NOFOLLOW_LINKS)) attributes(path)
+        else if (opened.objectId in unlinkedObjects) opened.copy(linkCount = 0) else opened
 
     private fun attributes(path: Path): RealPathFileState {
         val value = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
         val objectId = value.fileKey()?.toString() ?: throw ExternalFolderException("UNSUPPORTED", "测试文件系统缺少对象标识")
         val changed = (Files.getAttribute(path, "unix:ctime", NOFOLLOW_LINKS) as FileTime).to(TimeUnit.NANOSECONDS)
         return RealPathFileState(value.isDirectory, value.isRegularFile, value.isSymbolicLink, value.size(), value.lastModifiedTime().toMillis(),
-            objectId, "$objectId:${value.lastModifiedTime().to(TimeUnit.NANOSECONDS)}:$changed:${value.size()}")
+            objectId, "$objectId:${value.lastModifiedTime().to(TimeUnit.NANOSECONDS)}:$changed:${value.size()}",
+            modifiedTime = value.lastModifiedTime().to(TimeUnit.NANOSECONDS).toString(), changedTime = changed.toString(),
+            linkCount = (Files.getAttribute(path, "unix:nlink", NOFOLLOW_LINKS) as Number).toLong())
     }
 }
