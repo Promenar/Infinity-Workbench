@@ -19,7 +19,7 @@ python3 ../scripts/ci/check-distribution-manifests.py
 python3 ../scripts/ci/check-native-page-alignment.py
 ```
 
-本机截图验证共用 `app/src/screenshotTestDebug/reference/`，不按渠道复制像素。Linux 发行截图验证先校验 `reference-linux-overlay/manifest.json`，再将其中已审阅的跨平台差异合成为临时参考目录；基准或覆盖文件变化时必须重新审阅，不能静默使用过期参考图。发行截图按源文件分片，所有分片通过后才能进入签名构建；截图比较阈值保持不变。设备构建只生成 APK；设备脚本会连接并修改设备，需在已授权的专用本机 AVD 上另行执行。`mainactivity-e2e` 以 `missingDimensionStrategy` 固定匹配侧载应用，其任务名保持 `assembleDeviceTest`。黑盒夹具为独立应用，保持 `:blackbox-fixture:assembleDebug`。
+本机截图验证共用 `app/src/screenshotTestDebug/reference/`，不按渠道复制像素。Linux 发行截图验证先校验 `reference-linux-overlay/manifest.json`，再将其中已审阅的跨平台差异合成为临时参考目录；基准或覆盖文件变化时必须重新审阅，不能静默使用过期参考图。发行截图按源文件分片，检查各类的测试结果并保留报告，所有分片通过后才能进入签名构建；截图比较阈值保持不变。设备构建只生成 APK；设备脚本会连接并修改设备，需在已授权的专用本机 AVD 上另行执行。`mainactivity-e2e` 以 `missingDimensionStrategy` 固定匹配侧载应用，其任务名保持 `assembleDeviceTest`。黑盒夹具为独立应用，保持 `:blackbox-fixture:assembleDebug`。
 
 需要排查托管 Linux 的截图差异时，可手动运行 GitHub Actions 的“Android 截图诊断”。该工作流使用发行门禁的清理与验证任务，默认检查空会话预览，也可通过 `preview_filter` 指定其他预览；产物包含参考图、渲染结果与报告。它不使用发行签名材料，也不替代全量截图或发行候选验证。
 

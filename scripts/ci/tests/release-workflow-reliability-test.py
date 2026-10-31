@@ -330,6 +330,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("screenshot-validate.yml", job)
         self.assertIn("screenshot-baseline.py", source)
         self.assertIn("screenshot-shards.py", source)
+        self.assertIn("screenshot-results.py", source)
+        self.assertIn("test-results/validateSideloadDebugScreenshotTest/*.xml", source)
         self.assertIn("INFINITY_SCREENSHOT_REFERENCE_DIR", source)
         self.assertIn(":app:validateSideloadDebugScreenshotTest", source)
         self.assertIn('args+=(--tests "*$class*")', source)

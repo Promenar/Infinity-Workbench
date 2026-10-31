@@ -75,6 +75,9 @@ jobs:
           done < "$RUNNER_TEMP/screenshot-classes.txt"
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
           ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest "${args[@]}"
+          python3 ../scripts/ci/screenshot-results.py \
+            --classes "$RUNNER_TEMP/screenshot-classes.txt" \
+            --results app/build/test-results/validateSideloadDebugScreenshotTest
 
       - name: 保留截图失败证据
         if: failure()
@@ -84,5 +87,16 @@ jobs:
           path: |
             native-ui/app/build/reports/screenshotTest/
             native-ui/app/build/outputs/screenshotTest-results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: 保留截图测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-screenshot-report-${{ inputs.shard }}-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/screenshotTest/
+            native-ui/app/build/test-results/validateSideloadDebugScreenshotTest/*.xml
           if-no-files-found: warn
           retention-days: 3
