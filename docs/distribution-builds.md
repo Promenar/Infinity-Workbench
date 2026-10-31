@@ -27,6 +27,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 排查发行构建的 JVM 内存不足时，可手动运行“Android Gradle 编译内存诊断”。它不使用签名材料，对比组合与分阶段变体编译，并保留 Gradle、Kotlin 进程的堆和宿主内存采样；该诊断不生成或发布签名包，也不替代发行门禁。
 
+排查 Linux 托管环境的单项 JVM 单测时，可手动运行“Android JVM 单测诊断”，指定测试过滤条件并读取保留的 XML 和测试报告；该入口不使用签名材料，不替代完整单测。
+
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
 | sideloadDebug | `app/build/outputs/apk/sideload/debug/app-sideload-debug.apk` | 无 |
