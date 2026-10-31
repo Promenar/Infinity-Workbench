@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.1-beta] - 2026-10-31
+
 ### 修复
 
 - 修复表头含 `#` 列的表格被拆成单独竖线和一行大标题、失去表格渲染的问题：压缩标题、编号与引用的拆行修复不再作用于表格行，单元格里的 `1.` 和 `>` 也不再被拆开。
