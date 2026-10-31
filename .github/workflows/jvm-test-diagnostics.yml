@@ -8,6 +8,11 @@ on:
         required: true
         type: string
         default: '*SecureWorkspaceFileOpsTest'
+      sample_memory:
+        description: 采样 JVM 测试进程的堆与常驻内存
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,7 +21,7 @@ jobs:
   diagnose:
     name: 无签名材料的 JVM 测试诊断
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: 检出源码
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -58,9 +63,34 @@ jobs:
         working-directory: native-ui
         env:
           TEST_FILTER: ${{ inputs.test_filter }}
+          SAMPLE_MEMORY: ${{ inputs.sample_memory }}
         run: |
           set -euo pipefail
-          ./gradlew --stacktrace :app:testSideloadDebugUnitTest --tests "$TEST_FILTER"
+          if [[ "$SAMPLE_MEMORY" != true ]]; then
+            ./gradlew --stacktrace :app:testSideloadDebugUnitTest --tests "$TEST_FILTER"
+            exit
+          fi
+          mkdir -p "$RUNNER_TEMP/jvm-test-memory"
+          report="$RUNNER_TEMP/jvm-test-memory/memory.txt"
+          timeout 40m ./gradlew --stacktrace :app:testSideloadDebugUnitTest --tests "$TEST_FILTER" &
+          build_pid=$!
+          while kill -0 "$build_pid" 2>/dev/null; do
+            {
+              date -u +'%Y-%m-%dT%H:%M:%SZ'
+              awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/' /proc/meminfo
+              for pid in $(pgrep -f 'org.gradle.process.internal.worker.GradleWorkerMain' || true); do
+                [[ -r "/proc/$pid/cmdline" ]] || continue
+                command_line=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                [[ "$command_line" == *worker.org.gradle.process.internal.worker.GradleWorkerMain* ]] || continue
+                printf 'pid=%s role=test-worker\n' "$pid"
+                awk '/^(VmRSS|VmHWM):/' "/proc/$pid/status" || true
+                jcmd "$pid" VM.flags 2>/dev/null || true
+                jcmd "$pid" GC.heap_info 2>/dev/null || true
+              done
+            } >> "$report"
+            sleep 20
+          done
+          wait "$build_pid"
 
       - name: 保留测试证据
         if: always()
@@ -70,5 +100,6 @@ jobs:
           path: |
             native-ui/app/build/reports/tests/testSideloadDebugUnitTest/
             native-ui/app/build/test-results/testSideloadDebugUnitTest/*.xml
+            ${{ runner.temp }}/jvm-test-memory/
           if-no-files-found: warn
           retention-days: 7
