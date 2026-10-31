@@ -283,9 +283,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  screenshot-gate:
+    name: 发行前截图回归（分片 ${{ matrix.shard }}）
+    needs: validate-release-inputs
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    uses: ./.github/workflows/screenshot-validate.yml
+    with:
+      shard: ${{ matrix.shard }}
+
   build-release:
     name: 全门禁并构建签名 APK（侧载 + Play）
-    needs: [validate-release-inputs, static-checks, device-e2e, minified-blackbox]
+    needs: [validate-release-inputs, static-checks, device-e2e, minified-blackbox, screenshot-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: release
@@ -379,8 +390,6 @@ jobs:
           fi
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache \
-            :app:validateSideloadDebugScreenshotTest
           ./gradlew --no-daemon --stacktrace --no-build-cache \
             :app:testSideloadDebugUnitTest \
             :app:lintSideloadDebug \

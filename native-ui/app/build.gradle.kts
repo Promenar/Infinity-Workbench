@@ -541,7 +541,10 @@ android {
 gradle.projectsEvaluated {
     tasks.withType<PreviewScreenshotValidationTask>().configureEach {
         systemProperty("user.timezone", "Asia/Shanghai")
-        testEngineInput.referenceImageDir.set(layout.projectDirectory.dir("src/screenshotTestDebug/reference"))
+        val referenceOverride = providers.environmentVariable("INFINITY_SCREENSHOT_REFERENCE_DIR")
+        testEngineInput.referenceImageDir.set(
+            layout.dir(referenceOverride.map { file(it) }).orElse(layout.projectDirectory.dir("src/screenshotTestDebug/reference")),
+        )
     }
     tasks.withType<PreviewScreenshotUpdateTask>().configureEach {
         systemProperty("user.timezone", "Asia/Shanghai")

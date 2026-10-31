@@ -319,8 +319,22 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("artifacts/android-minified-blackbox-api-${{ matrix.api-level }}-x86_64/", RELEASE)
         self.assertNotIn("INFINITY_DEVICE_E2E_BUILD_TYPE: minifiedTest", RELEASE)
         self.assertIn("build-release:", RELEASE)
-        for dependency in ("validate-release-inputs", "static-checks", "device-e2e", "minified-blackbox"):
+        for dependency in ("validate-release-inputs", "static-checks", "device-e2e", "minified-blackbox", "screenshot-gate"):
             self.assertIn(dependency, job_level_value(workflow_job("build-release"), "needs"))
+
+    def test_screenshot_gate_validates_every_shard_with_linux_baseline(self) -> None:
+        job = workflow_job("screenshot-gate")
+        source = (ROOT / ".github/workflows/screenshot-validate.yml").read_text(encoding="utf-8")
+        self.assertIn("fail-fast: false", job)
+        self.assertIn("shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]", job)
+        self.assertIn("screenshot-validate.yml", job)
+        self.assertIn("screenshot-baseline.py", source)
+        self.assertIn("screenshot-shards.py", source)
+        self.assertIn("INFINITY_SCREENSHOT_REFERENCE_DIR", source)
+        self.assertIn(":app:validateSideloadDebugScreenshotTest", source)
+        self.assertIn('args+=(--tests "*$class*")', source)
+        self.assertIn("set -euo pipefail", source)
+        self.assertNotIn(":app:updateSideloadDebugScreenshotTest", source)
 
     def test_build_release_cleans_before_fresh_full_gate_gradle_invocation(self) -> None:
         build_job = workflow_job("build-release")
@@ -336,13 +350,6 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
                     "--stacktrace",
                     "--no-build-cache",
                     "clean",
-                ],
-                [
-                    "./gradlew",
-                    "--no-daemon",
-                    "--stacktrace",
-                    "--no-build-cache",
-                    ":app:validateSideloadDebugScreenshotTest",
                 ],
                 [
                     "./gradlew",
@@ -627,8 +634,11 @@ is_expected_resumed_activity "$2"
         self.assertIn(f"tag=v{version_name}", result.stdout.splitlines())
 
     def test_actions_are_sha_pinned_and_permissions_are_minimal(self) -> None:
-        for workflow in (ANDROID_CI, RELEASE):
+        screenshot_workflow = (ROOT / ".github/workflows/screenshot-validate.yml").read_text(encoding="utf-8")
+        for workflow in (ANDROID_CI, RELEASE, screenshot_workflow):
             for action_ref in re.findall(r"uses:\s+([^\s#]+)", workflow):
+                if action_ref == "./.github/workflows/screenshot-validate.yml":
+                    continue
                 self.assertRegex(action_ref, r"@[0-9a-f]{40}$")
         self.assertIn("permissions:\n  contents: read", RELEASE)
         self.assertIn("permissions:\n      contents: write", RELEASE)

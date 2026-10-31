@@ -1,0 +1,88 @@
+name: Android 截图分片验证
+
+on:
+  workflow_dispatch:
+    inputs:
+      shard:
+        required: true
+        type: number
+  workflow_call:
+    inputs:
+      shard:
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Linux 截图分片 ${{ inputs.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
+      - name: 配置 Go 1.27.1
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: native-ui/app/tailnet/go.sum
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            cmake;3.22.1
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+        with:
+          dependency-graph: disabled
+
+      - name: 验证截图分片
+        working-directory: native-ui
+        env:
+          SHARD: ${{ inputs.shard }}
+          INFINITY_SCREENSHOT_REFERENCE_DIR: ${{ runner.temp }}/infinity-screenshot-reference
+        run: |
+          set -euo pipefail
+          python3 ../scripts/ci/screenshot-baseline.py \
+            --base app/src/screenshotTestDebug/reference \
+            --overlay app/src/screenshotTestDebug/reference-linux-overlay \
+            --output "$INFINITY_SCREENSHOT_REFERENCE_DIR"
+          python3 ../scripts/ci/screenshot-shards.py --root .. --shard "$SHARD" --count 16 --lines > "$RUNNER_TEMP/screenshot-classes.txt"
+          args=()
+          while IFS= read -r class; do
+            args+=(--tests "*$class*")
+          done < "$RUNNER_TEMP/screenshot-classes.txt"
+          ./gradlew --no-daemon --stacktrace --no-build-cache clean
+          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest "${args[@]}"
+
+      - name: 保留截图失败证据
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-screenshot-failure-${{ inputs.shard }}-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/reports/screenshotTest/
+            native-ui/app/build/outputs/screenshotTest-results/
+          if-no-files-found: warn
+          retention-days: 3
