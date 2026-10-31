@@ -73,8 +73,7 @@ jobs:
           while IFS= read -r class; do
             args+=(--tests "*$class*")
           done < "$RUNNER_TEMP/screenshot-classes.txt"
-          ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest "${args[@]}"
+          ./gradlew --stacktrace :app:validateSideloadDebugScreenshotTest "${args[@]}"
           python3 ../scripts/ci/screenshot-results.py \
             --classes "$RUNNER_TEMP/screenshot-classes.txt" \
             --results app/build/test-results/validateSideloadDebugScreenshotTest

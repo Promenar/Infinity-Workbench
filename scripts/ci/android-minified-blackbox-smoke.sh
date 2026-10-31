@@ -240,10 +240,10 @@ if [[ "${SKIP_BUILD}" == "false" ]]; then
     cd "${NATIVE_ROOT}"
     chmod +x gradlew
     if [[ "${DEFAULT_MINIFIED_MODE}" == "true" ]]; then
-        ./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2eAbi="${TARGET_ABI}" \
+        ./gradlew --stacktrace -Pinfinity.deviceE2eAbi="${TARGET_ABI}" \
             :app:assembleSideloadMinifiedTest :blackbox-fixture:assembleDebug --console=plain
     else
-        ./gradlew --no-daemon --stacktrace :blackbox-fixture:assembleDebug --console=plain
+        ./gradlew --stacktrace :blackbox-fixture:assembleDebug --console=plain
     fi
 fi
 

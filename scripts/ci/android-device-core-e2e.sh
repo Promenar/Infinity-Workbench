@@ -432,7 +432,7 @@ run_expected_relay_death() {
 
 cd "${NATIVE_ROOT}"
 chmod +x gradlew
-./gradlew --no-daemon --stacktrace -Pinfinity.deviceE2e=true \
+./gradlew --stacktrace -Pinfinity.deviceE2e=true \
     -Pinfinity.deviceE2eAbi="${DEVICE_E2E_ABI}" \
     ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}" \
     ":app:assemble${DISTRIBUTION_TASK}${BUILD_TYPE_TASK}AndroidTest" \

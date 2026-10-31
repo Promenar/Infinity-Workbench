@@ -389,8 +389,7 @@ jobs:
             exit 1
           fi
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache \
+          ./gradlew --stacktrace \
             :app:testSideloadDebugUnitTest \
             :app:lintSideloadDebug \
             :app:assembleSideloadDebug \

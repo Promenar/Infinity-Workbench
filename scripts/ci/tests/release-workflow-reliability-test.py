@@ -74,6 +74,21 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_android_ci_builds_reuse_gradle_daemon_and_cache(self) -> None:
+        paths = (
+            ".github/workflows/release.yml",
+            ".github/workflows/screenshot-validate.yml",
+            ".github/workflows/screenshot-diagnostics.yml",
+            ".github/workflows/screenshot-reference-candidate.yml",
+            "scripts/ci/android-device-core-e2e.sh",
+            "scripts/ci/android-minified-blackbox-smoke.sh",
+        )
+        for path in paths:
+            source = (ROOT / path).read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertNotIn("--no-daemon", source)
+                self.assertNotIn("--no-build-cache", source)
+
     def test_screenshot_shards_cover_sources_once_including_new_tests(self) -> None:
         script = ROOT / "scripts/ci/screenshot-shards.py"
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,7 +137,8 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("contents: read", source)
         self.assertNotIn("secrets.", source)
         self.assertNotIn("environment: release", source)
-        self.assertIn("--no-build-cache clean", source)
+        self.assertNotIn("--no-build-cache", source)
+        self.assertNotIn("--no-daemon", source)
         self.assertIn(":app:validateSideloadDebugScreenshotTest", source)
         self.assertIn("preview_filter:", source)
         self.assertIn("default: '*emptyChatReleasePreview*'", source)
@@ -338,7 +354,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertIn("set -euo pipefail", source)
         self.assertNotIn(":app:updateSideloadDebugScreenshotTest", source)
 
-    def test_build_release_cleans_before_fresh_full_gate_gradle_invocation(self) -> None:
+    def test_build_release_reuses_gradle_cache_and_runs_full_build(self) -> None:
         build_job = workflow_job("build-release")
         build_step = build_job.split("- name: 执行全门禁并构建签名 APK", 1)[1]
         build_step = build_step.split("- name: 删除临时 keystore", 1)[0]
@@ -348,16 +364,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
             [
                 [
                     "./gradlew",
-                    "--no-daemon",
                     "--stacktrace",
-                    "--no-build-cache",
-                    "clean",
-                ],
-                [
-                    "./gradlew",
-                    "--no-daemon",
-                    "--stacktrace",
-                    "--no-build-cache",
                     ":app:testSideloadDebugUnitTest",
                     ":app:lintSideloadDebug",
                     ":app:assembleSideloadDebug",

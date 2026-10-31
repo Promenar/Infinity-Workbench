@@ -60,8 +60,7 @@ jobs:
           PREVIEW_FILTER: ${{ inputs.preview_filter }}
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest --tests "$PREVIEW_FILTER"
+          ./gradlew --stacktrace :app:validateSideloadDebugScreenshotTest --tests "$PREVIEW_FILTER"
 
       - name: 保留截图报告与参考图
         if: always()

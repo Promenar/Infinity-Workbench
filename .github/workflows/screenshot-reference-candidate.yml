@@ -59,7 +59,6 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace --no-build-cache clean
           mkdir -p app/build/baseline-before
           cp -a app/src/screenshotTestDebug/reference/. app/build/baseline-before/
           python3 ../scripts/ci/screenshot-shards.py --root .. --shard "$SHARD" --count 16 --lines > app/build/screenshot-classes.txt
@@ -67,7 +66,7 @@ jobs:
           while IFS= read -r class; do
             args+=(--tests "*$class*")
           done < app/build/screenshot-classes.txt
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:updateSideloadDebugScreenshotTest "${args[@]}"
+          ./gradlew --stacktrace :app:updateSideloadDebugScreenshotTest "${args[@]}"
 
       - name: 整理本分片的参考图
         if: always()
