@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 变更
+
+- 移动工作流测试方案的 PASS 判定增加交互要求：过程可见、可中断、可中途介入、可挂起与恢复、后台作业可轮询、中断后可恢复、失败可定位七项须达到桌面 ADE 水平，产物正确但交互缺失记产品缺口；测试统一在“命令需批准”档执行，仅 D3 对比两档。
+
 ## [0.8.1-beta] - 2026-10-31
 
 ### 修复
