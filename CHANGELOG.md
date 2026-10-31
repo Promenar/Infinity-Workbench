@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+
+- 修复共享存储开启 FUSE passthrough 时文件工具因读取刷新时间戳而误报冲突：以独立摘要复核保持并发修改检测；跨卷复制移动失败时按创建身份回滚目标或确认移动完成，无法安全补偿时返回含来源与目标路径的恢复提示。
+
 ## [0.9.0-beta] - 2026-11-01
 
 ### 修复

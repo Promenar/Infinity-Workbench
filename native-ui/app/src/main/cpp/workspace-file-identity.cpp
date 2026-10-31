@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <sys/xattr.h>
 #include <unistd.h>
 
@@ -105,6 +106,15 @@ jstring readCompatibleIdentity(JNIEnv* env, jint fd, const char* current, const 
 
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeIsFuse(
+        JNIEnv* env, jobject, jint directory) {
+    struct statfs state{};
+    if (fstatfs(directory, &state) != 0) { fail(env, "读取目录文件系统类型 / Inspect filesystem type", errno); return JNI_FALSE; }
+    // Linux UAPI 的 FUSE_SUPER_MAGIC；按实际目录 FD 判定，不依赖路径前缀。
+    return state.f_type == 0x65735546 ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeMoveNoReplace(
         JNIEnv* env, jobject, jint sourceFd, jbyteArray sourceName, jint targetFd, jbyteArray targetName) {
@@ -128,6 +138,15 @@ Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeMoveN
             jstring message = env->NewStringUTF(reason);
             if (message == nullptr) return;
             auto failure = static_cast<jthrowable>(env->NewObject(type, constructor, nullptr, nullptr, message));
+            if (failure != nullptr) env->Throw(failure);
+        } else if (error == EXDEV) {
+            jclass type = env->FindClass("android/system/ErrnoException");
+            if (type == nullptr) return;
+            jmethodID constructor = env->GetMethodID(type, "<init>", "(Ljava/lang/String;I)V");
+            if (constructor == nullptr) return;
+            jstring action = env->NewStringUTF("renameat2");
+            if (action == nullptr) return;
+            auto failure = static_cast<jthrowable>(env->NewObject(type, constructor, action, error));
             if (failure != nullptr) env->Throw(failure);
         } else if (error == EEXIST || error == ENOTEMPTY) {
             jclass type = env->FindClass("java/nio/file/FileAlreadyExistsException");

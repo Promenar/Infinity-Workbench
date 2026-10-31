@@ -5,6 +5,8 @@ package com.promenar.infinity.data.repository
 internal object AndroidWorkspaceFileMoves {
     init { System.loadLibrary("infinity_workspace_fs") }
 
+    fun isFuse(directory: Int): Boolean = nativeIsFuse(directory)
+
     fun moveNoReplace(sourceParent: Int, sourceName: String, targetParent: Int, targetName: String) {
         validateNames(sourceName, targetName)
         nativeMoveNoReplace(sourceParent, sourceName.toByteArray(Charsets.UTF_8),
@@ -28,4 +30,5 @@ internal object AndroidWorkspaceFileMoves {
         targetParent: Int, targetName: ByteArray)
     private external fun nativeMoveReplacing(sourceParent: Int, sourceName: ByteArray,
         targetParent: Int, targetName: ByteArray)
+    private external fun nativeIsFuse(directory: Int): Boolean
 }
