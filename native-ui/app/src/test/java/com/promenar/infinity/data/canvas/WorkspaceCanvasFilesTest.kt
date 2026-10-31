@@ -309,9 +309,14 @@ class WorkspaceCanvasFilesTest {
         }
         suspend fun invoke(skill: com.promenar.infinity.ui.chat.manager.registry.SkillDefinition, args: String) =
             com.promenar.infinity.ui.chat.manager.skills.MountedWorkspaceSkill(skill, mounts, workspace, operations, index,
-                privateReader = com.promenar.infinity.ui.chat.diff.PrivateWorkspaceReader { repository, rootUuid, path, maxBytes ->
-                    val root = repository.getByUuid(rootUuid, rootUuid)!!
-                    real(File(root.physicalRootPath)).read(path, maxBytes)
+                privateReader = object : com.promenar.infinity.ui.chat.diff.PrivateWorkspaceReader {
+                    private suspend fun backend(repository: com.promenar.infinity.domain.repository.IWorkspaceRepository, rootUuid: String) =
+                        real(File(repository.getByUuid(rootUuid, rootUuid)!!.physicalRootPath))
+                    override suspend fun read(workspace: com.promenar.infinity.domain.repository.IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long) =
+                        backend(workspace, rootUuid).read(path, maxBytes)
+                    // 与生产默认读取器一致提供真正的流，跨命名空间移动按流式摘要读取私有来源。
+                    override suspend fun <T> readStream(workspace: com.promenar.infinity.domain.repository.IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+                        backend(workspace, rootUuid).readStream(path, maxBytes, consume)
                 })
                 .execute(kotlinx.serialization.json.Json.parseToJsonElement(args).let { it as kotlinx.serialization.json.JsonObject }, context)
         val created = invoke(com.promenar.infinity.ui.chat.manager.skills.CreateFileSkill(workspace, operations),
