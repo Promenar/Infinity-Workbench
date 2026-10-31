@@ -46,7 +46,9 @@ class AgentHttpRoutingTest {
             }
             assertThat(withTimeout(2000) { fixture.connect.await() }).isEqualTo("CONNECT 100.64.0.9:443 HTTP/1.1")
             assertThat(withTimeout(2000) { fixture.host.await() }).isEqualTo("origin.test")
-            assertThat(withTimeout(2000) { fixture.sni.await() }).isEqualTo("origin.test")
+            val actualSni = withTimeoutOrNull(2000) { fixture.sni.await() }
+            checkNotNull(actualSni) { "TLS 握手未记录 SNI；${fixture.serverInfo.await()}" }
+            assertThat(actualSni).isEqualTo("origin.test")
         }
     }
 
@@ -152,6 +154,7 @@ class AgentHttpRoutingTest {
         val connect = CompletableDeferred<String>()
         val host = CompletableDeferred<String>()
         val sni = CompletableDeferred<String>()
+        val serverInfo = CompletableDeferred<String>()
         val workerFailure = CompletableDeferred<Throwable>()
         val routing: TailnetRouting = object : TailnetRouting by DisabledTailnetRouting {
             override fun agentProxy() = Proxy(Proxy.Type.HTTP, InetSocketAddress(InetAddress.getByName("127.0.0.1"), server.localPort))
@@ -174,6 +177,11 @@ class AgentHttpRoutingTest {
                             })
                         }
                         tls.startHandshake()
+                        val platform = runCatching {
+                            Class.forName("okhttp3.internal.platform.Platform").getMethod("get").invoke(null).javaClass.name
+                        }.getOrElse { it.javaClass.name }
+                        serverInfo.complete("provider=${context.provider.name}; socket=${tls.javaClass.name}; " +
+                            "session=${tls.session.javaClass.name}; okhttp=$platform")
                         val request = tls.inputStream.bufferedReader()
                         request.readLine()
                         while (true) {
