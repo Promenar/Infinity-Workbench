@@ -110,7 +110,7 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeIsFuse(
         JNIEnv* env, jobject, jint directory) {
     struct statfs state{};
-    if (fstatfs(directory, &state) != 0) { fail(env, "读取目录文件系统类型", errno); return JNI_FALSE; }
+    if (fstatfs(directory, &state) != 0) { fail(env, "读取目录文件系统类型 / Inspect filesystem type", errno); return JNI_FALSE; }
     // Linux UAPI 的 FUSE_SUPER_MAGIC；按实际目录 FD 判定，不依赖路径前缀。
     return state.f_type == 0x65735546 ? JNI_TRUE : JNI_FALSE;
 }

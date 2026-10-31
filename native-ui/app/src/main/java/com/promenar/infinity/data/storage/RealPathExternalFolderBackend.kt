@@ -781,7 +781,8 @@ class RealPathExternalFolderBackend internal constructor(
                         moveChecked(parent, name, target, name, original)
                         val moved = target.stat(name) ?: realPathReadConflict("identity")
                         if (!sameMovedObject(moved, original)) {
-                            val failure = ExternalFolderException("CONFLICT", "旧暂存在迁移期间发生变化")
+                            val failure = runCatching { checkMovedState(original, moved) }.exceptionOrNull()
+                                ?: ExternalFolderException("CONFLICT", "文件状态不一致 / File state mismatch: identity")
                             restoreMoved(target, name, parent, name, moved, failure)
                             throw failure
                         }
@@ -867,12 +868,14 @@ class RealPathExternalFolderBackend internal constructor(
                     OsConstants.ENOSYS, OsConstants.EOPNOTSUPP, OsConstants.EXDEV -> "UNSUPPORTED"
                     else -> "UNAVAILABLE"
                 }
-                throw ExternalFolderException(code, "存储操作失败，请检查目录与授权").apply { initCause(exception) }
+                val message = if (code == "CONFLICT") "文件状态不一致 / File state mismatch: identity=occupied"
+                    else "存储操作失败，请检查目录与授权"
+                throw ExternalFolderException(code, message).apply { initCause(exception) }
             } catch (exception: SecurityException) {
                 throw ExternalFolderException("UNAVAILABLE", "存储授权不可用").apply { initCause(exception) }
             } catch (exception: FileAlreadyExistsException) {
                 // 不覆盖发布时目标名已被并发创建者占用，与 EEXIST 一致按冲突处理，双方内容均保留。
-                throw ExternalFolderException("CONFLICT", "目标名称在写入期间被占用，请重新读取").apply { initCause(exception) }
+                throw ExternalFolderException("CONFLICT", "文件状态不一致 / File state mismatch: identity=occupied").apply { initCause(exception) }
             } catch (exception: AtomicMoveNotSupportedException) {
                 throw unsupportedMove(exception)
             } catch (exception: CheckedMoveAcrossVolumes) {
