@@ -100,7 +100,7 @@ OAuth App 不勾选 “Expire user access tokens”，令牌没有固定有效�
 
 ## 内置 Linux 环境
 
-只有侧载渠道且变体包含 arm64-v8a 时接入 Linux 制品；Play 变体与纯 x86_64 变体不接入，运行时分别报告 `Unavailable(DISTRIBUTION)` 与 `Unavailable(UNSUPPORTED_ABI)`（`DistributionCapabilities.linuxRuntimeAvailable`）。固定输入登记在 `native-ui/app/linux/linux-runtime.properties`：termux/proot 提交、talloc 2.4.4 与 Alpine 3.24.3 aarch64 minirootfs 的下载地址和 SHA-256。
+只有侧载渠道且变体包含 arm64-v8a 时接入 Linux 制品；Play 变体与纯 x86_64 变体不接入，运行时分别报告 `Unavailable(DISTRIBUTION)` 与 `Unavailable(UNSUPPORTED_ABI)`（`DistributionCapabilities.linuxRuntimeAvailable`）。固定输入登记在 `native-ui/app/linux/linux-runtime.properties`：termux/proot 提交、talloc 2.4.4 与 Alpine 3.24.3 aarch64 minirootfs 的下载地址和 SHA-256。talloc 使用 MacPorts 的 Samba 原始包镜像，仍校验固定摘要。
 
 - `fetchLinuxRuntime<Proot|Talloc|Alpine>` 下载到 `app/build/linux-downloads/` 并校验摘要；`buildLinuxRuntime` 用 AGP 所选 NDK 与 `app/linux/CMakeLists.txt` 编译 `libnxproot.so`（proot 与入口）和 `libnxproot-loader.so`；`prepareLinuxRuntimeAssets` 把原始归档放为 `assets/linux/alpine-minirootfs.tar.gz.bin`（`.bin` 后缀防止资产合并器解压），摘要与解包大小写入 BuildConfig。
 - 两个库随 `useLegacyPackaging` 解压到 `nativeLibraryDir` 后执行（W^X），rootfs 在安装时解到 `filesDir/linux/alpine`。
