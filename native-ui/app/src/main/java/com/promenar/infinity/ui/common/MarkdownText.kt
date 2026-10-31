@@ -958,7 +958,12 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
         if (boldMarkers % 2 == 0) match.value else match.groupValues[1]
     }
 
+    // 以竖线开头的行是表格行：单元格里的 `#`、编号和 `>` 是内容，拆行会破坏整张表格。
+    fun inTableRow(index: Int): Boolean =
+        processed.substring(processed.lastIndexOf('\n', index - 1) + 1, index).trimStart().startsWith('|')
+
     processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9#]))[ \t]*(#{1,6})(?!#)[ \t]*([^\s#])""")) { match ->
+        if (inTableRow(match.range.first)) return@replace match.value
         val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
         val prefix = if (needsBreak) "\n\n" else ""
         "$prefix${match.groupValues[2]} ${match.groupValues[3]}"
@@ -967,7 +972,7 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
     processed = processed.replace(Regex("""(?m)(^|(?<=[^\nA-Za-z0-9.]))[ \t]*(\d{1,2})\.(?!\d)[ \t]*([^\s])""")) { match ->
         // 编号前只有行首强调标记（可带列表或引用前缀）时是加粗的编号标题，拆行会让强调标记裸露。
         val linePrefix = processed.substring(processed.lastIndexOf('\n', match.range.first - 1) + 1, match.range.first)
-        if (emphasizedLineStartPattern.matches(linePrefix)) return@replace match.value
+        if (emphasizedLineStartPattern.matches(linePrefix) || inTableRow(match.range.first)) return@replace match.value
         val needsBreak = match.range.first > 0 && processed[match.range.first - 1] != '\n'
         val prefix = if (needsBreak) "\n" else ""
         "$prefix${match.groupValues[2]}. ${match.groupValues[3]}"
@@ -1013,6 +1018,7 @@ internal fun repairCompressedMarkdownBoundaries(text: String): String {
     }
 
     processed = processed.replace(Regex("""(?m)(?<![\n<>=-])[ \t]*(>)[ \t]*([^\s])""")) { match ->
+        if (inTableRow(match.range.first)) return@replace match.value
         val prefix = if (match.range.first > 0) "\n" else ""
         "$prefix> ${match.groupValues[2]}"
     }

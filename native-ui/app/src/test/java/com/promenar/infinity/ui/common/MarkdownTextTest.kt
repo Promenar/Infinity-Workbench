@@ -335,6 +335,16 @@ class MarkdownTextTest {
         }
 
         @Test
+        fun `表格行内的井号编号和大于号保持原文`() {
+            val input = "按最近更新排序：\n\n| # | 仓库 | 说明 |\n|---|---|---|\n| 1 | Personal-Archive | 1. 首页 |\n| 2 | Nian | a > b |"
+            val result = repairCompressedMarkdownBoundaries(input)
+
+            assertThat(result).isEqualTo(input)
+            val tree = MarkdownParser(GFMFlavourDescriptor()).buildMarkdownTreeFromString(result)
+            assertThat(tree.children.map { it.type.name }).contains("TABLE")
+        }
+
+        @Test
         fun `does not alter inline code and links`() {
             val input = "保留 `#标签##值 1.不是列表` 和 [标题#一](https://example.com/a#b)"
             val result = repairCompressedMarkdownBoundaries(input)

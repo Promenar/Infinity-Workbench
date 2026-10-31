@@ -94,25 +94,51 @@ internal fun RowScope.ThinkingPreview(reasoning: String, rate: ThinkingRateHolde
             animationSpec = tween(ThinkingPreviewTuning.MODE_CROSS_FADE_MS),
             label = "thinkingPreviewMode",
         )
-        if (blend < 1f) SingleLineLayer(engine, constraints.maxWidth.toFloat(), style, color, Modifier.graphicsLayer { alpha = 1f - blend })
-        if (blend > 0f) LineRollLayer(engine, style, color, Modifier.graphicsLayer { alpha = blend })
+        // 引擎在原地推进；这里每帧读出要显示的值再交给子层，参数随帧变化，子层才不会被跳过而停在旧画面。
+        if (blend < 1f) {
+            val viewport = constraints.maxWidth.toFloat()
+            val window = engine.singleLineWindow()
+            val index = engine.shownIndex
+            val fraction = (engine.shown - index).coerceIn(0f, 1f)
+            val prefixWidth = engine.width(engine.substring(window.first, index))
+            val nextWidth = engine.width(engine.substring(window.first, window.last + 1)) - prefixWidth
+            val textWidth = prefixWidth + fraction * nextWidth
+            SingleLineLayer(
+                text = thinkingFadedText(engine.substring(window.first, window.last + 1), window.first, engine.shown, color),
+                offsetX = if (textWidth > viewport) viewport - textWidth else 0f,
+                overflowing = textWidth > viewport,
+                style = style,
+                color = color,
+                modifier = Modifier.graphicsLayer { alpha = 1f - blend },
+            )
+        }
+        if (blend > 0f) {
+            val (lineStart, visible) = engine.visibleLine()
+            LineRollLayer(
+                seq = engine.rollSeq,
+                rolledOutLine = engine.rolledOutLine,
+                text = thinkingFadedText(visible, lineStart, engine.shown, color),
+                style = style,
+                color = color,
+                modifier = Modifier.graphicsLayer { alpha = blend },
+            )
+        }
     }
 }
 
 /** 单行：窗口右端随已放出位置连续左移，换算到像素级，新字符从右缘渐显进入，左缘保留渐隐遮罩。 */
 @Composable
-private fun SingleLineLayer(engine: ThinkingPreviewEngine, viewport: Float, style: TextStyle, color: Color, modifier: Modifier) {
-    val window = engine.singleLineWindow()
-    val index = engine.shownIndex
-    val fraction = (engine.shown - index).coerceIn(0f, 1f)
-    val prefixWidth = engine.width(engine.substring(window.first, index))
-    val nextWidth = engine.width(engine.substring(window.first, window.last + 1)) - prefixWidth
-    val textWidth = prefixWidth + fraction * nextWidth
-    val overflowing = textWidth > viewport
-    val offsetX = if (overflowing) viewport - textWidth else 0f
+private fun SingleLineLayer(
+    text: AnnotatedString,
+    offsetX: Float,
+    overflowing: Boolean,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier,
+) {
     Box(modifier.fadingReasoningTail(enabled = overflowing)) {
         Text(
-            text = thinkingFadedText(engine.substring(window.first, window.last + 1), window.first, engine.shown, color),
+            text = text,
             softWrap = false,
             maxLines = 1,
             overflow = TextOverflow.Clip,
@@ -127,8 +153,14 @@ private fun SingleLineLayer(engine: ThinkingPreviewEngine, viewport: Float, styl
 
 /** 按行翻滚：当前行原地写满，换行时整行上移、新行自下方进入；不使用左侧遮罩，行首完整显示。 */
 @Composable
-private fun LineRollLayer(engine: ThinkingPreviewEngine, style: TextStyle, color: Color, modifier: Modifier) {
-    val seq = engine.rollSeq
+private fun LineRollLayer(
+    seq: Int,
+    rolledOutLine: String,
+    text: AnnotatedString,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier,
+) {
     val progress = remember { Animatable(1f) }
     LaunchedEffect(seq) {
         if (seq > 0) {
@@ -136,12 +168,11 @@ private fun LineRollLayer(engine: ThinkingPreviewEngine, style: TextStyle, color
             progress.animateTo(1f, tween(ThinkingPreviewTuning.LINE_ROLL_MS))
         }
     }
-    val (lineStart, visible) = engine.visibleLine()
     val moving = progress.value < 1f
     Box(modifier) {
         if (moving) {
             Text(
-                text = engine.rolledOutLine,
+                text = rolledOutLine,
                 softWrap = false,
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
@@ -154,7 +185,7 @@ private fun LineRollLayer(engine: ThinkingPreviewEngine, style: TextStyle, color
             )
         }
         Text(
-            text = thinkingFadedText(visible, lineStart, engine.shown, color),
+            text = text,
             softWrap = false,
             maxLines = 1,
             overflow = TextOverflow.Clip,
