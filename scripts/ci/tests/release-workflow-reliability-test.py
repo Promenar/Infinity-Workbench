@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import shlex
 import subprocess
@@ -73,6 +74,27 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_screenshot_shards_cover_sources_once_including_new_tests(self) -> None:
+        script = ROOT / "scripts/ci/screenshot-shards.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "native-ui/app/src/screenshotTest/kotlin"
+            source.mkdir(parents=True)
+            for name in ("Alpha", "Beta", "New"):
+                (source / f"{name}ScreenshotTest.kt").write_text("@PreviewTest\n", encoding="utf-8")
+            reference = root / "native-ui/app/src/screenshotTestDebug/reference/com/example/AlphaScreenshotTestKt"
+            reference.mkdir(parents=True)
+            for index in range(5):
+                (reference / f"{index}.png").touch()
+            shards = [json.loads(subprocess.check_output(
+                [sys.executable, str(script), "--root", str(root), "--shard", str(index), "--count", "2"],
+                text=True,
+            )) for index in range(2)]
+            all_classes = [name for shard in shards for name in shard]
+            self.assertCountEqual(all_classes, ["AlphaScreenshotTestKt", "BetaScreenshotTestKt", "NewScreenshotTestKt"])
+            self.assertEqual(len(all_classes), len(set(all_classes)))
+            self.assertIn(["AlphaScreenshotTestKt"], shards)
+
     def test_linux_reference_candidate_is_manual_and_evidence_only(self) -> None:
         source = (ROOT / ".github/workflows/screenshot-reference-candidate.yml").read_text(encoding="utf-8")
         trigger = source.split("permissions:", 1)[0]
@@ -83,7 +105,10 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertNotIn("git push", source)
         self.assertIn(":app:updateSideloadDebugScreenshotTest", source)
         self.assertIn("baseline-before", source)
-        self.assertIn("native-ui/app/src/screenshotTestDebug/reference/", source)
+        self.assertIn("app/src/screenshotTestDebug/reference", source)
+        self.assertIn("fail-fast: false", source)
+        self.assertIn('args+=(--tests "*$class*")', source)
+        self.assertIn("generation-outcome.txt", source)
         self.assertIn("if: always()", source)
 
     def test_screenshot_diagnostics_is_manual_read_only_and_preserves_failure_evidence(self) -> None:

@@ -11,6 +11,10 @@ jobs:
     name: 生成待审阅的 Linux 截图参考图
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - name: 检出源码
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -49,22 +53,50 @@ jobs:
           dependency-graph: disabled
 
       - name: 生成候选并保留原参考图
+        id: generate
         working-directory: native-ui
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
           mkdir -p app/build/baseline-before
           cp -a app/src/screenshotTestDebug/reference/. app/build/baseline-before/
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:updateSideloadDebugScreenshotTest
+          python3 ../scripts/ci/screenshot-shards.py --root .. --shard "$SHARD" --count 16 --lines > app/build/screenshot-classes.txt
+          args=()
+          while IFS= read -r class; do
+            args+=(--tests "*$class*")
+          done < app/build/screenshot-classes.txt
+          ./gradlew --no-daemon --stacktrace --no-build-cache :app:updateSideloadDebugScreenshotTest "${args[@]}"
+
+      - name: 整理本分片的参考图
+        if: always()
+        working-directory: native-ui
+        env:
+          GENERATE_OUTCOME: ${{ steps.generate.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p app/build/reference-review
+          printf '%s\n' "$GENERATE_OUTCOME" > app/build/reference-review/generation-outcome.txt
+          if [[ -f app/build/screenshot-classes.txt ]]; then
+            cp app/build/screenshot-classes.txt app/build/reference-review/classes.txt
+            while IFS= read -r class; do
+              for root in app/build/baseline-before app/src/screenshotTestDebug/reference; do
+                [[ -d "$root" ]] || continue
+                while IFS= read -r -d '' dir; do
+                  cp -a --parents "$dir" app/build/reference-review/
+                done < <(find "$root" -type d -name "$class" -print0)
+              done
+            done < app/build/screenshot-classes.txt
+          fi
 
       - name: 保存待审阅候选和原参考图
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: screenshot-reference-candidate-${{ github.run_attempt }}
+          name: screenshot-reference-candidate-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
-            native-ui/app/build/baseline-before/
-            native-ui/app/src/screenshotTestDebug/reference/
+            native-ui/app/build/reference-review/
             native-ui/app/build/reports/screenshotTest/
           if-no-files-found: error
           retention-days: 14
