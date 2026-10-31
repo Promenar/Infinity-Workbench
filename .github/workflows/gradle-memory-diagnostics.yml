@@ -2,6 +2,15 @@ name: Android Gradle 编译内存诊断
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: 选择完整对照或分阶段编译诊断
+        type: choice
+        required: true
+        default: full-comparison
+        options:
+          - full-comparison
+          - staged-compile
 
 permissions:
   contents: read
@@ -14,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [combined, staged]
+        mode: ${{ fromJSON(inputs.profile == 'staged-compile' && '["staged-compile"]' || '["combined","staged"]') }}
     steps:
       - name: 检出源码
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -66,6 +75,11 @@ jobs:
           elif [[ "$MODE" == staged ]]; then
             ./gradlew --stacktrace :app:testSideloadDebugUnitTest :app:lintSideloadDebug :app:assembleSideloadDebug
             ./gradlew --stacktrace :app:assemblePlayDebug :app:testPlayDebugUnitTest
+            ./gradlew --stacktrace :app:compileSideloadReleaseKotlin
+            ./gradlew --stacktrace :app:compilePlayReleaseKotlin
+          elif [[ "$MODE" == staged-compile ]]; then
+            ./gradlew --stacktrace :app:compileSideloadDebugKotlin
+            ./gradlew --stacktrace :app:compilePlayDebugKotlin
             ./gradlew --stacktrace :app:compileSideloadReleaseKotlin
             ./gradlew --stacktrace :app:compilePlayReleaseKotlin
           else

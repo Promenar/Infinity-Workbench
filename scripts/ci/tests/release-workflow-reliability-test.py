@@ -102,6 +102,15 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertNotIn("--no-parallel", source)
         self.assertNotIn("--no-build-cache", source)
 
+    def test_gradle_memory_staged_compile_profile_keeps_all_four_variants(self) -> None:
+        source = (ROOT / ".github/workflows/gradle-memory-diagnostics.yml").read_text(encoding="utf-8")
+        self.assertIn("inputs.profile == 'staged-compile'", source)
+        block = source.split('elif [[ "$MODE" == staged-compile ]]; then', 1)[1].split("          else", 1)[0]
+        commands = [line.strip() for line in block.splitlines() if line.strip().startswith("./gradlew ")]
+        self.assertEqual(len(commands), 4)
+        for variant in ("SideloadDebug", "PlayDebug", "SideloadRelease", "PlayRelease"):
+            self.assertEqual(sum(f":app:compile{variant}Kotlin" in line for line in commands), 1)
+
     def test_android_ci_builds_reuse_gradle_daemon_and_cache(self) -> None:
         paths = (
             ".github/workflows/release.yml",
