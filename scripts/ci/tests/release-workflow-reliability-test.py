@@ -74,6 +74,23 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_gradle_memory_diagnostics_is_manual_unsigned_and_bounded(self) -> None:
+        source = (ROOT / ".github/workflows/gradle-memory-diagnostics.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("secrets.", source)
+        self.assertIn("contents: read", source)
+        self.assertIn("combined", source)
+        self.assertIn("staged", source)
+        self.assertIn("timeout-minutes:", source)
+        self.assertIn("GC.heap_info", source)
+        self.assertIn("VM.flags", source)
+        self.assertIn(":app:compileSideloadReleaseKotlin", source)
+        self.assertIn(":app:compilePlayReleaseKotlin", source)
+        self.assertIn("if: always()", source)
+        self.assertNotIn("--no-daemon", source)
+        self.assertNotIn("--no-parallel", source)
+        self.assertNotIn("--no-build-cache", source)
+
     def test_android_ci_builds_reuse_gradle_daemon_and_cache(self) -> None:
         paths = (
             ".github/workflows/release.yml",

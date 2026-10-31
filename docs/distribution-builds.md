@@ -25,6 +25,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 “Android 截图 Linux 参考图候选”可手动分片生成 Linux 渲染结果，并将每个分片的原参考图、候选及源文件清单作为 Actions 产物保留，供逐项比较和审阅；生成操作只发生在临时 runner，不自动提交、更改仓库或替代发行截图门禁。全部分片成功且清单覆盖所有截图源文件后，候选才具备完整性。
 
+排查发行构建的 JVM 内存不足时，可手动运行“Android Gradle 编译内存诊断”。它不使用签名材料，对比组合与分阶段变体编译，并保留 Gradle、Kotlin 进程的堆和宿主内存采样；该诊断不生成或发布签名包，也不替代发行门禁。
+
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
 | sideloadDebug | `app/build/outputs/apk/sideload/debug/app-sideload-debug.apk` | 无 |

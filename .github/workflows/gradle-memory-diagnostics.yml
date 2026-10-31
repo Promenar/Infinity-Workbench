@@ -1,0 +1,107 @@
+name: Android Gradle 编译内存诊断
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: 无签名材料编译诊断（${{ matrix.mode }}）
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [combined, staged]
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
+      - name: 配置 Go 1.27.1
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: native-ui/app/tailnet/go.sum
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            cmake;3.22.1
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+        with:
+          dependency-graph: disabled
+
+      - name: 运行无签名变体编译并记录内存
+        working-directory: native-ui
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gradle-memory"
+          report="$RUNNER_TEMP/gradle-memory/memory.txt"
+          timeout 105m bash -euo pipefail <<'BUILD' &
+          if [[ "$MODE" == combined ]]; then
+            ./gradlew --stacktrace :app:testSideloadDebugUnitTest :app:lintSideloadDebug :app:assembleSideloadDebug :app:assemblePlayDebug :app:testPlayDebugUnitTest :app:compileSideloadReleaseKotlin :app:compilePlayReleaseKotlin
+          elif [[ "$MODE" == staged ]]; then
+            ./gradlew --stacktrace :app:testSideloadDebugUnitTest :app:lintSideloadDebug :app:assembleSideloadDebug
+            ./gradlew --stacktrace :app:assemblePlayDebug :app:testPlayDebugUnitTest
+            ./gradlew --stacktrace :app:compileSideloadReleaseKotlin
+            ./gradlew --stacktrace :app:compilePlayReleaseKotlin
+          else
+            exit 2
+          fi
+          BUILD
+          build_pid=$!
+          while kill -0 "$build_pid" 2>/dev/null; do
+            {
+              date -u +'%Y-%m-%dT%H:%M:%SZ'
+              awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/' /proc/meminfo
+              for pid in $(pgrep -f 'org.gradle.launcher.daemon.bootstrap.GradleDaemon|org.jetbrains.kotlin.daemon.KotlinCompileDaemon' || true); do
+                [[ -r "/proc/$pid/cmdline" ]] || continue
+                command_line=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+                case "$command_line" in
+                  *org.jetbrains.kotlin.daemon.KotlinCompileDaemon*) role=kotlin ;;
+                  *org.gradle.launcher.daemon.bootstrap.GradleDaemon*) role=gradle ;;
+                  *) continue ;;
+                esac
+                printf 'pid=%s role=%s\n' "$pid" "$role"
+                awk '/^(VmRSS|VmHWM):/' "/proc/$pid/status" || true
+                jcmd "$pid" VM.flags 2>/dev/null || true
+                jcmd "$pid" GC.heap_info 2>/dev/null || true
+              done
+            } >> "$report"
+            sleep 20
+          done
+          wait "$build_pid"
+
+      - name: 保留诊断证据
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gradle-memory-${{ matrix.mode }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/gradle-memory/
+            native-ui/app/build/reports/tests/
+          if-no-files-found: warn
+          retention-days: 7
