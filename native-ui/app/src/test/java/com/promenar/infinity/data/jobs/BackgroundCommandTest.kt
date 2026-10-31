@@ -52,11 +52,11 @@ class BackgroundCommandTest {
         val process=ProcessBuilder("/usr/bin/perl","-e","setpgrp(0,0); exec @ARGV or exit 127","/bin/sh","-c","echo \$\$ > '${pgid.path}'; sleep 60 & echo \$! > '${child.path}'; wait").start()
         try {
             withTimeout(5000) {while(!child.isFile || child.readText().isBlank())delay(10)}
-            File(pgid.path+".identity").writeText("stale")
-            val killer=BuiltinCommandRunner(emptyList(),"/bin/sh",ProcessGroupSignaller{pid,sig->ProcessBuilder("/bin/kill","-$sig","-$pid").start().waitFor()},{root},killGraceMillis=100,processIdentity={"current"})
+            File(pgid.path+".identity").writeText("test-boot\nstale")
+            val killer=BuiltinCommandRunner(emptyList(),"/bin/sh",ProcessGroupSignaller{pid,sig->ProcessBuilder("/bin/kill","-$sig","-$pid").start().waitFor()},{root},killGraceMillis=100,processIdentity={"current"},bootIdentity={"test-boot"})
             killer.interruptBackground(pgid)
             assertThat(process.isAlive).isTrue()
-            File(pgid.path+".identity").writeText("current")
+            File(pgid.path+".identity").writeText("test-boot\ncurrent")
             killer.interruptBackground(pgid)
             withTimeout(5000){while(process.isAlive)delay(10)}
             assertThat(ProcessBuilder("/bin/kill","-0",child.readText().trim()).start().waitFor()).isNotEqualTo(0)
