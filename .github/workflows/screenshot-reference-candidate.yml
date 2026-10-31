@@ -1,0 +1,70 @@
+name: Android 截图 Linux 参考图候选
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: 生成待审阅的 Linux 截图参考图
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.14"
+
+      - name: 配置 Go 1.27.1
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.1"
+          cache-dependency-path: native-ui/app/tailnet/go.sum
+
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+            cmake;3.22.1
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6
+        with:
+          dependency-graph: disabled
+
+      - name: 生成候选并保留原参考图
+        working-directory: native-ui
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace --no-build-cache clean
+          mkdir -p app/build/baseline-before
+          cp -a app/src/screenshotTestDebug/reference/. app/build/baseline-before/
+          ./gradlew --no-daemon --stacktrace --no-build-cache :app:updateSideloadDebugScreenshotTest
+
+      - name: 保存待审阅候选和原参考图
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: screenshot-reference-candidate-${{ github.run_attempt }}
+          path: |
+            native-ui/app/build/baseline-before/
+            native-ui/app/src/screenshotTestDebug/reference/
+            native-ui/app/build/reports/screenshotTest/
+          if-no-files-found: error
+          retention-days: 14

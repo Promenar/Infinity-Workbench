@@ -73,6 +73,19 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_linux_reference_candidate_is_manual_and_evidence_only(self) -> None:
+        source = (ROOT / ".github/workflows/screenshot-reference-candidate.yml").read_text(encoding="utf-8")
+        trigger = source.split("permissions:", 1)[0]
+        self.assertIn("  workflow_dispatch:", trigger)
+        self.assertNotIn("  push:", trigger)
+        self.assertIn("contents: read", source)
+        self.assertNotIn("secrets.", source)
+        self.assertNotIn("git push", source)
+        self.assertIn(":app:updateSideloadDebugScreenshotTest", source)
+        self.assertIn("baseline-before", source)
+        self.assertIn("native-ui/app/src/screenshotTestDebug/reference/", source)
+        self.assertIn("if: always()", source)
+
     def test_screenshot_diagnostics_is_manual_read_only_and_preserves_failure_evidence(self) -> None:
         workflow = ROOT / ".github/workflows/screenshot-diagnostics.yml"
         self.assertTrue(workflow.is_file(), "截图诊断入口必须存在")

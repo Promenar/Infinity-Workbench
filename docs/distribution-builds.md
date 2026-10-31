@@ -23,6 +23,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 需要排查托管 Linux 的截图差异时，可手动运行 GitHub Actions 的“Android 截图诊断”。该工作流使用发行门禁的清理与验证任务，默认检查空会话预览，也可通过 `preview_filter` 指定其他预览；产物包含参考图、渲染结果与报告。它不使用发行签名材料，也不替代全量截图或发行候选验证。
 
+“Android 截图 Linux 参考图候选”可手动生成 Linux 渲染结果，并将原参考图和候选作为 Actions 产物保留，供逐项比较和审阅；生成操作只发生在临时 runner，不自动提交、更改仓库或替代发行截图门禁。
+
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
 | sideloadDebug | `app/build/outputs/apk/sideload/debug/app-sideload-debug.apk` | 无 |
