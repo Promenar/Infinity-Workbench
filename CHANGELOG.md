@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 ### 变更
 
 - 增加手动截图诊断工作流，保留空会话预览的参考图、渲染结果和差异报告，方便排查发行截图门禁。
+- 移动工作流能力测试文档改为可执行方案：去重合并为 55 项基础能力与 20 项端到端任务，端到端任务按轻、中、重负载分级判定，新增两台 Linux 测试主机的手机免密 SSH 配置与逐批确认流程；数字人口播与 Windows/macOS SSH 后端列为范围外。
 
 ## [0.8.0-beta] - 2026-10-31
 
