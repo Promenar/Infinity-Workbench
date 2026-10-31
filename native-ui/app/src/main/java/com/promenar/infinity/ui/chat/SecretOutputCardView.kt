@@ -213,7 +213,7 @@ internal fun SecretOutputCardView(
     var savingAs by remember(key) { mutableStateOf(false) }
     val unavailable = stringResource(R.string.secret_output_unavailable)
     val clipLabel = stringResource(R.string.secret_output_clip_label)
-    val destroyed = destroyedLocally || card.slot.state == SecretSlotState.DESTROYED
+    val destroyed = destroyedLocally || card.slot.state != SecretSlotState.AVAILABLE
 
     fun hide() {
         revealed?.fill('\u0000')
@@ -372,7 +372,7 @@ internal fun SecretOutputCardContent(
                     )
                 } else if (destroyed) {
                     Text(
-                        stringResource(R.string.secret_output_destroyed),
+                        stringResource(if (card.slot.state == SecretSlotState.CLEARED) R.string.secret_output_cleared else R.string.secret_output_destroyed),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -391,7 +391,10 @@ internal fun SecretOutputCardContent(
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SecretInfoRow(
                         stringResource(R.string.secret_output_source),
-                        pluralStringResource(R.plurals.secret_output_bytes, card.slot.byteLength, secretSourceText(card.slot.source), card.slot.byteLength),
+                        // 从会话记录恢复的槽位不知道长度，只显示来源。
+                        if (card.slot.byteLength > 0) {
+                            pluralStringResource(R.plurals.secret_output_bytes, card.slot.byteLength, secretSourceText(card.slot.source), card.slot.byteLength)
+                        } else secretSourceText(card.slot.source),
                     )
                     SecretInfoRow(stringResource(R.string.secret_input_visibility), stringResource(R.string.secret_output_visibility_value))
                     SecretInfoRow(stringResource(R.string.secret_output_retain), stringResource(R.string.secret_output_retain_value))

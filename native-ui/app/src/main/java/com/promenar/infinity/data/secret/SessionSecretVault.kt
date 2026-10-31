@@ -47,9 +47,19 @@ class SessionSecretVault {
         require(label.isNotBlank() && label.length <= SecretIoLimits.MAX_LABEL_CHARS) { "SECRET_LABEL_INVALID" }
         val session = sessions.getOrPut(sessionId, ::Session)
         if (name !in session.entries) {
-            session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, 0, SecretSlotState.DESTROYED), null)
+            session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, 0, SecretSlotState.CLEARED), null)
             publish(session)
         }
+    }
+
+    /** 从已有 `show_secret` 调用恢复输出卡外壳；槽位须已登记，不恢复值，也不覆盖本进程已有的同一张卡。 */
+    fun restoreCard(sessionId: String, assistantMessageId: String, toolCallId: String, name: String, purpose: String) = synchronized(lock) {
+        require(purpose.isNotBlank() && purpose.length <= SecretIoLimits.MAX_PURPOSE_CHARS) { "SECRET_PURPOSE_INVALID" }
+        require(assistantMessageId.isNotBlank() && toolCallId.isNotBlank()) { "SECRET_CARD_INVALID" }
+        val session = sessions[sessionId] ?: return@synchronized
+        val entry = session.entries[name] ?: return@synchronized
+        if (session.cards.value.any { it.assistantMessageId == assistantMessageId && it.toolCallId == toolCallId }) return@synchronized
+        session.cards.value = session.cards.value + SecretOutputCard(sessionId, assistantMessageId, toolCallId, entry.slot, purpose)
     }
 
     /** 仅匹配完整的环境变量名（含参数展开写法），常规系统环境变量保持由执行器处理。 */

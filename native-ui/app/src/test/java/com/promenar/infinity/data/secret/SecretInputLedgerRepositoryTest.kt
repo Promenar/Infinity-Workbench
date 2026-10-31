@@ -13,6 +13,7 @@ import com.promenar.infinity.ui.chat.manager.AskUserTool
 import com.promenar.infinity.ui.chat.manager.registry.toProtocolTool
 import com.promenar.infinity.ui.chat.manager.skills.RequestSecretSkill
 import com.promenar.infinity.ui.chat.manager.skills.SecretRequestProtocol
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import org.junit.runner.RunWith
@@ -162,5 +163,35 @@ class SecretInputLedgerRepositoryTest {
         assertThat(ledger.submit(pending, value, null)).isNull()
         assertThat(value.all { it == '\u0000' }).isTrue()
         assertThat(writes).isEmpty()
+    }
+
+    @Test fun `会话记录恢复已结束请求的回执且不含值`() = runBlocking {
+        assertThat(ledger.observeHistory("s").first()).isEmpty()
+        val pending = create().pending!!
+        assertThat(ledger.observeHistory("s").first()).isEmpty()
+        ledger.submit(pending, "synthetic-history-value".toCharArray(), null)
+        val saved = ledger.observeHistory("s").first().single()
+        assertThat(saved).isEqualTo(SecretInputRecord("s", "m", "secret", SecretInputOutcome.Saved("session_env"), "本会话环境变量", null))
+        assertThat(saved.toString()).doesNotContain("synthetic-history-value")
+    }
+
+    @Test fun `去向不可用时回执退回参数描述且参数被拒的失败不进入回执`() = runBlocking {
+        val calls = listOf(
+            ToolCall("job", "request_secret", """{"purpose":"输入口令","destination":{"type":"job_input","jobId":"job-7"}}"""),
+            ToolCall("git", "request_secret", """{"purpose":"登录","destination":{"type":"git_credential","host":"Git.Example.Invalid","username":"synthetic-user"}}"""),
+            ToolCall("rejected", "request_secret", """{"purpose":"","destination":{"type":"session_env","name":"X"}}"""),
+        )
+        db.messageDao().insert(Message(id = "m2", role = MessageRole.ASSISTANT, content = "", parentMessageId = "u",
+            toolCalls = calls, createdAt = 3).toEntity("s"))
+        listOf("job" to """{"type":"expired"}""", "git" to """{"type":"cancelled"}""",
+            "rejected" to SecretRequestProtocol.failure("SECRET_INVALID_ARGUMENTS")).forEachIndexed { index, (id, content) ->
+            db.messageDao().insert(Message(id = "r$index", role = MessageRole.TOOL, content = content, toolCallId = id,
+                name = "request_secret", parentMessageId = "m2", createdAt = 4L + index).toEntity("s"))
+        }
+        val history = ledger.observeHistory("s").first()
+        assertThat(history.map { it.toolCallId to it.outcome }).containsExactly(
+            "job" to SecretInputOutcome.Expired, "git" to SecretInputOutcome.Cancelled).inOrder()
+        assertThat(history[0].destinationLabel).isEqualTo("后台任务 job-7 的终端")
+        assertThat(history[1].username).isEqualTo("synthetic-user")
     }
 }

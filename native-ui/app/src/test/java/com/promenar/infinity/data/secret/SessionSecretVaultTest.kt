@@ -101,7 +101,7 @@ class SessionSecretVaultTest {
     @Test fun `恢复缺失槽位后命令引用明确失败且公开流只有墓碑`() = runBlocking {
         vault.rememberUnavailable("s", "TOKEN", "恢复令牌", SecretSource.UserInput)
         val slot = vault.observeSlots("s").first().single()
-        assertEquals(SecretSlotState.DESTROYED, slot.state)
+        assertEquals(SecretSlotState.CLEARED, slot.state)
         assertEquals(0, slot.byteLength)
         assertNull(vault.revealBytes("s", "TOKEN"))
         assertEquals("SECRET_SLOT_UNAVAILABLE", assertThrows(IllegalStateException::class.java) {
@@ -120,5 +120,29 @@ class SessionSecretVaultTest {
         assertEquals("SECRET_LABEL_INVALID", assertThrows(IllegalArgumentException::class.java) {
             vault.rememberUnavailable("s", "OTHER", "", SecretSource.UserInput)
         }.message)
+    }
+
+    @Test fun `恢复输出卡只挂到已登记槽位且不重复`() = runBlocking {
+        vault.restoreCard("s", "assistant", "call", "TOKEN", "查看令牌")
+        assertTrue(vault.observeCards("s").first().isEmpty())
+        vault.rememberUnavailable("s", "TOKEN", "恢复令牌", SecretSource.UserInput)
+        vault.restoreCard("s", "assistant", "call", "TOKEN", "查看令牌")
+        vault.restoreCard("s", "assistant", "call", "TOKEN", "查看令牌")
+        val card = vault.observeCards("s").first().single()
+        assertEquals(SecretSlotState.CLEARED, card.slot.state)
+        assertEquals("查看令牌", card.purpose)
+        assertNull(vault.revealBytes("s", "TOKEN"))
+        assertEquals("SECRET_PURPOSE_INVALID", assertThrows(IllegalArgumentException::class.java) {
+            vault.restoreCard("s", "assistant", "other", "TOKEN", "")
+        }.message)
+    }
+
+    @Test fun `恢复的卡片在同名槽位重新写入后随之可用`() = runBlocking {
+        vault.rememberUnavailable("s", "TOKEN", "恢复令牌", SecretSource.UserInput)
+        vault.restoreCard("s", "assistant", "call", "TOKEN", "查看令牌")
+        vault.put("s", "TOKEN", "新令牌", SecretSource.UserInput, "new-token-value".toByteArray())
+        val card = vault.observeCards("s").first().single()
+        assertEquals(SecretSlotState.AVAILABLE, card.slot.state)
+        assertEquals(15, card.slot.byteLength)
     }
 }

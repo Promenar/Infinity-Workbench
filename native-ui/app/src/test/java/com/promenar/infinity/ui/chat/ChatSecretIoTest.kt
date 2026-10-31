@@ -8,6 +8,7 @@ import com.promenar.infinity.domain.secret.SecretDestination
 import com.promenar.infinity.domain.secret.SecretExposure
 import com.promenar.infinity.domain.secret.SecretInputCoordinator
 import com.promenar.infinity.domain.secret.SecretInputOutcome
+import com.promenar.infinity.domain.secret.SecretInputRecord
 import com.promenar.infinity.domain.secret.SecretInputRequest
 import com.promenar.infinity.domain.secret.SecretKind
 import com.promenar.infinity.domain.secret.SecretOutputCard
@@ -54,6 +55,10 @@ class ChatSecretIoTest {
             pending.value = null
             return SecretInputOutcome.Cancelled
         }
+
+        val history = MutableStateFlow<List<SecretInputRecord>>(emptyList())
+        override fun observeHistory(sessionId: String): Flow<List<SecretInputRecord>> =
+            history.map { records -> records.filter { it.sessionId == sessionId } }
 
         var githubLoginOutcome: SecretInputOutcome? = null
         val githubLogins = mutableListOf<PendingSecretInput>()
@@ -125,6 +130,27 @@ class ChatSecretIoTest {
         assertThat(io.receipts.value).containsExactly(
             SecretInputReceipt("s1", "a1", "call-1", SecretInputReceipt.Status.SAVED, "设置 › Git 凭据 · github.com", "Promenar"),
         )
+    }
+
+    @Test fun `会话记录里的回执按原顺序恢复，本页回执以补填用户名为准`() = runTest(dispatcher) {
+        val io = io()
+        coordinator.history.value = listOf(
+            SecretInputRecord("s1", "a0", "old", SecretInputOutcome.Cancelled, "本会话环境变量 \$TOKEN", null),
+            SecretInputRecord("s1", "a1", "call-1", SecretInputOutcome.Saved("git_credential"), "Git 凭据 · github.com", null),
+            SecretInputRecord("s2", "a9", "other", SecretInputOutcome.Expired, "后台任务 7 的终端", null),
+        )
+        assertThat(io.receipts.value.map { it.toolCallId to it.status }).containsExactly(
+            "old" to SecretInputReceipt.Status.CANCELLED, "call-1" to SecretInputReceipt.Status.SAVED).inOrder()
+        assertThat(io.receipts.value[1].username).isNull()
+
+        val request = pending()
+        coordinator.pending.value = request
+        io.submit(request, "tok".toCharArray(), "Promenar")
+        assertThat(io.receipts.value.map { it.toolCallId }).containsExactly("old", "call-1").inOrder()
+        assertThat(io.receipts.value[1].username).isEqualTo("Promenar")
+
+        session.value = "s2"
+        assertThat(io.receipts.value.map { it.toolCallId }).containsExactly("other")
     }
 
     @Test fun `浏览器登录成功后由协调器确认才留下回执`() = runTest(dispatcher) {

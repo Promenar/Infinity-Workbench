@@ -2,6 +2,7 @@ package com.promenar.infinity.data.secret
 
 import androidx.room.withTransaction
 import com.promenar.infinity.data.local.db.InfinityDatabase
+import com.promenar.infinity.data.local.db.entity.MessageEntity
 import com.promenar.infinity.data.local.db.entity.ToolExecutionLedgerEntity
 import com.promenar.infinity.data.local.db.entity.ToolLedgerStatus
 import com.promenar.infinity.data.model.*
@@ -15,7 +16,10 @@ import com.promenar.infinity.startup.StartupWriteBarrier
 import com.promenar.infinity.ui.chat.manager.skills.SecretRequestProtocol
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
@@ -45,6 +49,22 @@ class SecretInputLedgerRepository(
 
     override fun observePending(sessionId: String): Flow<PendingSecretInput?> =
         ledger.observeInputForSession(sessionId).map { pending(sessionId) }
+
+    /** 只解析会话记录里的请求参数与结果；记录变化频繁，去重后才查询去向描述。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeHistory(sessionId: String): Flow<List<SecretInputRecord>> = messages.observeBySession(sessionId)
+        .map(::finishedSecretRequests)
+        .distinctUntilChanged()
+        .mapLatest { finished ->
+            finished.map { item ->
+                val label = try { destinations.describe(sessionId, item.request.destination).label }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { fallbackDestinationLabel(item.request.destination) }
+                SecretInputRecord(sessionId, item.assistantMessageId, item.toolCallId, item.outcome, label,
+                    (item.request.destination as? SecretDestination.GitCredential)?.username)
+            }
+        }
+        .flowOn(Dispatchers.IO)
 
     suspend fun pending(sessionId: String): PendingSecretInput? = withContext(Dispatchers.IO) {
         database.withTransaction { pendingInTransaction(sessionId) }
@@ -211,6 +231,38 @@ class SecretInputLedgerRepository(
         a.assistantMessageId == b.assistantMessageId && a.toolCallId == b.toolCallId && a.request == b.request && a.expiresAtMillis == b.expiresAtMillis
     private fun failed(code: String) = SecretInputOutcome.Failed(code, "保密信息未保存，请检查去向后重试。")
     private fun digest(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+}
+
+internal data class FinishedSecretRequest(
+    val assistantMessageId: String,
+    val toolCallId: String,
+    val request: SecretInputRequest,
+    val outcome: SecretInputOutcome,
+)
+
+/** 会话记录里已保存、已取消或已过期的请求，按结果写入顺序；参数被拒绝的失败结果仍以工具行展示。 */
+internal fun finishedSecretRequests(entities: List<MessageEntity>): List<FinishedSecretRequest> {
+    val results = entities.filter { it.role == "tool" && it.name == SecretIoLimits.REQUEST_TOOL_NAME }
+    if (results.isEmpty()) return emptyList()
+    val assistants = entities.filter { it.role == "assistant" }.associateBy { it.id }
+    return results.mapNotNull { result ->
+        val outcome = runCatching { Json.decodeFromString<SecretInputOutcome>(result.content) }.getOrNull()
+            ?.takeUnless { it is SecretInputOutcome.Failed } ?: return@mapNotNull null
+        val call = assistants[result.parentMessageId]?.toolCalls
+            ?.let { runCatching { Json.decodeFromString<List<ToolCall>>(it) }.getOrNull() }
+            ?.firstOrNull { it.id == result.toolCallId && it.name == SecretIoLimits.REQUEST_TOOL_NAME } ?: return@mapNotNull null
+        val request = runCatching { SecretRequestProtocol.decode(call.arguments) }.getOrNull() ?: return@mapNotNull null
+        FinishedSecretRequest(result.parentMessageId!!, call.id, request, outcome)
+    }.distinctBy { it.assistantMessageId to it.toolCallId }
+}
+
+/** 去向已删除或任务已结束时，回执退回到只取自请求参数的描述。 */
+internal fun fallbackDestinationLabel(destination: SecretDestination): String = when (destination) {
+    is SecretDestination.GitCredential -> "Git 凭据 · ${destination.host}"
+    is SecretDestination.SshHost -> "SSH 主机 · " + if (destination.field == SshSecretField.PASSWORD) "登录密码" else "私钥口令"
+    is SecretDestination.ProviderApiKey -> "模型服务商 · API Key"
+    is SecretDestination.JobInput -> "后台任务 ${destination.jobId} 的终端"
+    is SecretDestination.SessionEnv -> "本会话环境变量 $${destination.name}"
 }
 
 internal fun destinationType(destination: SecretDestination): String = when (destination) {

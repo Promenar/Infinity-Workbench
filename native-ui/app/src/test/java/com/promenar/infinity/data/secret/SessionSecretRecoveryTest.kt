@@ -26,7 +26,7 @@ class SessionSecretRecoveryTest {
         }
         assertEquals("synthetic-fresh", vault.revealBytes("s", "INPUT_TOKEN")!!.decodeToString())
         assertNull(vault.revealBytes("s", "OUTPUT_TOKEN"))
-        assertEquals(SecretSlotState.DESTROYED, vault.observeSlots("s").first().single { it.name == "OUTPUT_TOKEN" }.state)
+        assertEquals(SecretSlotState.CLEARED, vault.observeSlots("s").first().single { it.name == "OUTPUT_TOKEN" }.state)
         assertTrue(runCatching { vault.environment("s", "command \$OUTPUT_TOKEN") }.isFailure)
         assertTrue(vault.environment("s", "command \$ORDINARY_ENV").isEmpty())
     }
@@ -47,5 +47,24 @@ class SessionSecretRecoveryTest {
         listOf("cancelled", "expired", "failed").forEach {
             assertTrue(SessionSecretRecovery.declaredSlots(Json.encodeToString(listOf(input)), mapOf("input" to """{"type":"$it"}""")).isEmpty())
         }
+    }
+
+    @Test fun `只恢复成功执行的输出卡`() {
+        val calls = listOf(
+            ToolCall("shown", "show_secret", """{"name":"OUTPUT_TOKEN","purpose":"查看初始密码"}"""),
+            ToolCall("failed", "show_secret", """{"name":"OUTPUT_TOKEN","purpose":"再看一次"}"""),
+            ToolCall("pending", "show_secret", """{"name":"OUTPUT_TOKEN","purpose":"未执行"}"""),
+            ToolCall("mismatch", "show_secret", """{"name":"OUTPUT_TOKEN","purpose":"名称不符"}"""),
+            ToolCall("bad", "show_secret", """{"name":"bad-name","purpose":"非法槽位"}"""),
+        )
+        val results = mapOf(
+            "shown" to """{"status":"shown","name":"OUTPUT_TOKEN"}""",
+            "failed" to """{"status":"error","error_code":"SECRET_SLOT_NOT_FOUND","message":"x"}""",
+            "mismatch" to """{"status":"shown","name":"OTHER"}""",
+            "bad" to """{"status":"shown","name":"bad-name"}""",
+        )
+        assertEquals(listOf(SessionSecretRecovery.ShownCard("shown", "OUTPUT_TOKEN", "查看初始密码")),
+            SessionSecretRecovery.shownCards(Json.encodeToString(calls), results))
+        assertTrue(SessionSecretRecovery.shownCards("invalid-json", results).isEmpty())
     }
 }

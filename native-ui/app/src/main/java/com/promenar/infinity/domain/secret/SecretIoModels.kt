@@ -1,6 +1,7 @@
 package com.promenar.infinity.domain.secret
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -139,7 +140,23 @@ interface SecretInputCoordinator {
      * 没有浏览器登录保存的凭据、或请求已不再等待时返回 null。
      */
     suspend fun completeWithGitHubLogin(expected: PendingSecretInput): SecretInputOutcome? = null
+
+    /** 本会话已结束的保密输入请求，按会话记录顺序；会话重新打开或应用重启后据此恢复回执。 */
+    fun observeHistory(sessionId: String): Flow<List<SecretInputRecord>> = flowOf(emptyList())
 }
+
+/**
+ * 已结束的保密输入请求，只取自会话记录里的请求参数与 [SecretInputOutcome]，没有值。
+ * [outcome] 只会是已保存、已取消或已过期；[username] 只来自请求参数，用户在卡片里补填的用户名不进入会话记录。
+ */
+data class SecretInputRecord(
+    val sessionId: String,
+    val assistantMessageId: String,
+    val toolCallId: String,
+    val outcome: SecretInputOutcome,
+    val destinationLabel: String,
+    val username: String?,
+)
 
 /** 保密输出的来源，只用于展示。 */
 @Serializable
@@ -155,7 +172,13 @@ sealed interface SecretSource {
     data object UserInput : SecretSource
 }
 
-enum class SecretSlotState { AVAILABLE, DESTROYED }
+enum class SecretSlotState {
+    AVAILABLE,
+    /** 用户已销毁。 */
+    DESTROYED,
+    /** 值只在内存里，应用重启后清除；槽位与输出卡从会话记录恢复，只剩公开描述。 */
+    CLEARED,
+}
 
 /** 本会话保密库一个槽位的公开描述，不含值。 */
 data class SecretSlot(

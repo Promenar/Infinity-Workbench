@@ -93,6 +93,8 @@ private fun outputCard(purpose: String, label: String, state: SecretSlotState = 
 
 private val GiteaCard = outputCard("Gitea 管理员 admin 的初始密码。", "Gitea 管理员初始密码")
 private val EnglishCard = outputCard("Initial password for the Gitea admin account.", "Gitea admin password")
+/** 应用重启后从会话记录恢复的卡片：长度未知，值已清除。 */
+private val ClearedCard = GiteaCard.copy(slot = GiteaCard.slot.copy(byteLength = 0, state = SecretSlotState.CLEARED))
 
 private const val GuardText = "我的令牌是 ghp_8xQ2aB3dE5fG7hJ9kL1mN2pQ4rS6tU8vW0xY 请帮我查仓库"
 
@@ -150,12 +152,13 @@ fun secretInputReceiptsDarkPreview() = SecretFrame {
 }
 
 @PreviewTest
-@Preview(name = "保密输出卡 遮蔽 显示 已销毁 深中411", widthDp = 411, heightDp = 1080, locale = "zh-rCN")
+@Preview(name = "保密输出卡 遮蔽 显示 已销毁 重启清除 深中411", widthDp = 411, heightDp = 1460, locale = "zh-rCN")
 @Composable
 fun secretOutputCardDarkPreview() = SecretFrame {
     OutputCardPreview(GiteaCard)
     OutputCardPreview(GiteaCard, revealed = "Xq7r-Lm2V9pWt4Zs8KcN0bYhEe", copied = true)
     OutputCardPreview(outputCard("Gitea 管理员 admin 的初始密码。", "Gitea 管理员初始密码", SecretSlotState.DESTROYED), destroyed = true)
+    OutputCardPreview(ClearedCard, destroyed = true)
 }
 
 @PreviewTest
@@ -187,12 +190,13 @@ fun composerSecretGuardDarkPreview() = SecretFrame {
 }
 
 @PreviewTest
-@Preview(name = "Secret cards English 360dp font130", widthDp = 360, heightDp = 1900, locale = "en", fontScale = 1.3f)
+@Preview(name = "Secret cards English 360dp font130", widthDp = 360, heightDp = 2500, locale = "en", fontScale = 1.3f)
 @Composable
 fun secretIoEnglishLargeFontPreview() = SecretFrame {
     SecretInputCard(EnglishInput, onSubmit = { _, _ -> true }, onCancel = {}, onGitHubBrowserLogin = {}, nowMillis = { PreviewNow })
     OutputCardPreview(EnglishCard)
     OutputCardPreview(EnglishCard, revealed = "Xq7r-Lm2V9pWt4Zs8KcN0bYhEe", copied = true)
+    OutputCardPreview(EnglishCard.copy(slot = EnglishCard.slot.copy(byteLength = 0, state = SecretSlotState.CLEARED)), destroyed = true)
     ComposerSecretGuardContent(
         text = GuardText, matches = detectComposerSecrets(GuardText), modelName = "Opus 5.5", defaultUsername = "",
         saving = false, saveFailed = false, onSaveToGit = { _, _ -> }, onEdit = {}, onSendAnyway = {},

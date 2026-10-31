@@ -5,6 +5,7 @@ import com.promenar.infinity.domain.secret.PendingSecretInput
 import com.promenar.infinity.domain.secret.SecretDestination
 import com.promenar.infinity.domain.secret.SecretInputCoordinator
 import com.promenar.infinity.domain.secret.SecretInputOutcome
+import com.promenar.infinity.domain.secret.SecretInputRecord
 import com.promenar.infinity.domain.secret.SecretOutputCard
 import com.promenar.infinity.domain.secret.SecretOutputController
 import kotlinx.coroutines.CancellationException
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,9 +77,19 @@ internal class ChatSecretIo(
 
     private val allReceipts = MutableStateFlow<List<SecretInputReceipt>>(emptyList())
 
-    /** 当前会话的回执；只在内存里，离开应用后由工具行代替。 */
-    val receipts: StateFlow<List<SecretInputReceipt>> = combine(sessionId, allReceipts) { id, list ->
-        list.filter { it.sessionId == id }
+    private val history: StateFlow<List<SecretInputReceipt>> = sessionId
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else coordinator.observeHistory(id) }
+        .map { records -> records.mapNotNull { it.toReceipt() } }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 当前会话的回执：会话记录里已结束的请求按原顺序恢复，重新打开会话或重启应用后仍在；
+     * 本页刚提交的回执带有卡片里补填的用户名，同一调用以它为准。
+     */
+    val receipts: StateFlow<List<SecretInputReceipt>> = combine(sessionId, history, allReceipts) { id, past, all ->
+        val live = all.filter { it.sessionId == id }.associateBy { it.toolCallId }
+        val pastIds = past.mapTo(HashSet()) { it.toolCallId }
+        past.filter { it.sessionId == id }.map { live[it.toolCallId] ?: it } + live.values.filterNot { it.toolCallId in pastIds }
     }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     private val _submission = MutableStateFlow<SecretInputSubmission?>(null)
@@ -224,6 +236,16 @@ internal class ChatSecretIo(
             onResult(saved)
         }
     }
+}
+
+private fun SecretInputRecord.toReceipt(): SecretInputReceipt? {
+    val status = when (outcome) {
+        is SecretInputOutcome.Saved -> SecretInputReceipt.Status.SAVED
+        SecretInputOutcome.Cancelled -> SecretInputReceipt.Status.CANCELLED
+        SecretInputOutcome.Expired -> SecretInputReceipt.Status.EXPIRED
+        is SecretInputOutcome.Failed -> return null
+    }
+    return SecretInputReceipt(sessionId, assistantMessageId, toolCallId, status, destinationLabel, username)
 }
 
 /** 跟在某一组回复之后的保密回执与输出卡。 */
