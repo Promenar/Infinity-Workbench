@@ -16,6 +16,7 @@ import kotlin.concurrent.thread
 import javax.net.ssl.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CompletableDeferred
 import okhttp3.*
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -34,9 +35,14 @@ class AgentHttpRoutingTest {
                 .certificatePinner(CertificatePinner.Builder().add("origin.test", CertificatePinner.pin(identity.certificate)).build())
                 .dns(object : Dns { override fun lookup(hostname: String): List<InetAddress> = error("不应二次解析目标") }).build()
             val route = AgentHttpRouting.route(base, endpoint, fixture.routing)
-            route.client.newCall(route.request(Request.Builder().url(endpoint.uri.toString()).build())).execute().use {
-                assertThat(it.code).isEqualTo(200)
-                assertThat(it.body!!.string()).isEqualTo("ok")
+            try {
+                route.client.newCall(route.request(Request.Builder().url(endpoint.uri.toString()).build())).execute().use {
+                    assertThat(it.code).isEqualTo(200)
+                    assertThat(it.body!!.string()).isEqualTo("ok")
+                }
+            } catch (failure: java.io.IOException) {
+                withTimeoutOrNull(2000) { fixture.workerFailure.await() }?.let(failure::addSuppressed)
+                throw failure
             }
             assertThat(withTimeout(2000) { fixture.connect.await() }).isEqualTo("CONNECT 100.64.0.9:443 HTTP/1.1")
             assertThat(withTimeout(2000) { fixture.host.await() }).isEqualTo("origin.test")
@@ -146,6 +152,7 @@ class AgentHttpRoutingTest {
         val connect = CompletableDeferred<String>()
         val host = CompletableDeferred<String>()
         val sni = CompletableDeferred<String>()
+        val workerFailure = CompletableDeferred<Throwable>()
         val routing: TailnetRouting = object : TailnetRouting by DisabledTailnetRouting {
             override fun agentProxy() = Proxy(Proxy.Type.HTTP, InetSocketAddress(InetAddress.getByName("127.0.0.1"), server.localPort))
         }
@@ -169,7 +176,7 @@ class AgentHttpRoutingTest {
                         tls.outputStream.apply { write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".toByteArray()); flush() }
                     }
                 }
-            }
+            }.onFailure { workerFailure.complete(it) }
         }
         override fun close() { server.close(); worker.join(1000) }
     }
