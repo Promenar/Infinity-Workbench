@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### 变更
 
-- 增加手动截图诊断工作流，保留参考图、渲染结果和差异报告，方便排查发行截图门禁。
+- 增加手动截图诊断工作流，保留空会话预览的参考图、渲染结果和差异报告，方便排查发行截图门禁。
 
 ## [0.8.0-beta] - 2026-10-31
 

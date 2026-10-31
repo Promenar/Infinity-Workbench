@@ -48,12 +48,12 @@ jobs:
         with:
           dependency-graph: disabled
 
-      - name: 执行发行截图门禁
+      - name: 比对代表性截图
         working-directory: native-ui
         run: |
           set -euo pipefail
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest
+          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest --tests '*emptyChatReleasePreview*'
 
       - name: 保留截图报告与参考图
         if: always()

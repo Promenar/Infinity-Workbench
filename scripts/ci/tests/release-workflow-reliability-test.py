@@ -86,6 +86,7 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
         self.assertNotIn("environment: release", source)
         self.assertIn("--no-build-cache clean", source)
         self.assertIn(":app:validateSideloadDebugScreenshotTest", source)
+        self.assertIn("--tests '*emptyChatReleasePreview*'", source)
         self.assertNotIn("updateSideloadDebugScreenshotTest", source)
         self.assertIn("if: always()", source)
         self.assertIn("native-ui/app/build/reports/screenshotTest/preview/debug/sideload/", source)

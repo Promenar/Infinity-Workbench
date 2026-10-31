@@ -21,7 +21,7 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 截图验证共用 `app/src/screenshotTestDebug/reference/`，不按渠道复制像素。设备构建只生成 APK；设备脚本会连接并修改设备，需在已授权的专用本机 AVD 上另行执行。`mainactivity-e2e` 以 `missingDimensionStrategy` 固定匹配侧载应用，其任务名保持 `assembleDeviceTest`。黑盒夹具为独立应用，保持 `:blackbox-fixture:assembleDebug`。
 
-需要排查托管 Linux 的截图差异时，可手动运行 GitHub Actions 的“Android 截图诊断”。该工作流使用与发行截图门禁相同的清理和验证命令，并保留参考图、渲染结果与报告；它不使用发行签名材料，也不替代发行候选全链验证。
+需要排查托管 Linux 的截图差异时，可手动运行 GitHub Actions 的“Android 截图诊断”。该工作流使用发行门禁的清理与验证任务，针对空会话预览保留参考图、渲染结果与报告；它不使用发行签名材料，也不替代全量截图或发行候选验证。
 
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
