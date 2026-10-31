@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.data.local.db.InfinityDatabase
+import com.promenar.infinity.data.local.db.dao.FileEntryDao
 import com.promenar.infinity.data.local.db.entity.FileEntry
 import com.promenar.infinity.data.local.db.entity.VectorEntity
 import com.promenar.infinity.data.local.db.entity.VectorizationTaskEntity
@@ -835,9 +836,25 @@ class VectorizationQueueRoomTest {
         seedFilesWithoutTask()
         val entry = database.fileEntryDao().getByUuid(ROOT, DOC)!!
         database.fileEntryDao().update(entry.copy(mimeType = null))
-        val queue = queue(StandardTestDispatcher(testScheduler))
+        val lookupStarted = CompletableDeferred<Unit>()
+        val releaseLookup = CompletableDeferred<Unit>()
+        val fileDao = database.fileEntryDao()
+        val delayedFileDao = object : FileEntryDao by fileDao {
+            override suspend fun getActiveByUuid(workspaceRootUuid: String, uuid: String): FileEntry? {
+                lookupStarted.complete(Unit)
+                releaseLookup.await()
+                return fileDao.getActiveByUuid(workspaceRootUuid, uuid)
+            }
+        }
+        val queue = queue(StandardTestDispatcher(testScheduler), fileEntryDao = delayedFileDao)
+        val failurePersisted = CompletableDeferred<Unit>()
+        queue.beforeFailureDisplayDelayForTest = { failurePersisted.complete(Unit) }
         queue.enqueueDocument(ROOT, DOC, source.name, "content", kgStrategy = "full")
+        lookupStarted.await()
         advanceUntilIdle()
+        assertThat(database.vectorizationTaskDao().getByDocId(DOC).single().status).isEqualTo("pending")
+        releaseLookup.complete(Unit)
+        failurePersisted.await()
 
         assertThat(database.vectorDao().getByDocId(DOC)).isEmpty()
         assertThat(database.kgEdgeDao().getByDocId(DOC)).isEmpty()
@@ -1059,6 +1076,7 @@ class VectorizationQueueRoomTest {
         db: InfinityDatabase = database,
         documentIndexService: DocumentIndexService = ImmediateDocumentIndexService,
         ragConfig: RagConfiguration = RagConfiguration(),
+        fileEntryDao: FileEntryDao = db.fileEntryDao(),
     ) = VectorizationQueue(
         vectorStore = mockk(relaxed = true),
         embeddingClient = mockk(relaxed = true),
@@ -1067,7 +1085,7 @@ class VectorizationQueueRoomTest {
         vectorizationTaskDao = db.vectorizationTaskDao(),
         ragConfig = ragConfig,
         dispatcher = dispatcher,
-        fileEntryDao = db.fileEntryDao(),
+        fileEntryDao = fileEntryDao,
         documentIndexService = documentIndexService,
     )
 
