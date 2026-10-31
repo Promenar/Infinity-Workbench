@@ -8,6 +8,7 @@ import com.promenar.infinity.data.secret.SecretCapture
 import com.promenar.infinity.data.git.remote.GitRemoteBroker
 import com.promenar.infinity.data.git.remote.GitRemoteLease
 import com.promenar.infinity.data.git.remote.GitRemoteSessions
+import com.promenar.infinity.data.linux.LinuxGhConfig
 import com.promenar.infinity.data.git.remote.LinuxGitEnvironment
 import com.promenar.infinity.data.repository.*
 import com.promenar.infinity.data.storage.ExternalMountPaths
@@ -72,6 +73,29 @@ class LinuxExecIntegrationTest {
             assertThat(backgroundBuiltin.request.environment[GitRemoteBroker.ENV_NONCE]).isEqualTo(leaseEnvironment[GitRemoteBroker.ENV_NONCE])
         } finally { backgroundBuiltin.close() }
         assertThat(closed).isEqualTo(4)
+    }
+
+    @Test fun `GitHub代理就绪时前后台Linux启动规格携带gh配置以挂载代理目录`() = runBlocking<Unit> {
+        val leaseEnvironment = mapOf(
+            GitRemoteBroker.ENV_HTTP_PROXY to "127.0.0.1:43123",
+            GitRemoteBroker.ENV_NONCE to "synthetic-gh-command",
+            GitRemoteBroker.ENV_CREDENTIAL_HOSTS to "github.com",
+            GitRemoteBroker.ENV_GH_SOCKET to LinuxGhConfig.GUEST_SOCKET,
+        )
+        val remote = GitRemoteSessions {
+            object : GitRemoteLease {
+                override val environment = leaseEnvironment
+                override fun close() = Unit
+            }
+        }
+        val exec = service(gitRemote = remote)
+        assertThat(shell(exec, "true").exitCode).isEqualTo(0)
+        assertThat(runtime.specs.last().environment["GH_CONFIG_DIR"]).isEqualTo(LinuxGhConfig.GUEST_CONFIG)
+        val prepared = exec.prepareBackgroundCommand(BackgroundJobRunner.LINUX, "true", null,
+            BackgroundJobLocation(workspace, workspace, true, false, sessionId = "s"), 1, "s")
+        try {
+            assertThat(runtime.specs.last().environment["GH_CONFIG_DIR"]).isEqualTo(LinuxGhConfig.GUEST_CONFIG)
+        } finally { prepared.close() }
     }
 
     @Test fun `无凭据的前后台Linux也禁用git交互提示`() = runBlocking<Unit> {

@@ -74,7 +74,9 @@ class BuiltinExecService(
     val pipAvailable: Boolean get() = environment.pipAvailable
     private val packageProvenance = LinuxExecProvenance(linuxProvenance)
 
-    private suspend fun linuxRequest(root: File, kind: String, sessionId: String?, source: String, stdin: String?, seconds: Int, expectedWorkspace: SessionWorkspace? = null): BuiltinCommandRequest = withContext(Dispatchers.IO) {
+    /** [gitEnvironment] 需进入启动规格：gh 代理目录是否挂载由启动规格中的 `GH_CONFIG_DIR` 决定。 */
+    private suspend fun linuxRequest(root: File, kind: String, sessionId: String?, source: String, stdin: String?, seconds: Int, expectedWorkspace: SessionWorkspace? = null,
+                                     gitEnvironment: Map<String, String> = emptyMap()): BuiltinCommandRequest = withContext(Dispatchers.IO) {
         val system = environment.forWorkspace(root, kind)
         // 私有主工作区已持有根写锁，直接复用当前根，避免回调重新申请同一把锁。
         val home = if (kind == SessionWorkspaceResolver.KIND_PRIVATE) root else sessionId?.let { sessionHome(it) }
@@ -93,7 +95,7 @@ class BuiltinExecService(
         }?.let { com.promenar.infinity.data.workspace.LinuxWorkspaceLocation.workingDirectory(it.workspace) }
         val spec = linuxExecSpec(source, root, kind, sessionId?.let { visibleMounts(it) }.orEmpty(), File(system.getValue("INFINITY_SKILLS")), home, launchBinding, workspaceDirectory,
             wakeInbox = sessionId?.let { wakeInbox(it) })
-        val launch = checkNotNull(linuxRuntime).prepareLaunch(spec)
+        val launch = checkNotNull(linuxRuntime).prepareLaunch(spec.copy(environment = spec.environment + gitEnvironment))
         BuiltinCommandRequest(launch.command, launch.hostWorkingDirectory, launch.environment + ("TERM" to "xterm-256color"), stdin, seconds, terminal = true)
     }
 
@@ -186,11 +188,12 @@ class BuiltinExecService(
                     throw LinuxUnavailableException(runtime?.state?.value ?: com.promenar.infinity.domain.linux.LinuxRuntimeState.NotInstalled(0))
                 }
                 val launchSource = if (kind == com.promenar.infinity.domain.jobs.BackgroundJobRunner.PYTHON || location.pythonSource) linuxPythonCommand(source) else source
-                val request = linuxRequest(root, workspaceKind, resolvedSessionId, launchSource, stdin, minutes * 60)
+                val gitEnvironment = LinuxGitEnvironment.from(lease.environment)
+                val request = linuxRequest(root, workspaceKind, resolvedSessionId, launchSource, stdin, minutes * 60, gitEnvironment = gitEnvironment)
                 val title = titleOrNull(resolvedSessionId)
                 val before = packageProvenance.before()
                 return com.promenar.infinity.data.jobs.PreparedBackgroundCommand(
-                    request.copy(environment = request.environment + lease.environment + LinuxGitEnvironment.from(lease.environment) + secrets), lease::close,
+                    request.copy(environment = request.environment + lease.environment + gitEnvironment + secrets), lease::close,
                     afterRun = { packageProvenance.after(before, resolvedSessionId, title) },
                 )
             }
@@ -256,7 +259,7 @@ class BuiltinExecService(
         suspend fun runCommand(root: File): BuiltinCommandOutput {
             attachment?.onDirectory?.invoke(root)
             val base = if (kind == ExecRunKind.LINUX) {
-                linuxRequest(root, workspaceKind, sessionId, linuxSource ?: source, stdin, timeoutSeconds, target)
+                linuxRequest(root, workspaceKind, sessionId, linuxSource ?: source, stdin, timeoutSeconds, target, LinuxGitEnvironment.from(lease.environment))
             } else request(root, workspaceKind)
             val commandRequest = base.copy(environment = base.environment + lease.environment +
                 (if (kind == ExecRunKind.LINUX) LinuxGitEnvironment.from(lease.environment) else emptyMap()) + secrets,
