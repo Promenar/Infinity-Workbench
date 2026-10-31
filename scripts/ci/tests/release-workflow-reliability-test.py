@@ -73,6 +73,24 @@ def continued_shell_commands(script: str, executable: str) -> list[list[str]]:
 
 
 class ReleaseWorkflowReliabilityTest(unittest.TestCase):
+    def test_screenshot_diagnostics_is_manual_read_only_and_preserves_failure_evidence(self) -> None:
+        workflow = ROOT / ".github/workflows/screenshot-diagnostics.yml"
+        self.assertTrue(workflow.is_file(), "截图诊断入口必须存在")
+        source = workflow.read_text(encoding="utf-8")
+        trigger = source.split("permissions:", 1)[0]
+        self.assertIn("  workflow_dispatch:", trigger)
+        self.assertNotIn("  push:", trigger)
+        self.assertNotIn("  pull_request:", trigger)
+        self.assertIn("contents: read", source)
+        self.assertNotIn("secrets.", source)
+        self.assertNotIn("environment: release", source)
+        self.assertIn("--no-build-cache clean", source)
+        self.assertIn(":app:validateSideloadDebugScreenshotTest", source)
+        self.assertNotIn("updateSideloadDebugScreenshotTest", source)
+        self.assertIn("if: always()", source)
+        self.assertIn("native-ui/app/build/reports/screenshotTest/preview/debug/sideload/", source)
+        self.assertIn("native-ui/app/build/outputs/screenshotTest-results/preview/debug/sideload/", source)
+
     def test_static_checks_gate_pr_and_release_build(self) -> None:
         self.assertIn("bash scripts/ci/android-static-checks.sh", ANDROID_CI)
         static_job = workflow_job("static-checks")

@@ -21,6 +21,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 截图验证共用 `app/src/screenshotTestDebug/reference/`，不按渠道复制像素。设备构建只生成 APK；设备脚本会连接并修改设备，需在已授权的专用本机 AVD 上另行执行。`mainactivity-e2e` 以 `missingDimensionStrategy` 固定匹配侧载应用，其任务名保持 `assembleDeviceTest`。黑盒夹具为独立应用，保持 `:blackbox-fixture:assembleDebug`。
 
+需要排查托管 Linux 的截图差异时，可手动运行 GitHub Actions 的“Android 截图诊断”。该工作流使用与发行截图门禁相同的清理和验证命令，并保留参考图、渲染结果与报告；它不使用发行签名材料，也不替代发行候选全链验证。
+
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
 | sideloadDebug | `app/build/outputs/apk/sideload/debug/app-sideload-debug.apk` | 无 |
@@ -170,4 +172,4 @@ INFINITY_DEVICE_E2E_SCOPE=full bash scripts/ci/android-device-core-e2e.sh
 
 脚本在 Python 进程内读取会话，经 `adb shell` 标准输入传入 `-e sshPort`、`sshEchoPort`、`sshFingerprint`、`sshPassword` 与 `sshUsername`；密码不进入宿主命令行参数。instrumentation、logcat、dumpsys 和窗口 XML 在输出或落盘前脱敏。手动直接运行 `SshDeviceTest` 且缺少必要参数会以 assumption 明确跳过；脚本配置了 SSH 后，任何跳过、空套件、失败或超时都不能判定通过。
 
-默认产物分别写入 `artifacts/android-device-api-31-arm64-v8a/` 与 `artifacts/android-device-api-35-arm64-v8a/`，含逐阶段 instrumentation 输出、矩阵、退出码、脱敏日志与截图；SSH 阶段输出为 `ssh-runtime.txt`。可用 `ANDROID_E2E_ARTIFACT_DIR` 设置独立目录，`ANDROID_E2E_TIMEOUT_SECONDS` 调整每阶段超时（默认 120 秒）。两台验收结束后，在服务终端按 Ctrl-C 关闭宿主夹具。
+默认产物分别写入 `artifacts/android-device-api-31-arm64-v8a/` 与 `artifacts/android-device-api-35-arm64-v8a/`，含逐阶段 instrumentation 输出、矩阵、退出码、脱敏日志与截图；SSH 阶段输出为 `ssh-runtime.txt`。可用 `ANDROID_E2E_ARTIFACT_DIR` 设置独立目录，`ANDROID_E2E_TIMEOUT_SECONDS` 调整每阶段超时（默认 120 秒；工作区文件测试套件默认 240 秒）。两台验收结束后，在服务终端按 Ctrl-C 关闭宿主夹具。
