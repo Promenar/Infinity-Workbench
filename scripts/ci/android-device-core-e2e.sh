@@ -458,6 +458,8 @@ adb logcat -c
 
 run_test workspace-filesystem-contracts "${APP_RUNNER}" \
     -e class com.promenar.infinity.data.repository.AndroidSecureWorkspaceFileOpsTest
+run_test workspace-ported-filesystem-contracts "${APP_RUNNER}" \
+    -e class com.promenar.infinity.data.repository.AndroidPortedSecureWorkspaceFileOpsTest
 run_test workspace-creation-races "${APP_RUNNER}" \
     -e class com.promenar.infinity.data.repository.AndroidSecureWorkspaceCreationRaceTest
 run_test recovery-snapshot-contracts "${APP_RUNNER}" \

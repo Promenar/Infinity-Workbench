@@ -1,15 +1,20 @@
 package com.promenar.infinity.data.repository
 
+import androidx.test.platform.app.InstrumentationRegistry
 import com.google.common.truth.Truth.assertThat
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import java.nio.file.Files
 import java.nio.file.SecureDirectoryStream
 
-class SecureWorkspaceFileOpsTest {
+class AndroidPortedSecureWorkspaceFileOpsTest {
+    private val testDirectory get() = InstrumentationRegistry.getInstrumentation().targetContext.filesDir.toPath()
 
     @Test
     fun `parent symlink swap after descriptor open fails closed without outside write`() {
-        val projectRoot = java.nio.file.Path.of(System.getProperty("user.dir"))
+        val projectRoot = testDirectory
         val root = Files.createTempDirectory(projectRoot, ".workspace-secure-root")
         val outside = Files.createTempDirectory(projectRoot, ".workspace-secure-outside")
         val safe = Files.createDirectory(root.resolve("safe"))
@@ -46,7 +51,7 @@ class SecureWorkspaceFileOpsTest {
 
     @Test
     fun `move requires existing descriptor target parent`() {
-        val root = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".workspace-secure-root")
+        val root = Files.createTempDirectory(testDirectory, ".workspace-secure-root")
         if (!verifySecureSupport(root)) {
             root.toFile().deleteRecursively()
             return
@@ -74,7 +79,7 @@ class SecureWorkspaceFileOpsTest {
 
     @Test
     fun `directory creation rejects root symlink before any mutation`() {
-        val base = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".workspace-secure-base")
+        val base = Files.createTempDirectory(testDirectory, ".workspace-secure-base")
         val outside = Files.createDirectory(base.resolve("outside"))
         val root = Files.createDirectory(base.resolve("root"))
         if (!verifySecureSupport(root)) {
@@ -99,7 +104,7 @@ class SecureWorkspaceFileOpsTest {
 
     @Test
     fun `failed rollback restore keeps new file and remains retryable`() {
-        val root = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".workspace-secure-root")
+        val root = Files.createTempDirectory(testDirectory, ".workspace-secure-root")
         if (!verifySecureSupport(root)) {
             root.toFile().deleteRecursively()
             return
@@ -130,7 +135,7 @@ class SecureWorkspaceFileOpsTest {
 
     @Test
     fun `replace failure before mutation cleans temporary file`() {
-        val root = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".workspace-secure-root")
+        val root = Files.createTempDirectory(testDirectory, ".workspace-secure-root")
         if (!verifySecureSupport(root)) {
             root.toFile().deleteRecursively()
             return
@@ -156,7 +161,7 @@ class SecureWorkspaceFileOpsTest {
 
     @Test
     fun `directory creation rejects a plain replacement root without claimed identity`() {
-        val base = Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.dir")), ".workspace-secure-base")
+        val base = Files.createTempDirectory(testDirectory, ".workspace-secure-base")
         val root = Files.createDirectory(base.resolve("root"))
         if (!verifySecureSupport(root)) {
             base.toFile().deleteRecursively()
@@ -186,15 +191,32 @@ class SecureWorkspaceFileOpsTest {
 
     private fun verifySecureSupport(root: java.nio.file.Path): Boolean {
         val supported = Files.newDirectoryStream(root).use { it is SecureDirectoryStream<*> }
-        if (!supported) {
-            val failure = runCatching { SecureWorkspaceFileOps().ensureRoot(root) }.exceptionOrNull()
-            assertThat(failure).isInstanceOf(SecurityException::class.java)
-        }
+        assertThat(supported).isTrue()
         return supported
     }
 
     private fun claim(ops: SecureWorkspaceFileOps, root: java.nio.file.Path) {
         val identity = ops.ensureRoot(root)
         WorkspaceMutationCoordinator.bindIdentityForTesting(root, identity)
+    }
+
+    @Test
+    fun `旧根标记及旧回收目录可读取恢复`() = runBlocking {
+        val root = Files.createTempDirectory(testDirectory, ".rename-workspace-")
+        try {
+            assertThat(Files.newDirectoryStream(root).use { it is SecureDirectoryStream<*> }).isTrue()
+            val key = Files.readAttributes(root, BasicFileAttributes::class.java).fileKey()
+            Files.write(root.resolve(".nexara_root_identity"), PersistentFileIdentity.marker(UUID.randomUUID().toString(), key).toByteArray())
+            val ops = SecureWorkspaceFileOps()
+            val identity = ops.ensureRoot(root, initializeIdentity = false)
+            WorkspaceMutationCoordinator.withBoundRoot(root, identity) {
+                val tombstones = Files.createDirectories(root.resolve(".nexara/tombstones"))
+                val token = "a".repeat(24)
+                Files.write(tombstones.resolve(token), "旧文件".toByteArray())
+                val result = ops.recoverTombstones(root) { if (it == token) listOf("restored.txt") else null }
+                assertThat(result.attentionTokens).isEmpty()
+                assertThat(Files.readAllBytes(root.resolve("restored.txt")).toString(Charsets.UTF_8)).isEqualTo("旧文件")
+            }
+        } finally { root.toFile().deleteRecursively() }
     }
 }

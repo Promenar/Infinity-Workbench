@@ -13,7 +13,7 @@ class WorkspaceReconcilePerformanceTest {
     fun `production clean reconcile does not open sparse file content`() {
         val root = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".workspace-reconcile")
         var contentReads = 0
-        val ops = SecureWorkspaceFileOps { phase ->
+        val ops = SecureWorkspaceFileOps(rootNonceReader = { _, _ -> null }) { phase ->
             if (phase == WorkspaceFilePhase.RECONCILE_CONTENT_READ) contentReads += 1
         }
         try {

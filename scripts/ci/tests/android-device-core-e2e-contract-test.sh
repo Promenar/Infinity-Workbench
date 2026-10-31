@@ -13,6 +13,7 @@ NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com
 NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNewSessionE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
 WORKSPACE_DEVICE_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/data/repository/AndroidSecureWorkspaceFileOpsTest.kt"
+PORTED_WORKSPACE_DEVICE_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/data/repository/AndroidPortedSecureWorkspaceFileOpsTest.kt"
 
 fail() {
     echo "设备 CI 契约断言失败：$*" >&2
@@ -91,6 +92,11 @@ assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.AccessibilitySmokeT
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.common.UnifiedPromptEditorE2ETest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.ui.AdaptiveNavigationTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.repository.AndroidSecureWorkspaceFileOpsTest'
+assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.repository.AndroidPortedSecureWorkspaceFileOpsTest'
+assert_count "${PORTED_WORKSPACE_DEVICE_TEST}" '@Test' 7
+assert_contains "${PORTED_WORKSPACE_DEVICE_TEST}" '旧根标记及旧回收目录可读取恢复'
+assert_contains "${PORTED_WORKSPACE_DEVICE_TEST}" 'parent symlink swap after descriptor open fails closed without outside write'
+assert_contains "${PORTED_WORKSPACE_DEVICE_TEST}" 'failed rollback restore keeps new file and remains retryable'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.repository.AndroidSecureWorkspaceCreationRaceTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidRecoverySnapshotStoreTest'
 assert_contains "${DEVICE_SCRIPT}" 'com.promenar.infinity.data.local.db.recovery.AndroidDualDatabaseRecoveryDeviceTest'

@@ -29,6 +29,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 排查 Linux 托管环境的单项 JVM 单测时，可手动运行“Android JVM 单测诊断”，指定测试过滤条件并读取保留的 XML 和测试报告；该入口不使用签名材料，不替代完整单测。
 
+依赖 Android 文件描述符与目录身份实现的工作区安全测试在设备回归中执行，覆盖根目录替换、符号链接竞争、回滚和旧回收目录恢复；不依赖 Android 桥接的协调逻辑仍由 JVM 单测覆盖。排查设备测试时可手动运行“Android 工作区设备诊断”，检查七项测试及执行日志，该诊断不替代完整设备门禁。
+
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |
 |---|---|---|
 | sideloadDebug | `app/build/outputs/apk/sideload/debug/app-sideload-debug.apk` | 无 |

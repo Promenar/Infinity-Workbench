@@ -4,10 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.promenar.infinity.domain.workspace.WorkspaceInternalPaths
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.SecureDirectoryStream
-import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import kotlinx.coroutines.runBlocking
 
@@ -116,23 +113,4 @@ class ProductRenameWorkspaceCompatibilityTest {
         }
     }
 
-    @Test
-    fun `旧根标记及旧回收目录可读取恢复`() = runBlocking {
-        val root = Files.createTempDirectory(Path.of(System.getProperty("user.dir")), ".rename-workspace-")
-        try {
-            assumeTrue(Files.newDirectoryStream(root).use { it is SecureDirectoryStream<*> })
-            val key = Files.readAttributes(root, BasicFileAttributes::class.java).fileKey()
-            Files.write(root.resolve(".nexara_root_identity"), PersistentFileIdentity.marker(UUID.randomUUID().toString(), key).toByteArray())
-            val ops = SecureWorkspaceFileOps()
-            val identity = ops.ensureRoot(root, initializeIdentity = false)
-            WorkspaceMutationCoordinator.withBoundRoot(root, identity) {
-                val tombstones = Files.createDirectories(root.resolve(".nexara/tombstones"))
-                val token = "a".repeat(24)
-                Files.write(tombstones.resolve(token), "旧文件".toByteArray())
-                val result = ops.recoverTombstones(root) { if (it == token) listOf("restored.txt") else null }
-                assertThat(result.attentionTokens).isEmpty()
-                assertThat(Files.readAllBytes(root.resolve("restored.txt")).toString(Charsets.UTF_8)).isEqualTo("旧文件")
-            }
-        } finally { root.toFile().deleteRecursively() }
-    }
 }
