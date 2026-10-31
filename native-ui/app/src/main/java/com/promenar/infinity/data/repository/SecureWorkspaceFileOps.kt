@@ -148,6 +148,23 @@ class SecureWorkspaceFileOps(
             }
         }
 
+    /** 流式读取持有安全父目录和文件句柄，结束前复核路径与句柄版本。 */
+    fun <T> readStream(root: Path, relative: List<String>, maxBytes: Long, consume: (java.io.InputStream) -> T): T =
+        withParent(root, relative) { parent, name ->
+            val view = parent.getFileAttributeView(name, java.nio.file.attribute.BasicFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)
+            val before = view.readAttributes()
+            if (!before.isRegularFile) throw SecurityException("只能读取普通工作区文件")
+            parent.newByteChannel(name, setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)).use { channel ->
+                if (maxBytes < 0 || channel.size() > maxBytes) throw WorkspaceFileTooLargeException(maxBytes)
+                val result = consume(java.nio.channels.Channels.newInputStream(channel))
+                val after = view.readAttributes()
+                if (before.fileKey() != after.fileKey() || before.size() != after.size() || before.lastModifiedTime() != after.lastModifiedTime() || channel.size() != before.size()) {
+                    throw SecurityException("工作区文件在读取期间发生变化")
+                }
+                result
+            }
+        }
+
     override fun exists(root: Path, relative: List<String>): Boolean =
         try {
             withParent(root, relative) { _, _ ->

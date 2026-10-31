@@ -43,6 +43,7 @@ class StartupGuardedExternalFolderBackendTest {
         assertThat(String(backend.read("/file.txt"))).isEqualTo("保留")
         backend.validateTree("/")
         val writes: List<suspend () -> Unit> = listOf(
+            { backend.writeStream("/new", 0) { error("隔离状态不得运行生产者") }; Unit },
             { backend.write("/file.txt", "覆盖".toByteArray()); Unit },
             { backend.createDirectory("/new"); Unit },
             { backend.delete("/file.txt") },

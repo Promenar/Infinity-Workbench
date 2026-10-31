@@ -17,8 +17,6 @@ interface ExternalWorkspaceAccess : IExternalFolderManager {
     suspend fun write(sessionId: String, path: String, bytes: ByteArray, expectedSha256: String?, createOnly: Boolean): FileEntry
     suspend fun createDirectory(sessionId: String, path: String): FileEntry
     suspend fun delete(sessionId: String, path: String, expectedSha256: String?, irreversible: Boolean)
-    suspend fun backupBeforeMove(sessionId: String, path: String): String
-    suspend fun completeMoveBackup(sessionId: String, backupId: String)
     suspend fun deleteSessionMounts(sessionId: String)
     fun backend(sessionId: String, mountIds: Map<String, String> = emptyMap()): ExternalFolderBackend
 

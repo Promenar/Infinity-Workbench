@@ -216,23 +216,6 @@ class LinuxSessionExternalWorkspaceAccess(
         }
     }
 
-    override suspend fun backupBeforeMove(sessionId: String, path: String): String = operation {
-        val current = namespace(sessionId)
-        val normalized = mutation(current, path)
-        val target = route(current, normalized)
-        requireWritable(sessionId, current, normalized)
-        when (target.kind) {
-            LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) { original.backupBeforeMove(sessionId, target.path) }
-            LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) { original.backupBeforeMove(sessionId, it) }
-            else -> "linux-session:$sessionId"
-        }
-    }
-
-    override suspend fun completeMoveBackup(sessionId: String, backupId: String) {
-        if (backupId == "linux-session:$sessionId") return
-        withOriginalBindings(namespace(sessionId)) { original.completeMoveBackup(sessionId, backupId) }
-    }
-
     override suspend fun version(sessionId: String, path: String, hash: String): ByteArray? = operation {
         val current = namespace(sessionId)
         val normalized = normalize(current, path)
@@ -257,18 +240,46 @@ class LinuxSessionExternalWorkspaceAccess(
 
     override fun backend(sessionId: String, mountIds: Map<String, String>): ExternalFolderBackend = object : ExternalFolderBackend {
         private suspend fun <T> bound(block: suspend () -> T): T = if (mountIds.isEmpty()) block() else withContext(ExternalMountOperationBindings(mountIds)) { block() }
-        override suspend fun stat(path: String) = bound { entry(sessionId, path)?.let { ExternalFolderEntry(it.materializedPath, it.name, it.isDirectory, it.sizeBytes, it.updatedAt, it.hash, it.uuid) } }
+        override suspend fun stat(path: String) = transferBackend(path) { backend, actual -> backend.stat(actual)?.copy(path = path) }
         override suspend fun list(path: String) = bound { this@LinuxSessionExternalWorkspaceAccess.list(sessionId, path) }
         override suspend fun read(path: String, maxBytes: Long) = bound { this@LinuxSessionExternalWorkspaceAccess.read(sessionId, path, maxBytes) }
         override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
             bound { this@LinuxSessionExternalWorkspaceAccess.readStream(sessionId, path, maxBytes, consume) }
+        private suspend fun <T> transferBackend(path: String, writing: Boolean = false, action: suspend (ExternalFolderBackend, String) -> T): T = bound {
+            val current = namespace(sessionId)
+            val normalized = if (writing) mutation(current, path) else normalize(current, path)
+            if (writing) requireWritable(sessionId, current, normalized)
+            val target = route(current, normalized)
+            when (target.kind) {
+                LinuxSessionPathKind.PRIVATE -> action(privateBackend(current), target.path)
+                LinuxSessionPathKind.ROOTFS -> action(rootfs(current), target.path)
+                LinuxSessionPathKind.WORKSPACE -> withOriginalBindings(current, workspacePaths = true) {
+                    action(original.backend(sessionId, currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds.orEmpty()), target.path)
+                }
+                LinuxSessionPathKind.EXTERNAL -> withExternal(current, sessionId, target.path) {
+                    action(original.backend(sessionId, currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds.orEmpty()), it)
+                }
+                LinuxSessionPathKind.MOUNTS -> fail("INVALID_PATH", "不能变更挂载根目录")
+            }
+        }
+        override suspend fun availableBytes(path: String) = transferBackend(path) { backend, actual -> backend.availableBytes(actual) }
+        override suspend fun validateTree(path: String) = transferBackend(path) { backend, actual -> backend.validateTree(actual) }
+        override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit) =
+            transferBackend(path, writing = true) { backend, actual ->
+                val receipt = backend.writeStream(actual, expectedSize, createOnly, produce)
+                if (backend is PrivateWorkspaceTransferBackend) backend.confirmCreated()
+                receipt.copy(path = path)
+            }
         override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) = bound {
             this@LinuxSessionExternalWorkspaceAccess.write(sessionId, path, content, expectedSha256, createOnly).let { ExternalFolderEntry(it.materializedPath, it.name, false, it.sizeBytes, it.updatedAt, it.hash, it.uuid) }
         }
-        override suspend fun createDirectory(path: String) = bound {
-            this@LinuxSessionExternalWorkspaceAccess.createDirectory(sessionId, path).let { ExternalFolderEntry(it.materializedPath, it.name, true, it.sizeBytes, it.updatedAt, it.hash, it.uuid) }
+        override suspend fun createDirectory(path: String) = transferBackend(path, writing = true) { backend, actual ->
+            val receipt = backend.createDirectory(actual)
+            if (backend is PrivateWorkspaceTransferBackend) backend.confirmCreated()
+            receipt.copy(path = path)
         }
-        override suspend fun delete(path: String, expectedSha256: String?) = bound { this@LinuxSessionExternalWorkspaceAccess.delete(sessionId, path, expectedSha256, false) }
+        override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = transferBackend(path, writing = true) { backend, actual -> backend.deleteForTransfer(actual, expected.copy(path = actual), expectedSha256) }
+        override suspend fun delete(path: String, expectedSha256: String?) = transferBackend(path, writing = true) { backend, actual -> backend.delete(actual, expectedSha256) }
         override suspend fun move(sourcePath: String, targetPath: String) = unsupportedTransfer(sourcePath, targetPath)
         override suspend fun copy(sourcePath: String, targetPath: String) = unsupportedTransfer(sourcePath, targetPath)
         private suspend fun unsupportedTransfer(sourcePath: String, targetPath: String): Unit = bound {
@@ -409,6 +420,36 @@ class LinuxSessionExternalWorkspaceAccess(
         com.promenar.infinity.data.model.ToolResult("linux_private_move", "已完成：$destination [uuid=${moved.uuid}] [hash=${moved.hash}]")
     }
 
+    internal suspend fun sameMountedBackend(sessionId: String, source: String, destination: String): Boolean = operation {
+        val current = namespace(sessionId)
+        sameMountedBackend(route(current, normalize(current, source)), route(current, normalize(current, destination)))
+    }
+
+    private fun sameMountedBackend(from: LinuxSessionPath, to: LinuxSessionPath): Boolean =
+        from.kind == LinuxSessionPathKind.WORKSPACE && to.kind == LinuxSessionPathKind.WORKSPACE ||
+            from.kind == LinuxSessionPathKind.EXTERNAL && to.kind == LinuxSessionPathKind.EXTERNAL &&
+            ExternalMountPaths.parse(from.path)?.first == ExternalMountPaths.parse(to.path)?.first
+
+    /** 同一挂载内使用原后端移动；转换与读写共用绑定，跨命名空间交回快照流程。 */
+    internal suspend fun moveMounted(sessionId: String, source: String, destination: String): Unit? = operation {
+        val current = namespace(sessionId)
+        val from = route(current, mutation(current, source))
+        val to = route(current, mutation(current, destination))
+        requireWritable(sessionId, current, source)
+        requireWritable(sessionId, current, destination)
+        if (!sameMountedBackend(from, to)) return@operation null
+        suspend fun moveBound() {
+            val bindings = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds.orEmpty()
+            original.backend(sessionId, bindings).move(from.path, to.path)
+        }
+        if (from.kind == LinuxSessionPathKind.WORKSPACE) {
+            withOriginalBindings(current, workspacePaths = true) { moveBound() }
+        } else {
+            checkedExternal(sessionId, to.path)
+            withExternal(current, sessionId, from.path) { moveBound() }
+        }
+    }
+
     /** MIME 只选择文本类型，UTF-8、NUL 与预算门禁继续核验真实字节。 */
     internal suspend fun textMime(sessionId: String, path: String): String? = operation {
         when (route(namespace(sessionId), path).kind) {
@@ -520,7 +561,7 @@ class LinuxSessionExternalWorkspaceAccess(
                 "text/plain"
             } catch (_: WorkspaceTextPolicyException) { externalSnapshotMime(path.substringAfterLast('/')) }
             val entry = workspace.createFileInWorkspaceStreaming(current.root.uuid, UUID.randomUUID().toString(), path.substringAfterLast('/'), mime,
-                parent.uuid, path, ExternalTreeTransfer.MAX_BYTES) { it.write(bytes) }
+                parent.uuid, path, bytes.size.toLong().coerceAtLeast(1)) { it.write(bytes) }
             workspace.confirmCreatedEntry(current.root.uuid, entry.uuid)
             if (mime in com.promenar.infinity.share.core.SharedFileImporter.SUPPORTED_MIME_TYPES) {
                 indexEvents.publish(FileIndexEvent.Changed(current.root.uuid, entry.uuid, entry.hash, entry.updatedAt.coerceAtLeast(1)))

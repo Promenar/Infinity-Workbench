@@ -99,8 +99,8 @@ class ExternalFolderManagerTest {
             { manager.write("session", "/mnt/termux/a.txt", "changed".toByteArray(), null, false) },
             { manager.createDirectory("session", "/mnt/termux/dir") },
             { manager.delete("session", "/mnt/termux/a.txt", null, true) },
-            { manager.backupBeforeMove("session", "/mnt/termux/a.txt") },
             { manager.importSnapshot("session", "root", "/mnt/termux/a.txt") },
+            { backend.writeStream("/mnt/termux/new", 0) { error("只读不得运行生产者") } },
             { backend.write("/mnt/termux/a.txt", "changed".toByteArray()) },
             { backend.createDirectory("/mnt/termux/dir") },
             { backend.delete("/mnt/termux/a.txt") },
@@ -123,14 +123,13 @@ class ExternalFolderManagerTest {
         coVerify(exactly = 0) { workspace.createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
-    @Test fun `只读挂载不能恢复或清理已有移动备份`() = runBlocking<Unit> {
+    @Test fun `只读挂载不能恢复已有删除副本`() = runBlocking<Unit> {
         memory.write("/a.txt", "hello".toByteArray())
-        val backup = manager.backupBeforeMove("session", "/mnt/termux/a.txt")
-        memory.delete("/a.txt")
+        manager.delete("session", "/mnt/termux/a.txt", null, false)
+        val backup = manager.recycleItems("session").single().id
         rows.value = rows.value.map { it.copy(readOnly = true) }
         listOf<suspend () -> Unit>(
             { manager.restore("session", backup) },
-            { manager.completeMoveBackup("session", backup) },
         ).forEach { action ->
             val failure = assertThrows(ExternalFolderException::class.java) { runBlocking { action() } }
             assertThat(failure.code).isEqualTo("READ_ONLY")

@@ -21,6 +21,46 @@ class LinuxSessionRootfsBackendTest {
 
     @After fun cleanup() { deleteLinuxFixture(directory) }
 
+    @Test fun `rootfs条件删除拒绝同内容对象替换且空目录删除不递归`() = runBlocking {
+        val physical = file("etc/value", "same")
+        val backend = LinuxSessionRootfsBackend(LinuxFileSystemImpl(rootfs, { true }, TestLinuxFileMetadata))
+        val expected = backend.stat("/etc/value")!!
+        Files.move(physical.toPath(), File(rootfs, "etc/saved").toPath())
+        physical.writeText("same")
+        val failure = runCatching { backend.deleteForTransfer("/etc/value", expected, Sha256Utils.hash("same")) }.exceptionOrNull()
+        assertThat((failure as ExternalFolderException).code).isEqualTo("CONFLICT")
+        val directory = backend.createDirectory("/etc/dir")
+        file("etc/dir/new", "外部新增")
+        assertThat(runCatching { backend.deleteForTransfer("/etc/dir", directory, null) }.exceptionOrNull()).isNotNull()
+        assertThat(File(rootfs, "etc/dir/new").readText()).isEqualTo("外部新增")
+        var current = File(rootfs, "etc/deep").apply { mkdir() }
+        repeat(33) { current = File(current, "child").apply { mkdir() } }
+        assertThat((runCatching { backend.validateTree("/etc/deep") }.exceptionOrNull() as ExternalFolderException).code).isEqualTo("TOO_LARGE")
+    }
+
+    @Test fun `rootfs与挂载双向流式移动80MiB且整块读取保留64MiB上限`() = runBlocking {
+        File(rootfs, "etc").mkdirs()
+        val backend = LinuxSessionRootfsBackend(LinuxFileSystemImpl(rootfs, { true }, TestLinuxFileMetadata))
+        val mountRoot = Files.createTempDirectory("rootfs-stream-target").toFile().canonicalFile
+        val mount = com.promenar.infinity.data.storage.JvmBoundRealPathFileSystem().backend(mountRoot)
+        try {
+            val size = 80L * 1024 * 1024
+            backend.writeStream("/etc/large", size) { output ->
+                val block = ByteArray(65536) { (it % 251).toByte() }
+                repeat(1280) { output.write(block) }
+            }
+            val hash = File(rootfs, "etc/large").inputStream().use { com.promenar.infinity.data.storage.externalStreamHash(it) }
+            val failure = assertThrows(ExternalFolderException::class.java) { runBlocking { backend.read("/etc/large", size) } }
+            assertThat(failure.code).isEqualTo("TOO_LARGE")
+            com.promenar.infinity.data.storage.ExternalTreeTransfer.move(backend, "/etc/large", mount, "/large", hash)
+            assertThat(backend.stat("/etc/large")).isNull()
+            com.promenar.infinity.data.storage.ExternalTreeTransfer.move(mount, "/large", backend, "/etc/returned", hash)
+            assertThat(mount.stat("/large")).isNull()
+            assertThat(backend.readStream("/etc/returned", Long.MAX_VALUE) { com.promenar.infinity.data.storage.externalStreamHash(it) }).isEqualTo(hash)
+            assertThat(backend.stat("/etc/returned")!!.size).isEqualTo(size)
+        } finally { mountRoot.deleteRecursively() }
+    }
+
     @Test fun `预检后最终文件被替换为guest链接时拒绝写入其它rootfs目标`() {
         val target = file("etc/value", "same")
         val secret = file("root/secret", "same")

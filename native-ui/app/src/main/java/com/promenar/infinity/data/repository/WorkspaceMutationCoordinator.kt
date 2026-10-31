@@ -25,6 +25,15 @@ object WorkspaceMutationCoordinator {
         return use(key, lock, block)
     }
 
+    /** 安全读取句柄已打开时允许回调进入同根条件删除，返回前重新持锁复核读取版本。 */
+    internal suspend fun <T> consumeUnlocked(root: Path, block: suspend () -> T): T {
+        val key = root.toFile().canonicalPath
+        val mutex = synchronized(monitor) { roots[key]?.mutex } ?: error("工作区读取未持有根锁")
+        mutex.unlock()
+        try { return block() }
+        finally { kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { mutex.lock() } }
+    }
+
     private fun acquire(key: String, identity: String?): RootLock = synchronized(monitor) {
         if (identity != null) identities[key] = identity
         roots.getOrPut(key) { RootLock() }.also { it.references += 1 }

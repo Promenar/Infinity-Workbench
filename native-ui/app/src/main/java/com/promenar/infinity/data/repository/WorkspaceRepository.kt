@@ -480,15 +480,23 @@ class WorkspaceRepository(
     override suspend fun moveToRecycleBinIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String) =
         recycleIfHash(workspaceRootUuid, uuid, expectedSha256)
 
-    private suspend fun recycleIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String?) = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
+    override suspend fun moveEmptyDirectoryToRecycleBin(workspaceRootUuid: String, uuid: String) =
+        recycleIfHash(workspaceRootUuid, uuid, null, emptyOnly = true)
+
+    private suspend fun recycleIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String?, emptyOnly: Boolean = false) = withContext(Dispatchers.IO) { withRootMutation(workspaceRootUuid) { root ->
         val entry = dao.getAnyStateByUuidForLifecycle(workspaceRootUuid, uuid) ?: return@withRootMutation
         if (entry.uuid == workspaceRootUuid) throw SecurityException("工作区根目录不可回收")
         if (entry.inRecycleBin) return@withRootMutation
         if (expectedSha256 != null) {
             if (entry.isDirectory) throw IllegalArgumentException("目录删除不支持文件 SHA-256 条件")
             val path = validateMaterializedPath(root, entry.materializedPath)
-            val bytes = fileOps.readLimited(File(root.physicalRootPath).toPath(), relative(path), 64L * 1024 * 1024)
-            if (Sha256Utils.hash(bytes) != expectedSha256) throw IllegalStateException("expected_sha256 与当前文件不一致，删除已拒绝")
+            if (fileOps.inspect(File(root.physicalRootPath).toPath(), relative(path)).sha256 != expectedSha256) {
+                throw IllegalStateException("expected_sha256 与当前文件不一致，删除已拒绝")
+            }
+        }
+        if (emptyOnly && (!entry.isDirectory || dao.observeChildren(workspaceRootUuid, entry.uuid).first().isNotEmpty() ||
+                fileOps.listChildren(File(root.physicalRootPath).toPath(), relative(entry.materializedPath)).isNotEmpty())) {
+            throw com.promenar.infinity.domain.storage.ExternalFolderException("CONFLICT", "来源目录含新增条目")
         }
         val originalPath = entry.materializedPath
         // 物理移动目标始终位于已存在的回收站目录直属层，避免隐式创建父链。

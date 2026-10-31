@@ -82,6 +82,15 @@ class LinuxSessionFileSkillTest {
 
     @After fun cleanup() { com.promenar.infinity.startup.StartupWriteBarrier.resetForTesting(); unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
 
+    @Test fun `Linux传输目录回执使用底层身份并支持整树移动`() = runBlocking {
+        File(rootfsDirectory, "tmp/source/child").apply { mkdirs() }
+        File(rootfsDirectory, "tmp/source/child/item.bin").writeBytes(byteArrayOf(1, 2, 3))
+        val backend = access.backend("one")
+        com.promenar.infinity.data.storage.ExternalTreeTransfer.move(backend, "/tmp/source", backend, "/tmp/target")
+        assertThat(File(rootfsDirectory, "tmp/source").exists()).isFalse()
+        assertThat(File(rootfsDirectory, "tmp/target/child/item.bin").readBytes()).isEqualTo(byteArrayOf(1, 2, 3))
+    }
+
     @Test fun `手机存储的workspace路径写入映射到所选目录根`() = runBlocking {
         selected = SessionWorkspace.Directory(
             WorkspaceEntity("shared", WorkspaceEntity.KIND_SHARED, "手机存储", externalDirectory.path, 0), externalDirectory,
@@ -140,6 +149,38 @@ class LinuxSessionFileSkillTest {
         assertThat(workspaceTarget).isNotEqualTo(privateTarget)
         assertThat(workspaceTarget).contains("/workspace/session/same.txt")
         assertThat(privateTarget).contains("/home/session/same.txt")
+    }
+
+    @Test fun `rootfs移动的版本冲突仍在原读取预算内检查`() = runBlocking {
+        val result = skill(MoveFileSkill(workspace, FileIndexEventSink.None)).execute(
+            json("path" to "/etc/config", "newParentPath" to "/mnt/docs", "expected_sha256" to "wrong"), context())
+        assertThat(result.content).contains("CONFLICT")
+        assertThat(File(rootfsDirectory, "etc/config").readText()).isEqualTo("rootfs-data")
+        coVerify(exactly = 0) { mounts.write(any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `分支workspace原生移动保留基础挂载身份和路径绑定`() = runBlocking {
+        selectProject()
+        val backend = mockk<ExternalFolderBackend>()
+        val branch = com.promenar.infinity.data.branch.BranchLinuxFileNamespace(
+            com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace(externalDirectory, "/workspace/branches/feature"), backend,
+        )
+        val fresh = LinuxSessionExternalWorkspaceAccess(mounts, workspace, files, { selected }, LinuxSessionRootfsBackend(fs), branchNamespace = { branch })
+        every { mounts.backend("one", any()) } answers { backend }
+        coEvery { backend.move("/a", "/b") } coAnswers {
+            val operation = kotlinx.coroutines.currentCoroutineContext()[com.promenar.infinity.data.branch.BranchLinuxWorkspaceOperation]!!
+            assertThat(operation.workspacePaths).isTrue()
+            assertThat(operation.baseRoot).isEqualTo(externalDirectory)
+            assertThat(operation.backend).isSameInstanceAs(backend)
+            assertThat(kotlinx.coroutines.currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds?.get(""))
+                .isEqualTo(operation.mount.id)
+        }
+        val wrapped = LinuxSessionFileSkill(MoveFileSkill(workspace, FileIndexEventSink.None), { mode }, fresh,
+            workspace, files, FileIndexEventSink.None, captureFileChanges = false)
+        val result = wrapped.execute(json("path" to "/workspace/a", "newName" to "b"), context())
+        assertWithMessage(result.content).that(result.status).isEqualTo("success")
+        assertThat(result.content).contains("已移动（原位重命名）")
+        coVerify(exactly = 1) { backend.move("/a", "/b") }
     }
 
     @Test fun `特殊登记根下分支工具读取创建和移动保留实际cwd与父挂载区别`() = runBlocking {
@@ -411,7 +452,6 @@ class LinuxSessionFileSkillTest {
                 { access.write("one", path, "new".toByteArray(), null, false); Unit },
                 { access.createDirectory("one", path + "-dir"); Unit },
                 { access.delete("one", path, null, false) },
-                { access.backupBeforeMove("one", path); Unit },
             )
             for (action in actions) assertWithMessage("隔离路径=%s", path).that(runCatching { action() }.exceptionOrNull())
                 .isInstanceOf(com.promenar.infinity.startup.StartupIsolationException::class.java)

@@ -52,6 +52,13 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
 
     override fun createBackend(): ExternalFolderBackend = SafExternalFolderBackend(application.contentResolver, treeUri)
 
+    @Test fun `流式读取接受无整块读取上限并检查真实字节预算`() = runBlocking {
+        File(provider.root, "source").writeText("payload")
+        val backend = createBackend()
+        assertEquals("payload", backend.readStream("/source", Long.MAX_VALUE) { it.readBytes().toString(Charsets.UTF_8) })
+        expectCode("TOO_LARGE") { backend.readStream("/source", 3) { it.readBytes() } }
+    }
+
     @Test fun `临时文档与备份仅位于根隐藏目录且忽略规则不复写`() = runBlocking {
         val backend = createBackend()
         backend.createDirectory("/notes")
@@ -189,7 +196,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         backend.createDirectory("/source")
         backend.write("/source/a.txt", "original".toByteArray())
         val source = object : ExternalFolderBackend by backend {
-            override suspend fun delete(path: String, expectedSha256: String?) {
+            override suspend fun deleteForTransfer(path: String, expected: com.promenar.infinity.domain.storage.ExternalFolderEntry, expectedSha256: String?) {
                 throw com.promenar.infinity.domain.storage.ExternalFolderException("UNAVAILABLE", "测试来源拒绝删除")
             }
         }

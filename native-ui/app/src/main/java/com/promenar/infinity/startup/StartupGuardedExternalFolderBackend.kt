@@ -15,7 +15,13 @@ internal class StartupGuardedExternalFolderBackend(
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) =
         writing(listOf(path)) { delegate.write(path, content, expectedSha256, createOnly) }
 
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit) =
+        writing(listOf(path)) { delegate.writeStream(path, expectedSize, createOnly, produce) }
+
     override suspend fun createDirectory(path: String) = writing(listOf(path)) { delegate.createDirectory(path) }
+
+    override suspend fun deleteForTransfer(path: String, expected: com.promenar.infinity.domain.storage.ExternalFolderEntry, expectedSha256: String?) =
+        writing(listOf(path)) { delegate.deleteForTransfer(path, expected, expectedSha256) }
 
     override suspend fun delete(path: String, expectedSha256: String?) = writing(listOf(path)) { delegate.delete(path, expectedSha256) }
 

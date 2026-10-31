@@ -163,7 +163,6 @@ class BranchLinuxFileNamespaceTest {
             { access.write("branch", "/mnt/knowledge/note.md", byteArrayOf(), null, false) },
             { access.createDirectory("branch", "/mnt/knowledge/new") },
             { access.delete("branch", "/mnt/knowledge/note.md", null, true) },
-            { access.backupBeforeMove("branch", "/mnt/knowledge/note.md") },
             { backend.move("/mnt/knowledge/note.md", "/mnt/knowledge/new") },
             { backend.copy("/mnt/knowledge/note.md", "/mnt/knowledge/new") },
             { access.importSnapshot("branch", privateRoot.uuid, "/mnt/knowledge/note.md") },

@@ -39,14 +39,15 @@ class ExternalTreeTransferTest {
         assertThat(String(source.read("/a.txt"))).isEqualTo("newer")
         assertThat(destination.stat("/a.txt")).isNull()
     }
-    @Test fun `目标校验失败时删除副本并保留源`() = runBlocking {
+    @Test fun `目标回读不可信时保留双方供恢复`() = runBlocking {
         val source = TransferMemoryBackend().apply { write("/a.txt", "before".toByteArray()) }
         val destination = TransferMemoryBackend().apply { corruptRead = true }
-        assertThrows(ExternalFolderException::class.java) {
+        val failure = assertThrows(ExternalFolderException::class.java) {
             runBlocking { ExternalTreeTransfer.move(source, "/a.txt", destination, "/a.txt") }
         }
         assertThat(String(source.read("/a.txt"))).isEqualTo("before")
-        assertThat(destination.stat("/a.txt")).isNull()
+        assertThat(failure.code).isEqualTo("RECOVERY_REQUIRED")
+        assertThat(destination.stat("/a.txt")).isNotNull()
     }
 
     @Test fun `删除源失败时回滚目标`() = runBlocking {
@@ -130,6 +131,14 @@ internal class TransferMemoryBackend : ExternalFolderBackend {
         files[path] = null
         identities[path] = (++nextIdentity).toString()
         return stat(path)!!
+    }
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) {
+        beforeDelete?.invoke()
+        if (failDelete) throw ExternalFolderException("IO", "删除失败")
+        val current = stat(path) ?: throw ExternalFolderException("CONFLICT", "来源不存在")
+        if (current.identity != expected.identity || current.isDirectory != expected.isDirectory ||
+            current.isDirectory && list(path).isNotEmpty() || !current.isDirectory && externalSha256(files[path]!!) != expectedSha256) throw ExternalFolderException("CONFLICT", "来源变化")
+        files.remove(path); identities.remove(path)
     }
     override suspend fun delete(path: String, expectedSha256: String?) {
         beforeDelete?.invoke()

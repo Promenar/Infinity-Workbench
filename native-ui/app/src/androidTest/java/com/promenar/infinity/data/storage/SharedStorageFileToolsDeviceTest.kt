@@ -211,11 +211,13 @@ class SharedStorageFileToolsDeviceTest {
     @Test fun injectedSecondReadMutationStillConflicts() = runBlocking {
         File(directory, "source").writeText("original")
         var reads = 0
-        val fs = InjectedSharedFileSystem { name ->
-            if (name == "source" && ++reads == 2) File(directory, "source").writeText("modified")
+        val fs = InjectedSharedFileSystem().apply {
+            // 在第二个读句柄打开前改写，避免依赖 EOF 后修改的时间戳精度。
+            beforeRead = { name -> if (name == "source" && ++reads == 2) File(directory, "source").writeText("modified") }
         }
         val injected = RealPathExternalFolderBackend(directory, emptySet(), { true }, fs)
-        expectCode("CONFLICT") { injected.stat("/source") }
+        val failure = runCatching { injected.stat("/source") }.exceptionOrNull()
+        assertEquals("完整读取次数=$reads，异常=$failure", "CONFLICT", (failure as? ExternalFolderException)?.code)
         assertEquals("modified", File(directory, "source").readText())
     }
 
@@ -233,11 +235,13 @@ class SharedStorageFileToolsDeviceTest {
     /** 只注入平台差异，读写、身份与清理仍使用应用 UID 的真实共享卷句柄。 */
     private class InjectedSharedFileSystem(private val afterRead: (String) -> Unit = {}) : RealPathFileSystem {
         var afterDelete: (String) -> Unit = {}
+        var beforeRead: (String) -> Unit = {}
         override fun openFileSystemRoot(): BoundRealPathDirectory = Directory(AndroidRealPathFileSystem.openFileSystemRoot())
         private inner class Directory(val delegate: BoundRealPathDirectory) : BoundRealPathDirectory by delegate {
             override val readTimestampsMayDrift: Boolean get() = true
             override fun openDirectory(name: String): BoundRealPathDirectory = Directory(delegate.openDirectory(name))
             override fun openRead(name: String): BoundRealPathRead {
+                beforeRead(name)
                 val original = delegate.openRead(name)
                 var completed = false
                 val stream = object : FilterInputStream(original.input) {
@@ -350,6 +354,154 @@ class SharedStorageFileToolsDeviceTest {
                 assertFalse(File(privateBase, "$prefix.md").exists())
                 assertFalse(File(rootfs, "workspace/$prefix.md").exists())
             }
+        } finally {
+            db.close()
+            privateBase.deleteRecursively()
+        }
+    }
+
+    @Test fun nativeToolMovesLargeFilesAndDirectoryWithoutRecycle() = runBlocking {
+        toolMovesWithoutRecycle(isLinux = false)
+    }
+
+    @Test fun linuxToolMovesLargeFilesAndDirectoryWithoutRecycle() = runBlocking {
+        toolMovesWithoutRecycle(isLinux = true)
+    }
+
+    private suspend fun toolMovesWithoutRecycle(isLinux: Boolean) {
+        val db = Room.inMemoryDatabaseBuilder(context, InfinityDatabase::class.java).allowMainThreadQueries().build()
+        val privateBase = File(context.filesDir, "native-move-tools-${UUID.randomUUID()}").canonicalFile.apply { check(mkdirs()) }
+        try {
+            val repository = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao())
+            val files = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao())
+            val now = System.currentTimeMillis()
+            db.workspaceDao().register(WorkspaceEntity("shared", WorkspaceEntity.KIND_SHARED, "手机存储", directory.path, now))
+            db.sessionDao().insert(SessionEntity(id = "move-session", agentId = "agent", workspacePath = privateBase.path,
+                workspaceId = "shared", createdAt = now, updatedAt = now))
+            val root = repository.ensureSessionRoot("move-session")
+            val resolver = SessionWorkspaceResolver(db.sessionDao(), db.workspaceDao(), File(privateBase, "projects"), AndroidSharedWorkspaceAccess(context))
+            val manager = ExternalFolderManager(context, db.externalMountDao(), repository, FileIndexEventSink.None, resolver)
+            val access = if (isLinux) LinuxSessionExternalWorkspaceAccess(manager, repository, files, resolver::resolve,
+                RealPathExternalFolderBackend(File(privateBase, "rootfs").apply { mkdir() })) else manager
+            val invocation = object : SkillExecutionContext {
+                override val sessionId = "move-session"
+                override val agentId = "agent"
+                override val workspacePath: String? = null
+                override val workspaceRootUuid = root.uuid
+            }
+            val tool = MountedWorkspaceSkill(MoveFileSkill(repository, FileIndexEventSink.None), access, repository, files,
+                FileIndexEventSink.None, captureFileChanges = false, linuxPaths = isLinux)
+            val prefix = if (isLinux) "/workspace" else ""
+            val recycleBefore = manager.recycleItems("move-session").map { it.id }
+            suspend fun move(from: String, to: String, hash: String? = null) {
+                val arguments = kotlinx.serialization.json.buildJsonObject {
+                    put("path", kotlinx.serialization.json.JsonPrimitive(prefix + from))
+                    put("newParentPath", kotlinx.serialization.json.JsonPrimitive((prefix + to).substringBeforeLast('/').ifEmpty { "/" }))
+                    put("newName", kotlinx.serialization.json.JsonPrimitive(to.substringAfterLast('/')))
+                    hash?.let { put("expected_sha256", kotlinx.serialization.json.JsonPrimitive(it)) }
+                }
+                val result = tool.execute(arguments, invocation)
+                assertEquals("$from → $to：${result.content}", "success", result.status)
+                assertTrue(result.content, result.content.contains("已移动（原位重命名）"))
+                assertEquals("原生移动不能增加回收条目", recycleBefore, manager.recycleItems("move-session").map { it.id })
+            }
+            val source = File(directory, "large.bin")
+            source.outputStream().use { output ->
+                val block = ByteArray(64 * 1024) { (it % 251).toByte() }
+                repeat(1280) { output.write(block) }
+            }
+            val hash = com.promenar.infinity.infra.util.Sha256Utils.hashFile(source)
+            val inode = Os.lstat(source.path).st_ino
+            move("/large.bin", "/renamed.bin", hash)
+            val renamed = File(directory, "renamed.bin")
+            assertFalse(source.exists())
+            assertEquals(80L * 1024 * 1024, renamed.length())
+            assertEquals(inode, Os.lstat(renamed.path).st_ino)
+            assertEquals(hash, com.promenar.infinity.infra.util.Sha256Utils.hashFile(renamed))
+            File(directory, "destination").mkdir()
+            move("/renamed.bin", "/destination/moved.bin", hash)
+            val moved = File(directory, "destination/moved.bin")
+            assertFalse(renamed.exists())
+            assertEquals(inode, Os.lstat(moved.path).st_ino)
+            assertEquals(hash, com.promenar.infinity.infra.util.Sha256Utils.hashFile(moved))
+            val tree = File(directory, "tree/nested").apply { mkdirs() }
+            val child = File(tree, "child").apply { writeText("child-content") }
+            val treeInode = Os.lstat(File(directory, "tree").path).st_ino
+            val childInode = Os.lstat(child.path).st_ino
+            val childHash = com.promenar.infinity.infra.util.Sha256Utils.hashFile(child)
+            move("/tree", "/destination/tree")
+            val movedChild = File(directory, "destination/tree/nested/child")
+            assertFalse(File(directory, "tree").exists())
+            assertEquals(treeInode, Os.lstat(File(directory, "destination/tree").path).st_ino)
+            assertEquals(childInode, Os.lstat(movedChild.path).st_ino)
+            assertEquals(childHash, com.promenar.infinity.infra.util.Sha256Utils.hashFile(movedChild))
+        } finally {
+            db.close()
+            privateBase.deleteRecursively()
+        }
+    }
+
+    @Test fun toolStreams80MiBBetweenPrivateAndSharedStorage() = runBlocking { toolStreamsCrossNamespaces(false) }
+
+    @Test fun linuxToolStreams80MiBBetweenPrivateAndSharedStorage() = runBlocking { toolStreamsCrossNamespaces(true) }
+
+    private suspend fun toolStreamsCrossNamespaces(isLinux: Boolean) {
+        val db = Room.inMemoryDatabaseBuilder(context, InfinityDatabase::class.java).allowMainThreadQueries().build()
+        val privateBase = File(context.filesDir, "stream-move-tools-${UUID.randomUUID()}").canonicalFile.apply { check(mkdirs()) }
+        try {
+            val repository = WorkspaceRepository(db.fileEntryDao(), db.workspaceSeqDao())
+            val files = FileOperationRepository(db.fileEntryDao(), db.fileVersionDao())
+            val now = System.currentTimeMillis()
+            db.workspaceDao().register(WorkspaceEntity("shared-stream", WorkspaceEntity.KIND_SHARED, "手机存储", directory.path, now))
+            db.sessionDao().insert(SessionEntity(id = "stream-session", agentId = "agent", workspacePath = privateBase.path,
+                workspaceId = "shared-stream", createdAt = now, updatedAt = now))
+            val root = repository.ensureSessionRoot("stream-session")
+            val resolver = SessionWorkspaceResolver(db.sessionDao(), db.workspaceDao(), File(privateBase, "projects"), AndroidSharedWorkspaceAccess(context))
+            val manager = ExternalFolderManager(context, db.externalMountDao(), repository, FileIndexEventSink.None, resolver)
+            val access = if (isLinux) LinuxSessionExternalWorkspaceAccess(manager, repository, files, resolver::resolve,
+                RealPathExternalFolderBackend(File(privateBase, "rootfs").apply { mkdir() })) else manager
+            val invocation = object : SkillExecutionContext {
+                override val sessionId = "stream-session"
+                override val agentId = "agent"
+                override val workspacePath: String? = null
+                override val workspaceRootUuid = root.uuid
+            }
+            val tool = MountedWorkspaceSkill(MoveFileSkill(repository, FileIndexEventSink.None), access, repository, files,
+                FileIndexEventSink.None, captureFileChanges = false, linuxPaths = isLinux)
+            val size = 80L * 1024 * 1024
+            val seed = repository.createFileInWorkspaceStreaming(root.uuid, UUID.randomUUID().toString(), "large.bin", "application/octet-stream", root.uuid, "/large.bin", size) { output ->
+                val block = ByteArray(64 * 1024) { (it % 251).toByte() }
+                repeat(1280) { output.write(block) }
+            }
+            repository.confirmCreatedEntry(root.uuid, seed.uuid)
+            val hash = seed.hash
+            val privatePrefix = if (isLinux) "/home/session" else "/session"
+            val sharedPrefix = if (isLinux) "/workspace" else ""
+            val recycleBefore = manager.recycleItems("stream-session").map { it.id }
+            suspend fun move(from: String, to: String) {
+                val arguments = kotlinx.serialization.json.buildJsonObject {
+                    put("path", kotlinx.serialization.json.JsonPrimitive(from))
+                    put("newParentPath", kotlinx.serialization.json.JsonPrimitive(to.substringBeforeLast('/').ifEmpty { "/" }))
+                    put("newName", kotlinx.serialization.json.JsonPrimitive(to.substringAfterLast('/')))
+                    put("expected_sha256", kotlinx.serialization.json.JsonPrimitive(hash))
+                }
+                val result = tool.execute(arguments, invocation)
+                assertEquals("$from → $to：${result.content}", "success", result.status)
+                assertTrue(result.content, result.content.contains("已复制、校验并移动"))
+                assertEquals("移动不能增加挂载回收条目", recycleBefore, manager.recycleItems("stream-session").map { it.id })
+            }
+            move("$privatePrefix/large.bin", "$sharedPrefix/shared.bin")
+            assertNull(repository.getByMaterializedPath(root.uuid, "/large.bin"))
+            assertFalse(File(root.physicalRootPath, "large.bin").exists())
+            val shared = File(directory, "shared.bin")
+            assertEquals(size, shared.length())
+            assertEquals(hash, com.promenar.infinity.infra.util.Sha256Utils.hashFile(shared))
+            move("$sharedPrefix/shared.bin", "$privatePrefix/returned.bin")
+            assertFalse(shared.exists())
+            val restored = repository.getByMaterializedPath(root.uuid, "/returned.bin")!!
+            assertEquals(size, restored.sizeBytes)
+            assertEquals(hash, restored.hash)
+            assertEquals(hash, com.promenar.infinity.infra.util.Sha256Utils.hashFile(File(root.physicalRootPath, "returned.bin")))
         } finally {
             db.close()
             privateBase.deleteRecursively()

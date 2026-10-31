@@ -16,6 +16,18 @@ class PrivateTransferLifecycleTest {
         physicalRootPath = "", materializedPath = path, createdAt = 1, updatedAt = 1,
     )
 
+    @Test fun `来源删除将摘要条件交给同根事务而不先整块读取`() = runBlocking {
+        val file = entry("file", "/large", false).copy(sizeBytes = 80L * 1024 * 1024)
+        val workspace = mockk<IWorkspaceRepository> {
+            coEvery { getByMaterializedPath("root", "/large") } returns file
+            coEvery { moveToRecycleBinIfHash("root", "file", "expected") } just Runs
+        }
+        val backend = PrivateWorkspaceTransferBackend(workspace, "root")
+        backend.delete("/large", "expected")
+        coVerify(exactly = 1) { workspace.moveToRecycleBinIfHash("root", "file", "expected") }
+        coVerify(exactly = 0) { workspace.moveToRecycleBin(any(), any()) }
+    }
+
     @Test fun `新建目录失败补偿使用已有回收语义`() = runBlocking<Unit> {
         val workspace = mockk<IWorkspaceRepository> {
             coEvery { getByMaterializedPath("root", "/") } returns entry("root", "/", true)
@@ -35,13 +47,14 @@ class PrivateTransferLifecycleTest {
         val created = entry("file", "/new.md", false)
         val workspace = mockk<IWorkspaceRepository> {
             coEvery { getByMaterializedPath("root", "/") } returns entry("root", "/", true)
-            coEvery { getByMaterializedPath("root", "/new.md") } returns created
+            coEvery { getByMaterializedPath("root", "/new.md") } returns null
             coEvery { getByUuid("root", "file") } returns created
             coEvery { createFileInWorkspaceStreaming(any(), any(), any(), any(), any(), any(), any(), any()) } returns created
             coEvery { confirmCreatedEntry(any(), any()) } just Runs
         }
         val events = mutableListOf<FileIndexEvent>()
-        val backend = PrivateWorkspaceTransferBackend(workspace, "root", FileIndexEventSink { events.add(it) })
+        val backend = spyk(PrivateWorkspaceTransferBackend(workspace, "root", FileIndexEventSink { events.add(it) }))
+        coEvery { backend.availableBytes("/") } returns Long.MAX_VALUE
         backend.write("/new.md", "text".toByteArray(), createOnly = true)
         backend.confirmCreated()
         coVerify { workspace.createFileInWorkspaceStreaming("root", any(), "new.md", "text/markdown", "root", "/new.md", any(), any()) }
