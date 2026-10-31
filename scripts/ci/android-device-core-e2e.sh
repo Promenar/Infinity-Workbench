@@ -478,6 +478,8 @@ run_test chat-image-encoder "${APP_RUNNER}" \
     -e class com.promenar.infinity.ui.chat.ChatImageEncoderDeviceTest
 run_test thinking-preview-motion "${APP_RUNNER}" \
     -e class com.promenar.infinity.ui.chat.ThinkingPreviewMotionTest
+run_test inspector-strip-drag "${APP_RUNNER}" \
+    -e class com.promenar.infinity.ui.chat.InspectorStripDragTest
 run_test rag-workspace-source-selector "${APP_RUNNER}" \
     -e class com.promenar.infinity.ui.rag.RagWorkspaceSourceSelectorDeviceTest
 run_test agent-hub-content "${APP_RUNNER}" \

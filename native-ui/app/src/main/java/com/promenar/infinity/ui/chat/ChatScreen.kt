@@ -1612,15 +1612,20 @@ fun ChatScreenContent(
                             }
                         }
                     }
-                    // 收起后有内容时留一条边缘条；没有任何内容时完全隐藏，只留顶栏入口。
+                    // 收起后有内容时留一条边缘条；没有任何内容时完全隐藏，只留顶栏入口。长按可上下拖开。
+                    BoxWithConstraints(Modifier.fillMaxSize().padding(top = 8.dp, end = 8.dp, bottom = composerReserve + 8.dp)) {
+                    var stripHeight by remember { mutableIntStateOf(0) }
                     AnimatedVisibility(
                         visible = inspectorRoot == null && inspectorBadges.hasContent,
                         enter = fadeIn(tween(InfinityMotion.DurationShort, delayMillis = 90)) +
                             slideInHorizontally(tween(InfinityMotion.DurationMedium, easing = InfinityMotion.EmphasizedDecelerate)) { it },
                         exit = fadeOut(tween(InfinityMotion.DurationShort)) +
                             slideOutHorizontally(tween(InfinityMotion.DurationShort, easing = InfinityMotion.EmphasizedAccelerate)) { it },
-                        // 与卡片底栏同处底部：输入区横跨全宽，底边留在输入区上方以免挡住发送键。
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = composerReserve + 8.dp),
+                        // 默认与卡片底栏同处底部：输入区横跨全宽，底边留在输入区上方以免挡住发送键。
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .inspectorStripDrag((constraints.maxHeight - stripHeight).coerceAtLeast(0).toFloat())
+                            .onSizeChanged { stripHeight = it.height },
                     ) {
                         ChatInspectorStrip(
                             badges = inspectorBadges,
@@ -1632,6 +1637,7 @@ fun ChatScreenContent(
                             },
                             onLockTouch = actions.onLockTouch.takeIf { uiState.isGenerating },
                         )
+                    }
                     }
                 }
             }

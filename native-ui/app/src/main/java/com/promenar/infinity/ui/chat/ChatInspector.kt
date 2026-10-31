@@ -1,6 +1,19 @@
 package com.promenar.infinity.ui.chat
 
 import com.promenar.infinity.ui.common.LocalInfinityHaptics
+import android.content.Context
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import com.promenar.infinity.ui.common.InfinityHapticEvent
+import kotlin.math.roundToInt
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -381,6 +394,39 @@ internal fun ChatInspectorStrip(
             }
         }
     }
+}
+
+private const val UiStatePrefs = "infinity_ui_state"
+private const val StripLiftKey = "chat_inspector_strip_lift"
+
+/** 拖动 [dragY] 像素后边缘条的上移比例：0 贴底，1 顶到可移动范围上沿；没有可移动范围时保持不变。 */
+internal fun inspectorStripLift(fraction: Float, dragY: Float, maxLiftPx: Float): Float =
+    if (maxLiftPx <= 0f) fraction else (fraction - dragY / maxLiftPx).coerceIn(0f, 1f)
+
+/**
+ * 边缘条长按后上下拖动，挪开被它挡住的内容；[maxLiftPx] 为可上移的最大距离。
+ * 位置按比例记住且全局共用，换会话、折叠屏开合或输入区变高后仍落在可用范围内。
+ */
+@Composable
+internal fun Modifier.inspectorStripDrag(maxLiftPx: Float): Modifier {
+    val context = LocalContext.current
+    val prefs = remember(context) { context.applicationContext.getSharedPreferences(UiStatePrefs, Context.MODE_PRIVATE) }
+    var fraction by remember { mutableFloatStateOf(prefs.getFloat(StripLiftKey, 0f).coerceIn(0f, 1f)) }
+    val maxLift by rememberUpdatedState(maxLiftPx)
+    val haptics by rememberUpdatedState(LocalInfinityHaptics.current)
+    val save = { prefs.edit().putFloat(StripLiftKey, fraction).apply() }
+    return this
+        .offset { IntOffset(0, -(fraction * maxLift.coerceAtLeast(0f)).roundToInt()) }
+        .pointerInput(prefs) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { haptics.perform(InfinityHapticEvent.SELECTION) },
+                onDragEnd = save,
+                onDragCancel = save,
+            ) { change, drag ->
+                change.consume()
+                fraction = inspectorStripLift(fraction, drag.y, maxLift)
+            }
+        }
 }
 
 /** 运行页签：有待批准的操作时先给出跳转入口；没有运行内容时显示空状态。 */

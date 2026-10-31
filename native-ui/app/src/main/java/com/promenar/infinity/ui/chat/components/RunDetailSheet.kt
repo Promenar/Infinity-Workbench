@@ -258,7 +258,9 @@ private fun RunDetailHeader(
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp).testTag(UiTags.CHAT_RUN_STATUS_CARD),
     ) {
         Column(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 只有后台任务时没有状态、计时与菜单：不留空行和标题上方的间距，否则顶部留白比左右多出一截。
+            val headerShown = status != null || elapsedMillis != null || onHidePlan != null || onClearPlan != null
+            if (headerShown) Row(verticalAlignment = Alignment.CenterVertically) {
                 status?.let { RunStatusPill(it) }
                 Spacer(Modifier.weight(1f))
                 elapsedMillis?.let {
@@ -303,7 +305,7 @@ private fun RunDetailHeader(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 10.dp, end = 12.dp),
+                modifier = Modifier.padding(top = if (headerShown) 10.dp else 0.dp, end = 12.dp),
             )
             if (summary.isNotEmpty()) {
                 InfinityMetaLine(
