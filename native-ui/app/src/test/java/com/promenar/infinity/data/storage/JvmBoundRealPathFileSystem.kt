@@ -33,12 +33,30 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
     var readStateAfterRead: ((Path, RealPathFileState) -> RealPathFileState)? = null
     var afterRead: ((Path) -> Unit)? = null
     var renameAcrossVolumes: ((Path, Path) -> Boolean)? = null
+    var pathRenameAcrossVolumes = true
+    var pathRenameCalls = 0
+    var pathParentMismatch = false
+    var availableSpace = Long.MAX_VALUE
     var emulateFuse = false
     private val unlinkedObjects = mutableSetOf<String>()
 
     fun backend(root: File, forbiddenRoots: Set<Path> = emptySet(), permissionCheck: () -> Boolean = { true }): RealPathExternalFolderBackend =
         RealPathExternalFolderBackend(root, forbiddenRoots, permissionCheck, this)
 
+    override val supportsPathRename: Boolean get() = true
+    override fun statAbsolute(path: Path): RealPathFileState? {
+        beforeOperation?.invoke("path-stat", path)
+        return if (Files.exists(path, NOFOLLOW_LINKS)) attributes(path).let {
+            if (pathParentMismatch && it.isDirectory) it.copy(objectId = "replaced-parent") else it
+        } else null
+    }
+    override fun moveAbsolute(source: Path, target: Path) {
+        pathRenameCalls++
+        beforeOperation?.invoke("path-move", source)
+        if (pathRenameAcrossVolumes) throw android.system.ErrnoException("rename", android.system.OsConstants.EXDEV)
+        Files.move(source, target, ATOMIC_MOVE, REPLACE_EXISTING)
+        afterOperation?.invoke("path-move", source)
+    }
     override fun openFileSystemRoot(): BoundRealPathDirectory = Directory(Path.of("/"))
 
     private fun bound(path: Path): Path {
@@ -51,7 +69,11 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
         override val readTimestampsMayDrift: Boolean get() = emulateFuse
         private fun child(name: String): Path = bound(openedPath).resolve(name)
         override fun state(): RealPathFileState = heldState(bound(openedPath), openedState)
-        override fun stat(name: String): RealPathFileState? = child(name).let { if (Files.exists(it, NOFOLLOW_LINKS)) attributes(it) else null }
+        override fun availableBytes(): Long = minOf(availableSpace, Files.getFileStore(bound(openedPath)).usableSpace)
+        override fun stat(name: String): RealPathFileState? {
+            beforeOperation?.invoke("stat", openedPath.resolve(name))
+            return child(name).let { if (Files.exists(it, NOFOLLOW_LINKS)) attributes(it) else null }
+        }
         override fun names(): List<String> {
             beforeOperation?.invoke("list", openedPath)
             return Files.newDirectoryStream(bound(openedPath)).use { it.map { path -> path.fileName.toString() } }
