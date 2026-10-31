@@ -8,6 +8,7 @@ import com.promenar.infinity.domain.storage.ExternalFolderException
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -25,6 +26,173 @@ class RealPathSharedStorageMoveTest {
         supportAtomicMoves = false
         readStateAfterRead = { _, state -> state.copy(revision = "${state.revision}:ctime-drift",
             contentVersion = "${state.contentVersion}:mtime-drift") }
+    }
+
+    @Test fun `FUSE句柄EXDEV后路径重试保持文件和目录inode且不复制`() = runBlocking {
+        for (directory in listOf(false, true)) for (target in listOf("/renamed", "/notes/moved")) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            val source = File(root, "source")
+            if (directory) { source.mkdir(); File(source, "child").writeText("original") }
+            else source.writeText("original")
+            File(root, "notes").mkdir()
+            val id = java.nio.file.Files.getAttribute(source.toPath(), "unix:ino")
+            val fs = driftingFileSystem().apply {
+                renameAcrossVolumes = { _, _ -> true }; pathRenameAcrossVolumes = false
+            }
+            fs.backend(root).move("/source", target)
+            assertEquals(1, fs.pathRenameCalls)
+            assertFalse(source.exists())
+            assertEquals(id, java.nio.file.Files.getAttribute(File(root, target.removePrefix("/")).toPath(), "unix:ino"))
+            assertTrue("rename 不应读取文件内容", fs.reads.isEmpty())
+        }
+    }
+
+    @Test fun `FUSE路径父目录身份不一致时拒绝重试和复制`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").writeText("original")
+        val fs = driftingFileSystem().apply {
+            renameAcrossVolumes = { _, _ -> true }; pathRenameAcrossVolumes = false; pathParentMismatch = true
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull()
+        assertEquals("CONFLICT", (failure as ExternalFolderException).code)
+        assertEquals(0, fs.pathRenameCalls)
+        assertEquals("original", File(root, "source").readText())
+        assertFalse(File(root, "target").exists())
+        assertTrue(fs.reads.isEmpty())
+    }
+
+    @Test fun `路径重命名已提交但来源名并发重建时保留双方并报告恢复路径`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").writeText("original")
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true }; pathRenameAcrossVolumes = false }
+        fs.afterOperation = { operation, _ ->
+            if (operation == "path-move") File(root, "source").writeText("external")
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull() as ExternalFolderException
+        assertEquals("RECOVERY_REQUIRED", failure.code)
+        assertTrue(failure.message!!.contains("/source"))
+        assertTrue(failure.message!!.contains("/target"))
+        assertEquals("external", File(root, "source").readText())
+        assertEquals("original", File(root, "target").readText())
+        assertTrue(fs.reads.isEmpty())
+    }
+
+    @Test fun `路径重命名返回后外层复核期间目标消失时报告恢复双路径`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").writeText("original")
+        val target = File(root, "target")
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true }; pathRenameAcrossVolumes = false }
+        var committed = false
+        var targetChecks = 0
+        fs.afterOperation = { operation, _ -> if (operation == "path-move") committed = true }
+        fs.beforeOperation = { operation, path ->
+            if (committed && operation == "stat" && path == target.toPath() && ++targetChecks == 2) check(target.delete())
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull() as ExternalFolderException
+        assertEquals("RECOVERY_REQUIRED", failure.code)
+        assertTrue(failure.message!!.contains("/source"))
+        assertTrue(failure.message!!.contains("/target"))
+        assertTrue(fs.reads.isEmpty())
+    }
+
+    @Test fun `两次EXDEV流式移动超过32MiB文件和超过千项目录`() = runBlocking {
+        for (directory in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            val source = File(root, "source")
+            if (directory) {
+                source.mkdir(); repeat(1005) { File(source, "item-$it").writeText("item-$it") }
+            } else source.outputStream().use { output ->
+                val block = ByteArray(64 * 1024) { (it % 251).toByte() }
+                repeat(4097) { output.write(block) }
+            }
+            fun hash(file: File): String = file.inputStream().use { input ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(65536)
+                while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+            val expected = if (directory) "" else hash(source)
+            val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true } }
+            fs.backend(root).move("/source", "/target")
+            assertEquals(1, fs.pathRenameCalls)
+            assertFalse(source.exists())
+            val target = File(root, "target")
+            if (directory) {
+                assertEquals(1005, target.list()!!.size)
+                repeat(1005) { assertEquals("item-$it", File(target, "item-$it").readText()) }
+            } else { assertEquals(4097L * 65536, target.length()); assertEquals(expected, hash(target)) }
+        }
+    }
+
+    @Test fun `目标卷空间不足在创建目标前拒绝`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").writeText("original")
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true }; availableSpace = 7 }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull()
+        assertEquals("NO_SPACE", (failure as ExternalFolderException).code)
+        assertEquals("original", File(root, "source").readText())
+        assertFalse(File(root, "target").exists())
+        assertTrue("空间检查前不读取内容", fs.reads.isEmpty())
+    }
+
+    @Test fun `源解除链接后取消从目标流式恢复并只保留源`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val source = File(root, "source").apply { writeText("original") }
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true } }
+        var deleted = false
+        var recoveryReads = 0
+        fs.afterOperation = { operation, path ->
+            if (operation == "delete" && path == source.toPath()) {
+                deleted = true
+                throw kotlinx.coroutines.CancellationException("源删除后取消")
+            }
+        }
+        fs.beforeOperation = { operation, path ->
+            if (deleted && operation == "read" && path == File(root, "target").toPath()) recoveryReads++
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull()
+        assertTrue(failure is kotlinx.coroutines.CancellationException)
+        assertTrue("补偿必须从目标读取", recoveryReads > 0)
+        assertEquals("original", source.readText())
+        assertFalse(File(root, "target").exists())
+    }
+
+    @Test fun `实际协程取消在源解除链接后完成补偿`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val source = File(root, "source").apply { writeText("original") }
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true } }
+        lateinit var moving: kotlinx.coroutines.Job
+        fs.afterOperation = { operation, path ->
+            if (operation == "delete" && path == source.toPath()) moving.cancel()
+        }
+        moving = launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            fs.backend(root).move("/source", "/target")
+        }
+        moving.start()
+        moving.join()
+        assertTrue(moving.isCancelled)
+        assertEquals("original", source.readText())
+        assertFalse(File(root, "target").exists())
+    }
+
+    @Test fun `部分源删除后目标被修改则保留数据并要求恢复`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").mkdir()
+        File(root, "source/a").writeText("first")
+        File(root, "source/b").writeText("second")
+        val fs = driftingFileSystem().apply { renameAcrossVolumes = { _, _ -> true } }
+        fs.beforeOperation = { operation, path ->
+            if (operation == "delete" && path == File(root, "source/b").toPath()) {
+                File(root, "target/a").writeText("other")
+                throw IOException("第二项删除失败且目标变化")
+            }
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull() as ExternalFolderException
+        assertEquals("RECOVERY_REQUIRED", failure.code)
+        assertTrue(failure.message!!.contains("/source"))
+        assertTrue(failure.message!!.contains("/target"))
+        assertEquals("other", File(root, "target/a").readText())
+        assertEquals("second", File(root, "source/b").readText())
     }
 
     @Test fun `读后时间戳漂移不阻断新建覆盖补丁读取与普通移动`() = runBlocking {

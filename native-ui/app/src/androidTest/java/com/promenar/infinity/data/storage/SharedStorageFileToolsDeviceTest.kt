@@ -72,6 +72,31 @@ class SharedStorageFileToolsDeviceTest {
         assertEquals(listOf(".gitignore"), File(directory, ".infinity").list()!!.toList())
     }
 
+    @Test fun movesFileLargerThan64MiBOnSharedStorage() = runBlocking {
+        val source = File(directory, "large.bin")
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        source.outputStream().use { output ->
+            val block = ByteArray(64 * 1024) { (it % 251).toByte() }
+            repeat(1025) { output.write(block); digest.update(block) }
+        }
+        val expected = digest.digest()
+        backend.createDirectory("/large-target")
+        backend.move("/large.bin", "/large-target/moved.bin")
+        assertFalse(source.exists())
+        val target = File(directory, "large-target/moved.bin")
+        assertEquals(1025L * 65536, target.length())
+        val actual = java.security.MessageDigest.getInstance("SHA-256")
+        target.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                actual.update(buffer, 0, count)
+            }
+        }
+        assertArrayEquals(expected, actual.digest())
+    }
+
     @Test fun appUidReadAndRenameProbe() {
         fun report(label: String, value: Any) {
             InstrumentationRegistry.getInstrumentation().sendStatus(1, Bundle().apply {

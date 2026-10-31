@@ -1,7 +1,8 @@
 package com.promenar.infinity.data.storage
 
 import com.promenar.infinity.domain.storage.ExternalFolderException
-import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.security.MessageDigest
 import java.nio.file.FileAlreadyExistsException
 import android.system.ErrnoException
 import android.system.OsConstants
@@ -13,23 +14,29 @@ import kotlinx.coroutines.withContext
 
 /** 仅在 rename 明确未提交时使用；创建回执与补偿均固定在原有目录句柄内。 */
 internal object RealPathCopyMove {
-    private class Node(val name: String, var source: RealPathFileState, val bytes: ByteArray?) {
+    private class Node(val name: String, var source: RealPathFileState) {
+        var sha256: String? = null
+        var writtenSize = 0L
+        var writtenSha256 = externalSha256(byteArrayOf())
         val children = mutableListOf<Node>()
         var target: RealPathFileState? = null
         var creationAttempted = false
-        var written = false
         var deleted = false
     }
-    private class Budget { var bytes = ExternalTreeTransfer.MAX_BYTES; var nodes = 0 }
+    private class Size { var bytes = 0L }
 
     suspend fun move(source: BoundRealPathDirectory, sourceName: String, sourcePath: String, expected: RealPathFileState,
         target: BoundRealPathDirectory, targetName: String, targetPath: String) {
         checkRealPathReadState(expected, source.stat(sourceName), timestamps = !source.readTimestampsMayDrift)
-        val node = capture(source, sourceName, Budget(), 0)
+        val size = Size()
+        val node = capture(source, sourceName, size, 0)
         checkRealPathReadState(expected, node.source, timestamps = !source.readTimestampsMayDrift)
+        if (target.availableBytes() < size.bytes) {
+            throw ExternalFolderException("NO_SPACE", "目标存储卷可用空间不足 / Insufficient free space on destination volume")
+        }
         var deletingSource = false
         try {
-            create(target, targetName, node)
+            create(source, sourceName, target, targetName, node)
             verify(source, sourceName, node, target = false)
             verify(target, targetName, node, target = true)
             currentCoroutineContext().ensureActive()
@@ -45,7 +52,10 @@ internal object RealPathCopyMove {
                             return@withContext
                         } catch (changed: Throwable) { failure.addSuppressed(changed) }
                     }
-                    if (deletingSource && (hasDeleted(node) || source.stat(sourceName) == null)) restoreMissing(source, sourceName, node)
+                    if (deletingSource && (hasDeleted(node) || source.stat(sourceName) == null)) {
+                        verify(target, targetName, node, target = true)
+                        restoreMissing(source, sourceName, node, target, targetName)
+                    }
                     rollback(target, targetName, node)
                 } catch (cleanup: Throwable) {
                     val recovery = ExternalFolderException("RECOVERY_REQUIRED",
@@ -60,56 +70,68 @@ internal object RealPathCopyMove {
         }
     }
 
-    private suspend fun capture(parent: BoundRealPathDirectory, name: String, budget: Budget, depth: Int): Node {
+    /** 只记录身份、大小和树结构，文件内容始终通过固定大小缓冲区处理。 */
+    private suspend fun capture(parent: BoundRealPathDirectory, name: String, size: Size, depth: Int): Node {
         currentCoroutineContext().ensureActive()
-        if (++budget.nodes > 1000 || depth > 32) throw ExternalFolderException("TOO_LARGE", "目录超过条目或深度上限 / Tree limit exceeded")
+        if (depth > 32) throw ExternalFolderException("TOO_LARGE", "目录超过深度上限 / Tree depth limit exceeded")
         val state = parent.stat(name) ?: realPathReadConflict("identity=missing")
         requireSupported(state)
+        val node = Node(name, state)
         if (state.isDirectory) {
-            val node = Node(name, state, null)
             parent.openDirectory(name).use { directory ->
                 checkIdentity(state, directory.state())
                 for (child in directory.names().sorted()) {
                     com.promenar.infinity.domain.storage.ExternalFolderPaths.validateName(child)
-                    node.children += capture(directory, child, budget, depth + 1)
+                    node.children += capture(directory, child, size, depth + 1)
                 }
                 checkIdentity(state, parent.stat(name))
             }
-            return node
-        }
-        if (state.size > budget.bytes) throw ExternalFolderException("RECYCLE_LIMIT", "文件超过剩余快照空间 / File exceeds remaining snapshot space")
-        val read = readVerifiedRealPath(parent, name, budget.bytes) { input ->
-            val bytes = ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                currentCoroutineContext().ensureActive()
-                val count = input.read(buffer)
-                if (count < 0) break
-                bytes.write(buffer, 0, count)
+        } else {
+            if (state.size < 0 || state.size > Long.MAX_VALUE - size.bytes) {
+                throw ExternalFolderException("NO_SPACE", "移动所需空间超出存储容量 / Move exceeds storage capacity")
             }
-            bytes.toByteArray()
+            size.bytes += state.size
         }
-        checkIdentity(state, read.state)
-        budget.bytes -= read.value.size
-        return Node(name, read.state, read.value)
+        return node
     }
 
-    private suspend fun create(parent: BoundRealPathDirectory, name: String, node: Node) {
+    private suspend fun create(source: BoundRealPathDirectory, sourceName: String,
+        parent: BoundRealPathDirectory, name: String, node: Node) {
         currentCoroutineContext().ensureActive()
+        checkRealPathReadState(node.source, source.stat(sourceName), timestamps = !source.readTimestampsMayDrift)
         node.creationAttempted = true
         try {
-            if (node.bytes == null) {
+            if (node.source.isDirectory) {
                 parent.createDirectory(name)
                 node.target = parent.stat(name) ?: realPathReadConflict("identity=missing")
                 parent.openDirectory(name).use { directory ->
                     checkIdentity(node.target!!, directory.state())
-                    for (child in node.children) create(directory, child.name, child)
+                    source.openDirectory(sourceName).use { from ->
+                        checkIdentity(node.source, from.state())
+                        if (from.names().sorted() != node.children.map { it.name }.sorted()) realPathReadConflict("identity(children)")
+                        for (child in node.children) create(from, child.name, directory, child.name, child)
+                    }
                 }
             } else {
                 parent.createFile(name).use { file ->
                     node.target = file.state()
-                    try { file.output.write(node.bytes); node.written = true; file.sync() }
-                    finally { node.target = file.state() }
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    try {
+                        val read = readVerifiedRealPath(source, sourceName, node.source.size) { input ->
+                            copy(input) { bytes, count ->
+                                file.output.write(bytes, 0, count)
+                                digest.update(bytes, 0, count)
+                                node.writtenSize += count
+                            }
+                        }
+                        checkRealPathReadState(node.source, read.state, timestamps = !source.readTimestampsMayDrift)
+                        node.source = read.state
+                        node.sha256 = read.sha256
+                        file.sync()
+                    } finally {
+                        node.writtenSha256 = digest.digest().hex()
+                        node.target = file.state()
+                    }
                 }
             }
         } catch (failure: Throwable) {
@@ -121,20 +143,32 @@ internal object RealPathCopyMove {
         verify(parent, name, node, target = true)
     }
 
+    private suspend fun copy(input: InputStream, write: (ByteArray, Int) -> Unit) {
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val count = input.read(buffer)
+            if (count < 0) break
+            write(buffer, count)
+        }
+    }
+
+    private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
+
     private suspend fun verify(parent: BoundRealPathDirectory, name: String, node: Node, target: Boolean) {
         val expected = if (target) node.target ?: realPathReadConflict("identity=missing") else node.source
         val current = parent.stat(name)
         checkIdentity(expected, current)
-        if (node.bytes == null) {
+        if (node.source.isDirectory) {
             parent.openDirectory(name).use { directory ->
                 checkIdentity(expected, directory.state())
                 if (directory.names().sorted() != node.children.map { it.name }.sorted()) realPathReadConflict("identity(children)")
                 for (child in node.children) verify(directory, child.name, child, target)
             }
         } else {
-            val read = readVerifiedRealPath(parent, name, ExternalTreeTransfer.MAX_BYTES) { }
+            val read = readVerifiedRealPath(parent, name, node.source.size) { }
             checkIdentity(expected, read.state)
-            val hash = externalSha256(node.bytes)
+            val hash = node.sha256 ?: realPathReadConflict("sha256=missing")
             if (hash != read.sha256) realPathReadConflict("sha256=$hash -> ${read.sha256}")
             if (!target) node.source = read.state else node.target = read.state
         }
@@ -143,8 +177,8 @@ internal object RealPathCopyMove {
     private suspend fun removeSource(parent: BoundRealPathDirectory, name: String, node: Node,
         target: BoundRealPathDirectory, targetName: String) {
         currentCoroutineContext().ensureActive()
-        checkRealPathReadState(node.source, parent.stat(name), timestamps = !parent.readTimestampsMayDrift && node.bytes != null)
-        if (node.bytes == null) {
+        checkRealPathReadState(node.source, parent.stat(name), timestamps = !parent.readTimestampsMayDrift && !node.source.isDirectory)
+        if (node.source.isDirectory) {
             parent.openDirectory(name).use { directory ->
                 checkIdentity(node.source, directory.state())
                 target.openDirectory(targetName).use { targetDirectory ->
@@ -167,12 +201,37 @@ internal object RealPathCopyMove {
             verifyPair(parent, name, target, targetName, node)
             checkRealPathReadState(node.source, parent.stat(name))
             checkRealPathReadState(node.target!!, target.stat(targetName))
-            val links = held.state().linkCount
-            try { parent.deleteFile(name); node.deleted = true }
-            catch (failure: Throwable) {
-                // 路径消失也可能是外部改名；原 FD 链接数下降才证明原对象已解除链接。
-                node.deleted = parent.stat(name) == null && held.state().linkCount < links
-                throw failure
+            // unlink 前固定目标对象并再次核对路径；补偿期间原源 FD 仍保持打开。
+            target.openRead(targetName).use { recoveryCopy ->
+                checkRealPathReadState(node.target!!, recoveryCopy.state(), timestamps = !target.readTimestampsMayDrift)
+                checkRealPathReadState(node.source, parent.stat(name))
+                checkRealPathReadState(node.target!!, target.stat(targetName))
+                val links = held.state().linkCount
+                try {
+                    try { parent.deleteFile(name); node.deleted = true }
+                    catch (failure: Throwable) {
+                        // 路径消失也可能是外部改名；原 FD 链接数下降才证明原对象已解除链接。
+                        node.deleted = parent.stat(name) == null && held.state().linkCount < links
+                        throw failure
+                    }
+                    verify(target, targetName, node, target = true)
+                } catch (failure: Throwable) {
+                    if (node.deleted && parent.stat(name) == null) {
+                        try {
+                            withContext(NonCancellable) {
+                                if (runCatching { verify(target, targetName, node, target = true) }.isFailure) {
+                                    // 路径无法证明目标可信时，先用原源 FD 保全原件，避免目标先改写再删除污染恢复内容。
+                                    checkRealPathReadState(node.source, held.state(), timestamps = false)
+                                    restoreFile(parent, name, node, held.input)
+                                }
+                            }
+                        } catch (recovery: Throwable) {
+                            recovery.addSuppressed(failure)
+                            throw recovery
+                        }
+                    }
+                    throw failure
+                }
             }
         }
     }
@@ -193,29 +252,52 @@ internal object RealPathCopyMove {
 
     private fun hasDeleted(node: Node): Boolean = node.deleted || node.children.any(::hasDeleted)
 
-    private suspend fun restoreMissing(parent: BoundRealPathDirectory, name: String, node: Node) {
+    private suspend fun restoreMissing(parent: BoundRealPathDirectory, name: String, node: Node,
+        target: BoundRealPathDirectory, targetName: String) {
         if (parent.stat(name) == null) {
             if (!node.deleted) realPathReadConflict("identity=missing-before-delete")
-            if (node.bytes == null) {
+            if (node.source.isDirectory) {
                 parent.createDirectory(name)
                 node.source = parent.stat(name) ?: realPathReadConflict("identity=missing")
             } else {
-                parent.createFile(name).use { file ->
-                    node.source = file.state()
-                    file.output.write(node.bytes)
-                    file.sync()
-                    node.source = file.state()
+                val read = readVerifiedRealPath(target, targetName, node.source.size) { input ->
+                    restoreFile(parent, name, node, input)
                 }
+                if (read.sha256 != node.sha256) realPathReadConflict("sha256(restore)")
             }
         } else if (node.deleted) {
             realPathReadConflict("identity=recreated-after-delete")
         }
         checkIdentity(node.source, parent.stat(name))
-        if (node.bytes == null) parent.openDirectory(name).use { directory ->
+        if (node.source.isDirectory) parent.openDirectory(name).use { directory ->
             checkIdentity(node.source, directory.state())
-            for (child in node.children) restoreMissing(directory, child.name, child)
+            target.openDirectory(targetName).use { copy ->
+                checkIdentity(node.target!!, copy.state())
+                for (child in node.children) restoreMissing(directory, child.name, child, copy, child.name)
+            }
         }
         verify(parent, name, node, target = false)
+        node.deleted = false
+    }
+
+    private suspend fun restoreFile(parent: BoundRealPathDirectory, name: String, node: Node, input: InputStream) {
+        val expectedHash = node.sha256 ?: realPathReadConflict("sha256=missing")
+        val digest = MessageDigest.getInstance("SHA-256")
+        var count = 0L
+        parent.createFile(name).use { file ->
+            node.source = file.state()
+            try {
+                copy(input) { bytes, length ->
+                    file.output.write(bytes, 0, length)
+                    digest.update(bytes, 0, length)
+                    count += length
+                }
+                file.sync()
+            } finally { node.source = file.state() }
+        }
+        if (count != node.writtenSize || digest.digest().hex() != expectedHash) realPathReadConflict("sha256(restore)")
+        verify(parent, name, node, target = false)
+        node.deleted = false
     }
 
     private suspend fun rollback(parent: BoundRealPathDirectory, name: String, node: Node) {
@@ -223,7 +305,7 @@ internal object RealPathCopyMove {
         val current = parent.stat(name) ?: return
         val expected = node.target ?: realPathReadConflict("identity=unknown")
         checkIdentity(expected, current)
-        if (node.bytes == null) {
+        if (node.source.isDirectory) {
             parent.openDirectory(name).use { directory ->
                 checkIdentity(expected, directory.state())
                 for (child in node.children.asReversed()) rollback(directory, child.name, child)
@@ -232,15 +314,14 @@ internal object RealPathCopyMove {
             checkIdentity(expected, parent.stat(name))
             parent.deleteDirectory(name)
         } else {
-            if (current.size != expected.size || node.written && current.size != node.bytes.size.toLong()) {
-                realPathReadConflict("size=${expected.size} -> ${current.size}")
+            if (current.size != expected.size || current.size != node.writtenSize) {
+                realPathReadConflict("size=${node.writtenSize} -> ${current.size}")
             }
-            val read = readVerifiedRealPath(parent, name, node.bytes.size.toLong()) { }
+            val read = readVerifiedRealPath(parent, name, node.writtenSize) { }
             checkIdentity(expected, read.state)
             if (read.state.size != expected.size) realPathReadConflict("size=${expected.size} -> ${read.state.size}")
-            // 中断写入只接受已记录长度的预定内容前缀，完整写入不得被外部截短。
-            val hash = externalSha256(node.bytes.copyOf(read.state.size.toInt()))
-            if (read.sha256 != hash) realPathReadConflict("sha256=$hash -> ${read.sha256}")
+            // 仅清理与已记录写入长度及摘要一致的自有副本，未知的部分写入交给人工恢复。
+            if (read.sha256 != node.writtenSha256) realPathReadConflict("sha256=${node.writtenSha256} -> ${read.sha256}")
             checkRealPathReadState(read.state, parent.stat(name))
             parent.deleteFile(name)
         }

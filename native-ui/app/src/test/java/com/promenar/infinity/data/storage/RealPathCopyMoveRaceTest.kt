@@ -25,6 +25,64 @@ class RealPathCopyMoveRaceTest {
         readStateAfterRead = { _, state -> state.copy(revision = "${state.revision}:ctime-drift") }
     }
 
+    @Test fun `打开恢复句柄时来源被替换不得删除外部文件`() = runBlocking {
+        val root = temporary.newFolder().canonicalFile
+        val source = File(root, "source").apply { writeText("original") }
+        val target = File(root, "target")
+        val fs = fileSystem().apply { readStateAfterRead = null }
+        var replaced = false
+        var targetReads = 0
+        fs.beforeOperation = { operation, path ->
+            if (operation == "read" && path == target.toPath() && ++targetReads == 4) {
+                Files.move(source.toPath(), File(root, "saved").toPath())
+                source.writeText("external")
+                replaced = true
+            }
+        }
+        val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull()
+        assertTrue("必须命中打开恢复句柄窗口", replaced)
+        assertEquals("CONFLICT", (failure as? ExternalFolderException)?.code)
+        assertEquals("external", source.readText())
+        assertEquals("original", File(root, "saved").readText())
+        assertFalse(target.exists())
+    }
+
+    @Test fun `源解除链接后目标改写或替换时保全两方内容`() = runBlocking {
+        for (replace in listOf(false, true)) {
+            val root = temporary.newFolder().canonicalFile
+            val source = File(root, "source").apply { writeText("original") }
+            val target = File(root, "target")
+            val fs = fileSystem()
+            fs.afterOperation = { operation, path ->
+                if (operation == "delete" && path == source.toPath()) {
+                    if (replace) Files.move(target.toPath(), File(root, "saved-target").toPath())
+                    target.writeText("external")
+                }
+            }
+            val failure = runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull() as ExternalFolderException
+            assertEquals("RECOVERY_REQUIRED", failure.code)
+            assertEquals("original", source.readText())
+            assertEquals("external", target.readText())
+        }
+    }
+
+    @Test fun `源解除链接后目标先改写再删除仍保全原来源`() = runBlocking {
+        val root = temporary.newFolder().canonicalFile
+        val source = File(root, "source").apply { writeText("original") }
+        val target = File(root, "target")
+        val fs = fileSystem()
+        fs.afterOperation = { operation, path ->
+            if (operation == "delete" && path == source.toPath()) {
+                target.writeText("external")
+                check(target.delete())
+            }
+        }
+        assertNotNull(runCatching { fs.backend(root).move("/source", "/target") }.exceptionOrNull())
+        assertEquals("original", source.readText())
+        assertFalse(target.exists())
+        assertEquals(listOf("source"), root.list()!!.toList())
+    }
+
     @Test fun `EXDEV返回时同名来源已被替换则拒绝移动替换者`() = runBlocking {
         val root = temporary.newFolder().canonicalFile
         val source = File(root, "source").apply { writeText("original") }
@@ -67,7 +125,7 @@ class RealPathCopyMoveRaceTest {
         }
     }
 
-    @Test fun `源删除已提交后目标被移除则从快照恢复来源`() = runBlocking {
+    @Test fun `源删除已提交后目标被移除则从保留句柄恢复来源`() = runBlocking {
         val root = temporary.newFolder().canonicalFile
         val source = File(root, "source").apply { writeText("original") }
         val target = File(root, "target")

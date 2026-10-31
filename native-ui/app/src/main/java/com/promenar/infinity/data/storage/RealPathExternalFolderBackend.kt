@@ -213,12 +213,19 @@ class RealPathExternalFolderBackend internal constructor(
                     checkRealPathReadState(original, sourceParent.stat(sourceName))
                     currentCoroutineContext().ensureActive()
                     var moved: RealPathFileState? = null
+                    var pathCommitted = false
                     try {
-                        moveChecked(sourceParent, sourceName, targetParent, targetName, original, allowCopyFallback = true)
+                        moveChecked(sourceParent, sourceName, targetParent, targetName, original, allowCopyFallback = true,
+                            sourcePath = logical(source), targetPath = logical(target), onPathCommit = { pathCommitted = true })
                         moved = targetParent.stat(targetName) ?: realPathReadConflict("identity")
                         requireSupported(moved)
                         checkMovedState(original, moved)
                     } catch (raw: Throwable) {
+                        if (pathCommitted) {
+                            throw ExternalFolderException("RECOVERY_REQUIRED",
+                                "路径重命名已提交但状态无法确认，请核查来源 $source 与目标 $target / Rename recovery required: source=$source, target=$target"
+                            ).apply { addSuppressed(raw) }
+                        }
                         if (raw is CheckedMoveAcrossVolumes) {
                             com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_move_copy_fallback", mapOf(
                                 "reason" to "EXDEV", "errno" to raw.errno,
@@ -424,22 +431,67 @@ class RealPathExternalFolderBackend internal constructor(
 
     /** 能力错误只发生在提交前；放宽窗口限定为最终核对到 renameat 之间。 */
     private fun moveChecked(source: BoundRealPathDirectory, sourceName: String, target: BoundRealPathDirectory,
-        targetName: String, expected: RealPathFileState, allowCopyFallback: Boolean = false) {
+        targetName: String, expected: RealPathFileState, allowCopyFallback: Boolean = false,
+        sourcePath: Path? = null, targetPath: Path? = null, onPathCommit: () -> Unit = {}) {
         try { source.moveNew(sourceName, target, targetName) }
         catch (failure: ErrnoException) {
             if (!allowCopyFallback || failure.errno != OsConstants.EXDEV) throw failure
             checkRealPathReadState(expected, source.stat(sourceName))
             if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
-            throw CheckedMoveAcrossVolumes(failure)
+            retryPathMoveOrThrow(source, sourceName, target, targetName, expected, failure, sourcePath, targetPath, onPathCommit)
         }
         catch (failure: AtomicMoveNotSupportedException) {
             checkRealPathReadState(expected, source.stat(sourceName))
             if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
             try { source.moveReplacing(sourceName, target, targetName) }
             catch (failure: ErrnoException) {
-                if (allowCopyFallback && failure.errno == OsConstants.EXDEV) throw CheckedMoveAcrossVolumes(failure)
+                if (!allowCopyFallback || failure.errno != OsConstants.EXDEV) throw failure
+                retryPathMoveOrThrow(source, sourceName, target, targetName, expected, failure, sourcePath, targetPath, onPathCommit)
+            }
+        }
+    }
+
+    /** FUSE 的句柄式 EXDEV 可能来自父节点缓存；真实路径 lookup 后再尝试同卷 rename。 */
+    private fun retryPathMoveOrThrow(source: BoundRealPathDirectory, sourceName: String,
+        target: BoundRealPathDirectory, targetName: String, expected: RealPathFileState,
+        handleFailure: ErrnoException, sourcePath: Path?, targetPath: Path?, onPathCommit: () -> Unit) {
+        checkRealPathReadState(expected, source.stat(sourceName), timestamps = !source.readTimestampsMayDrift)
+        if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
+        if (!source.readTimestampsMayDrift || !fileSystem.supportsPathRename || sourcePath == null || targetPath == null) {
+            throw CheckedMoveAcrossVolumes(handleFailure)
+        }
+        var attempted = false
+        var pathErrno: Int? = null
+        try {
+            for ((held, path) in listOf(source to sourcePath.parent, target to targetPath.parent)) {
+                val state = held.state()
+                val byPath = fileSystem.statAbsolute(path)
+                if (byPath == null || !byPath.isDirectory || byPath.isSymbolicLink || byPath.objectId != state.objectId) {
+                    realPathReadConflict("identity(parent)=${state.objectId} -> ${byPath?.objectId ?: "missing"}")
+                }
+            }
+            checkRealPathReadState(expected, source.stat(sourceName), timestamps = !source.readTimestampsMayDrift)
+            checkRealPathReadState(expected, fileSystem.statAbsolute(sourcePath), timestamps = !source.readTimestampsMayDrift)
+            if (target.stat(targetName) != null || fileSystem.statAbsolute(targetPath) != null) throw FileAlreadyExistsException(targetName)
+            // 与普通 renameat 的放宽一致：最终核对到系统调用之间仍有短暂竞态，不能提供跨应用 CAS。
+            attempted = true
+            try { fileSystem.moveAbsolute(sourcePath, targetPath); pathErrno = 0; onPathCommit() }
+            catch (failure: ErrnoException) {
+                pathErrno = failure.errno
+                if (failure.errno == OsConstants.EXDEV) {
+                    checkRealPathReadState(expected, source.stat(sourceName), timestamps = !source.readTimestampsMayDrift)
+                    if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
+                    throw CheckedMoveAcrossVolumes(failure)
+                }
                 throw failure
             }
+            checkMovedState(expected, target.stat(targetName) ?: realPathReadConflict("identity(target)=missing"))
+            if (source.stat(sourceName) != null) realPathReadConflict("identity(source)=still-present")
+        } finally {
+            com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_move_path_retry", mapOf(
+                "handle_errno" to handleFailure.errno, "path_errno" to pathErrno, "path_attempted" to attempted,
+                "same_directory" to (sourcePath.parent == targetPath.parent),
+            ))
         }
     }
 
@@ -907,11 +959,17 @@ internal object ExternalFolderLegacyTemporaries {
     }
 }
 
-/** 句柄操作只接受单段名称，必须保持目录绑定，不能重新解析原绝对路径。 */
-internal interface RealPathFileSystem { fun openFileSystemRoot(): BoundRealPathDirectory }
+/** 常规操作保持目录绑定；FUSE 的 EXDEV 路径重试必须另行核验路径与句柄身份。 */
+internal interface RealPathFileSystem {
+    val supportsPathRename: Boolean get() = false
+    fun openFileSystemRoot(): BoundRealPathDirectory
+    fun statAbsolute(path: Path): RealPathFileState? = throw UnsupportedOperationException()
+    fun moveAbsolute(source: Path, target: Path): Unit = throw UnsupportedOperationException()
+}
 internal interface BoundRealPathDirectory : Closeable {
     val readTimestampsMayDrift: Boolean get() = false
     fun state(): RealPathFileState
+    fun availableBytes(): Long
     fun stat(name: String): RealPathFileState?
     fun names(): List<String>
     fun openDirectory(name: String): BoundRealPathDirectory
@@ -935,6 +993,10 @@ internal data class RealPathFileState(val isDirectory: Boolean, val isRegularFil
 internal object AndroidRealPathFileSystem : RealPathFileSystem {
     // 已核验 Android NDK 的 Linux UAPI：O_PATH=010000000，遍历父目录不要求列举权限。
     private const val OPEN_PATH = 0x200000
+    override val supportsPathRename: Boolean get() = true
+    override fun statAbsolute(path: Path): RealPathFileState? = try { state(Os.lstat(path.toString())) }
+    catch (failure: ErrnoException) { if (failure.errno == OsConstants.ENOENT) null else throw failure }
+    override fun moveAbsolute(source: Path, target: Path) = Os.rename(source.toString(), target.toString())
     override fun openFileSystemRoot(): BoundRealPathDirectory = openDirectory("/")
     private fun openDirectory(path: String): BoundRealPathDirectory {
         val fd = Os.open(path, OPEN_PATH or OsConstants.O_NOFOLLOW or OsConstants.O_CLOEXEC, 0)
@@ -953,6 +1015,11 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
             return "$base/$name"
         }
         override fun state(): RealPathFileState = state(Os.fstat(descriptor.fileDescriptor))
+        override fun availableBytes(): Long {
+            val space = Os.fstatvfs(descriptor.fileDescriptor)
+            return if (space.f_frsize > 0 && space.f_bavail > Long.MAX_VALUE / space.f_frsize) Long.MAX_VALUE
+                else space.f_bavail * space.f_frsize
+        }
         override fun stat(name: String): RealPathFileState? = try { state(Os.lstat(child(name))) } catch (exception: ErrnoException) {
             if (exception.errno == OsConstants.ENOENT) null else throw exception
         }
