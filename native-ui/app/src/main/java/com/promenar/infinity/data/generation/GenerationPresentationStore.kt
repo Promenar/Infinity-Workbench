@@ -74,7 +74,7 @@ data class GenerationPresentationState(
 }
 
 /** 重发前仍在连接或等待首个输出的阶段；进入其它阶段即说明重试已有结果。 */
-private val RETRY_PENDING_PHASES = setOf(
+internal val RETRY_PENDING_PHASES = setOf(
     GenerationPhase.PREPARING,
     GenerationPhase.BUILDING_CONTEXT,
     GenerationPhase.CONNECTING,

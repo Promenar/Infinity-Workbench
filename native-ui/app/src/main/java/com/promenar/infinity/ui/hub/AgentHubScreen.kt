@@ -4,6 +4,9 @@ import androidx.compose.animation.Crossfade
 import com.promenar.infinity.domain.generation.GenerationPhase
 import com.promenar.infinity.domain.generation.GenerationTaskSnapshot
 import com.promenar.infinity.ui.common.GenerationDots
+import com.promenar.infinity.ui.common.motion.LocalGenerationMotion
+import com.promenar.infinity.ui.common.motion.generationMotionPhase
+import com.promenar.infinity.ui.common.motion.rememberGenerationMotion
 import com.promenar.infinity.ui.theme.InfinityMotion
 
 import androidx.compose.runtime.key
@@ -154,6 +157,7 @@ fun AgentHubScreen(
             pendingDeleteSessionId = pendingDeleteSessionId,
             sessionsByAgent = sessionsByAgent,
             sessionActivity = sessionActivity,
+            sessionGeneration = activeGeneration,
             selectedSessionId = selectedSessionId,
         )
         val actions = AgentHubScreenActions(
@@ -516,6 +520,8 @@ internal data class AgentHubScreenState(
     val sessionsByAgent: Map<String, List<Session>> = emptyMap(),
     /** 正在生成或等待批准的会话，列表行以此替换时间显示状态。 */
     val sessionActivity: Map<String, HubSessionActivity> = emptyMap(),
+    /** 应用级生成任务快照，生成中的会话行据此按阶段播放与会话界面相同的指示动效。 */
+    val sessionGeneration: Map<String, GenerationTaskSnapshot> = emptyMap(),
     /** 内屏三列时会话列正在显示的会话，列表中高亮。 */
     val selectedSessionId: String? = null,
 )
@@ -753,6 +759,7 @@ internal fun AgentHubScreenContent(
                                 title = stringResource(R.string.hub_section_pinned),
                                 entries = sections.pinnedSessions,
                                 activity = state.sessionActivity,
+                                generation = state.sessionGeneration,
                                 selectedSessionId = state.selectedSessionId,
                                 actions = actions,
                             )
@@ -765,6 +772,7 @@ internal fun AgentHubScreenContent(
                                 title = stringResource(if (searching) R.string.hub_section_sessions else R.string.hub_section_recent),
                                 entries = sections.sessions,
                                 activity = state.sessionActivity,
+                                generation = state.sessionGeneration,
                                 selectedSessionId = state.selectedSessionId,
                                 actions = actions,
                             )
@@ -797,6 +805,7 @@ internal fun AgentHubScreenContent(
                                         HubAgentSessions(
                                             sessions = state.sessionsByAgent[agentId].orEmpty(),
                                             activity = state.sessionActivity,
+                                            generation = state.sessionGeneration,
                                             selectedSessionId = state.selectedSessionId,
                                             actions = actions,
                                         )
@@ -819,6 +828,7 @@ private fun HubSessionSection(
     activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
     modifier: Modifier = Modifier,
+    generation: Map<String, GenerationTaskSnapshot> = emptyMap(),
     selectedSessionId: String? = null,
 ) {
     InfinitySettingsSection(
@@ -837,6 +847,7 @@ private fun HubSessionSection(
                         nested = nested,
                         subtitle = entry.agentTitle,
                         activity = activity[sessionId],
+                        generation = generation[sessionId],
                         selected = sessionId == selectedSessionId,
                         onOpen = { actions.onOpenChat(sessionId) },
                         onTogglePin = { actions.onToggleSessionPin(sessionId) },
@@ -954,6 +965,8 @@ private fun HubSessionRow(
     onOpen: () -> Unit,
     onTogglePin: () -> Unit,
     onRequestDelete: () -> Unit,
+    /** 该会话的生成任务；生成中的指示按它的阶段、重试与出字量变化。 */
+    generation: GenerationTaskSnapshot? = null,
     selected: Boolean = false,
     tag: String = UiTags.hubSession(session.id),
     /** 分支排在主会话之下时缩进。 */
@@ -1020,11 +1033,11 @@ private fun HubSessionRow(
                         )
                         Spacer(Modifier.width(InfinitySpacing.XSmall))
                     }
-                    // 生成中以三点波浪、等待批准以文字替换时间，回到首页一眼看出哪个会话还在跑。
+                    // 生成中以生成指示、等待批准以文字替换时间，回到首页一眼看出哪个会话还在跑。
                     Crossfade(targetState = activity, label = "hub_session_activity") { current ->
                         when (current) {
-                            HubSessionActivity.GENERATING -> GenerationDots(
-                                dotSize = 5.dp, gap = 4.dp, lift = 3.dp,
+                            HubSessionActivity.GENERATING -> HubGenerationIndicator(
+                                generation = generation,
                                 modifier = Modifier.testTag(UiTags.hubSessionGenerating(tag)),
                             )
                             HubSessionActivity.AWAITING_APPROVAL -> Text(
@@ -1189,12 +1202,30 @@ private fun HubAgentRow(
     }
 }
 
+/**
+ * 会话行的生成指示：与会话界面同一套动效，按该会话自己的生成阶段、重试倒计时与出字量驱动，
+ * 首字前、流式、工具执行与重试各有节奏。
+ */
+@Composable
+private fun HubGenerationIndicator(generation: GenerationTaskSnapshot?, modifier: Modifier = Modifier) {
+    val dots = @Composable { GenerationDots(dotSize = 5.dp, gap = 4.dp, lift = 3.dp, modifier = modifier) }
+    // 没有任务快照（静态预览）时沿用环境动效。
+    if (generation == null) return dots()
+    val motion = rememberGenerationMotion(
+        phase = generationMotionPhase(generation.phase, awaitingUser = false),
+        retry = generation.retry,
+        outputLength = generation.generatedChars,
+    )
+    CompositionLocalProvider(LocalGenerationMotion provides motion, content = dots)
+}
+
 /** 助手展开区：该助手的全部会话（长按置顶/删除）；新建会话统一走页头“新建会话”菜单。 */
 @Composable
 private fun HubAgentSessions(
     sessions: List<Session>,
     activity: Map<String, HubSessionActivity>,
     actions: AgentHubScreenActions,
+    generation: Map<String, GenerationTaskSnapshot> = emptyMap(),
     selectedSessionId: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().animateContentSize(tween(InfinityMotion.DurationMedium, easing = InfinityMotion.EmphasizedDecelerate))) {
@@ -1218,6 +1249,7 @@ private fun HubAgentSessions(
                 nested = nested,
                 subtitle = null,
                 activity = activity[session.id],
+                generation = generation[session.id],
                 selected = session.id == selectedSessionId,
                 onOpen = { actions.onOpenChat(session.id) },
                 onTogglePin = { actions.onToggleSessionPin(session.id) },

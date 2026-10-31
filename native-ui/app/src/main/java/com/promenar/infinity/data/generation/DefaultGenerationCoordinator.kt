@@ -200,9 +200,14 @@ class DefaultGenerationCoordinator(
             val previous = task.snapshot
             val next = when (event) {
                 is GenerationEvent.ProgressChanged -> previous.copy(progress = event.progress)
-                is GenerationEvent.RetryScheduled -> previous
-                is GenerationEvent.PhaseChanged -> previous.copy(phase = event.phase)
-                is GenerationEvent.SnapshotChanged -> previous.copy(generatedChars = event.snapshot.content.length)
+                is GenerationEvent.RetryScheduled -> previous.copy(retry = event.retry)
+                is GenerationEvent.PhaseChanged -> previous.copy(
+                    phase = event.phase,
+                    retry = previous.retry.takeIf { event.phase in RETRY_PENDING_PHASES },
+                )
+                is GenerationEvent.SnapshotChanged -> previous.copy(
+                    generatedChars = event.snapshot.content.length + event.snapshot.reasoning.length,
+                )
                 is GenerationEvent.TargetChanged -> previous.copy(assistantMessageId = event.assistantMessageId)
                 is GenerationEvent.Rejected -> previous.copy(phase = GenerationPhase.FAILED, error = GenerationError(event.failure))
                 is GenerationEvent.PersistenceFailed -> previous.copy(phase = GenerationPhase.PERSISTENCE_FAILED, error = GenerationError(event.failure))

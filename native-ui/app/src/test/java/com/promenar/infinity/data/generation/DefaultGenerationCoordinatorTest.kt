@@ -7,6 +7,8 @@ import com.promenar.infinity.domain.generation.GenerationFailure
 import com.promenar.infinity.domain.generation.GenerationFailureCode
 import com.promenar.infinity.domain.generation.GenerationPhase
 import com.promenar.infinity.domain.generation.GenerationRequest
+import com.promenar.infinity.domain.generation.GenerationRetry
+import com.promenar.infinity.domain.generation.GenerationSnapshot
 import com.promenar.infinity.domain.generation.GenerationRunner
 import com.promenar.infinity.domain.generation.GenerationRuntimePolicy
 import com.promenar.infinity.domain.generation.StartGenerationResult
@@ -20,6 +22,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
@@ -202,6 +205,45 @@ class DefaultGenerationCoordinatorTest {
         assertThat(coordinator.cancel(started.taskId, CancellationReason.USER)).isTrue()
         runCurrent()
         assertThat(coordinator.active.value).isNull()
+    }
+
+    @Test
+    fun `任务快照带出重试倒计时与正文加思考字数供会话列表驱动指示动效`() = runTest {
+        val step = Channel<Unit>()
+        val retry = GenerationRetry(attempt = 1, maxAttempts = 3, code = GenerationFailureCode.NETWORK, delayMs = 2_000)
+        val coordinator = coordinator { _, emit ->
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.CONNECTING))
+            emit(GenerationEvent.RetryScheduled(retry))
+            step.receive()
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.CONNECTING))
+            step.receive()
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.THINKING))
+            emit(GenerationEvent.SnapshotChanged(GenerationSnapshot(reasoning = "先想一想")))
+            step.receive()
+            emit(GenerationEvent.PhaseChanged(GenerationPhase.STREAMING))
+            emit(GenerationEvent.SnapshotChanged(GenerationSnapshot(content = "答复", reasoning = "先想一想")))
+            awaitCancellation()
+        }
+        coordinator.start(request("s1", "a1"))
+        runCurrent()
+        assertThat(coordinator.observe("s1").value?.retry).isEqualTo(retry)
+
+        step.send(Unit)
+        runCurrent()
+        // 重发后仍在连接，倒计时保留到首个输出阶段之外的阶段才清除。
+        assertThat(coordinator.observe("s1").value?.retry).isEqualTo(retry)
+
+        step.send(Unit)
+        runCurrent()
+        val thinking = coordinator.observe("s1").value!!
+        assertThat(thinking.retry).isEqualTo(retry)
+        assertThat(thinking.generatedChars).isEqualTo(4)
+
+        step.send(Unit)
+        runCurrent()
+        val streaming = coordinator.observe("s1").value!!
+        assertThat(streaming.retry).isNull()
+        assertThat(streaming.generatedChars).isEqualTo(6)
     }
 
     @Test

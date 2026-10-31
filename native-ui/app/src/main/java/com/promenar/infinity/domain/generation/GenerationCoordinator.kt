@@ -58,6 +58,7 @@ data class GenerationTaskSnapshot(
     val sessionId: String,
     val assistantMessageId: String,
     val phase: GenerationPhase,
+    /** 本轮已到达的正文加思考内容的字数，会话列表据此估算出字速率。 */
     val generatedChars: Int,
     val startedAt: Long,
     val error: GenerationError? = null,
@@ -65,6 +66,8 @@ data class GenerationTaskSnapshot(
     val queuePosition: Int? = null,
     val runtimePolicy: GenerationRuntimePolicy = GenerationRuntimePolicy.BACKGROUND_ALLOWED,
     val startedOrder: Long = 0,
+    /** 正在等待自动重发的请求；进入重发前阶段以外的阶段即清除。 */
+    val retry: GenerationRetry? = null,
 )
 
 const val MAX_CONCURRENT_GENERATIONS = 4
