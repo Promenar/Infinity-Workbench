@@ -138,6 +138,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: 验证构建输入下载重试
+        run: python3 scripts/ci/tests/verified-download-retry-test.py
+
       - name: 配置 Go 1.27.1（编译内置 Tailscale）
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:

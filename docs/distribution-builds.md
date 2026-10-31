@@ -57,6 +57,8 @@ Android CI 在 PR 与手动触发时运行 `scripts/ci/android-static-checks.sh`
 
 两个渠道都随 APK 打包官方 CPython Android 嵌入包（版本与 SHA-256 见 `native-ui/app/python/python-android.properties`，与 python.org 发布页及 sigstore 包内摘要一致）。官方只提供 arm64-v8a 与 x86_64：设了 `abiFilters` 的变体（Debug、DeviceTest、MinifiedTest）按过滤准备；未设过滤的 Release 通用包只带 arm64-v8a，x86_64 Python 约 11.5 MB 只服务 x86_64 设备，不放进通用包。armeabi-v7a、x86 与 x86_64 设备上的 Release 没有 Python。
 
+构建输入下载遇到连接错误或 HTTP 408、429、5xx 时最多尝试三次；其他 HTTP 错误直接失败。成功响应仍须通过固定 SHA-256 校验才能写入目标，摘要不符不会重试或采用。下载重试回归可运行 `python3 scripts/ci/tests/verified-download-retry-test.py`。
+
 构建任务 `fetchPackagedPython<ABI>` 下载到 Gradle 用户目录的 `caches/infinity-python-android/`，摘要不符时失败且不落盘；缓存命中时不联网。离线构建可用 `-Pinfinity.pythonDistDir=<目录>` 指向已放好官方压缩包的目录，文件仍按 SHA-256 校验。`preparePackagedPython<ABI>` 把压缩包整理到 `app/build/generated/packagedPython/<ABI>/` 并作为生成的 jniLibs 目录接入，不入库：
 
 - `libpython3.14.so` 与 `lib*_python.so`（OpenSSL、SQLite）原样保留；

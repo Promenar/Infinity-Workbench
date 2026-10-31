@@ -59,7 +59,8 @@ public abstract class FetchVerifiedFile extends DefaultTask {
             HttpRequest request = HttpRequest.newBuilder(URI.create(getUrl().get()))
                     .timeout(Duration.ofMinutes(10))
                     .build();
-            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response = RetryingHttpFetch.send(client, request, 3, Duration.ofSeconds(2),
+                    message -> getLogger().warn(message));
             if (response.statusCode() != 200) {
                 response.body().close();
                 throw new GradleException("下载 " + getUrl().get() + " 失败：HTTP " + response.statusCode());
