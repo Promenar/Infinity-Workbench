@@ -185,6 +185,17 @@ discover_runner() {
     printf '%s\n' "${matches}"
 }
 
+instrument_timeout_for_test() {
+    if [[ -n "${ANDROID_E2E_TIMEOUT_SECONDS:-}" ]]; then
+        printf '%s\n' "${ANDROID_E2E_TIMEOUT_SECONDS}"
+    elif [[ "$1" == "workspace-filesystem-contracts" ]]; then
+        # 此套件包含单项 180 秒的千文件测试，外层还需覆盖其余用例和启动开销。
+        printf '%s\n' 240
+    else
+        printf '%s\n' "${INSTRUMENT_TIMEOUT_SECONDS}"
+    fi
+}
+
 run_test() {
     local name="$1"
     local runner="$2"
@@ -194,7 +205,7 @@ run_test() {
     local -a pipeline_status
     echo "运行设备测试：${name}"
     set +e
-    python3 "${TIMEOUT_HELPER}" "${INSTRUMENT_TIMEOUT_SECONDS}" adb shell am instrument -w -r "$@" "${runner}" \
+    python3 "${TIMEOUT_HELPER}" "$(instrument_timeout_for_test "${name}")" adb shell am instrument -w -r "$@" "${runner}" \
         2>&1 | redact_output | tee "${output_file}"
     pipeline_status=("${PIPESTATUS[@]}")
     status="${pipeline_status[0]}"

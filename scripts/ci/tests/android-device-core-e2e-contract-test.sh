@@ -12,6 +12,7 @@ RESTORE_RELAY_E2E_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/prom
 NOTIFICATION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNotificationE2eTest.kt"
 NEW_SESSION_E2E_TEST="${REPO_ROOT}/native-ui/mainactivity-e2e/src/main/java/com/promenar/infinity/MainActivityNewSessionE2eTest.kt"
 TIMEOUT_HELPER="${REPO_ROOT}/scripts/ci/run-with-timeout.py"
+WORKSPACE_DEVICE_TEST="${REPO_ROOT}/native-ui/app/src/androidTest/java/com/promenar/infinity/data/repository/AndroidSecureWorkspaceFileOpsTest.kt"
 
 fail() {
     echo "设备 CI 契约断言失败：$*" >&2
@@ -147,6 +148,29 @@ assert_not_contains "${MAIN_ACTIVITY_E2E_BUILD}" 'testProguardFiles'
     fail "mainactivity-e2e 不应保留 minifiedTest 专用 ProGuard 文件"
 assert_contains "${DEVICE_SCRIPT}" 'run-with-timeout.py'
 assert_contains "${DEVICE_SCRIPT}" 'INSTRUMENT_TIMEOUT_SECONDS'
+timeout_policy="$(sed -n '/^instrument_timeout_for_test() {/,/^}/p' "${DEVICE_SCRIPT}")"
+[[ -n "${timeout_policy}" ]] || fail "缺少设备测试超时策略"
+source /dev/stdin <<<"${timeout_policy}"
+INSTRUMENT_TIMEOUT_SECONDS=120
+unset ANDROID_E2E_TIMEOUT_SECONDS
+workspace_timeout="$(instrument_timeout_for_test workspace-filesystem-contracts)"
+junit_timeout="$(python3 - "${WORKSPACE_DEVICE_TEST}" <<'PY'
+import re
+import sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text()
+match = re.search(r'@Test\(timeout\s*=\s*([\d_]+)\)\s*fun productionRoomDirectoryRenameAndDeleteUseConstantTimeCleanReconcile', text)
+if not match:
+    raise SystemExit('缺少工作区设备测试的 JUnit 超时声明')
+print(int(match.group(1).replace('_', '')) // 1000)
+PY
+)"
+(( workspace_timeout >= junit_timeout + 30 )) || fail "工作区测试的外层超时必须覆盖 JUnit 上限及套件开销"
+[[ "$(instrument_timeout_for_test other-stage)" == 120 ]] || fail "其他测试的默认超时不应改变"
+ANDROID_E2E_TIMEOUT_SECONDS=300
+[[ "$(instrument_timeout_for_test workspace-filesystem-contracts)" == 300 ]] || fail "必须尊重显式超时配置"
+unset ANDROID_E2E_TIMEOUT_SECONDS
+assert_contains "${DEVICE_SCRIPT}" '$(instrument_timeout_for_test "${name}")'
 assert_contains "${DEVICE_SCRIPT}" 'python3 "${TIMEOUT_HELPER}"'
 assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-handler --timeout 5000'
 assert_contains "${DEVICE_SCRIPT}" 'adb shell cmd package wait-for-background-handler --timeout 5000'
