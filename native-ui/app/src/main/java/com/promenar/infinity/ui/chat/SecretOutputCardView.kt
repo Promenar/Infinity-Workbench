@@ -11,6 +11,7 @@ import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,7 +62,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -213,7 +218,9 @@ internal fun SecretOutputCardView(
     var savingAs by remember(key) { mutableStateOf(false) }
     val unavailable = stringResource(R.string.secret_output_unavailable)
     val clipLabel = stringResource(R.string.secret_output_clip_label)
-    val destroyed = destroyedLocally || card.slot.state != SecretSlotState.AVAILABLE
+    // 值已不在（销毁、重启清除或被同名新值替换）时卡片收成一行记录。
+    val spentState = if (destroyedLocally) SecretSlotState.DESTROYED else card.slot.state.takeIf { it != SecretSlotState.AVAILABLE }
+    val destroyed = spentState != null
 
     fun hide() {
         revealed?.fill('\u0000')
@@ -258,37 +265,42 @@ internal fun SecretOutputCardView(
         }, onError = { notice = it })
     }
 
-    SecretOutputCardContent(
-        card = card,
-        revealedText = revealed?.let { remember(it) { String(it) } },
-        secondsLeft = secondsLeft,
-        copied = copied,
-        destroyed = destroyed,
-        notice = notice,
-        onReveal = {
-            notice = null
-            authenticator.authenticate(card.slot.label, onSuccess = {
-                val value = actions.onReveal()
-                if (value == null) notice = unavailable
-                else {
-                    revealed?.fill('\u0000')
-                    revealed = value
+    AnimatedContent(targetState = spentState, contentKey = { it != null }, label = "secretOutputSpent") { spent ->
+        if (spent != null) {
+            SecretOutputSpentRow(card, spent, modifier)
+            return@AnimatedContent
+        }
+        SecretOutputCardContent(
+            card = card,
+            revealedText = revealed?.let { remember(it) { String(it) } },
+            secondsLeft = secondsLeft,
+            copied = copied,
+            notice = notice,
+            onReveal = {
+                notice = null
+                authenticator.authenticate(card.slot.label, onSuccess = {
+                    val value = actions.onReveal()
+                    if (value == null) notice = unavailable
+                    else {
+                        revealed?.fill('\u0000')
+                        revealed = value
+                    }
+                }, onError = { notice = it })
+            },
+            onHide = ::hide,
+            onCopy = {
+                notice = null
+                withValue { value ->
+                    SensitiveClipboard.copy(context, clipLabel, value)
+                    copied = true
                 }
-            }, onError = { notice = it })
-        },
-        onHide = ::hide,
-        onCopy = {
-            notice = null
-            withValue { value ->
-                SensitiveClipboard.copy(context, clipLabel, value)
-                copied = true
-            }
-        },
-        onSaveAs = { savingAs = true },
-        onDestroy = { confirmingDestroy = true },
-        modifier = modifier,
-    )
-    if (savingAs) {
+            },
+            onSaveAs = { savingAs = true },
+            onDestroy = { confirmingDestroy = true },
+            modifier = modifier,
+        )
+    }
+    if (savingAs && !destroyed) {
         SecretSaveAsSheet(
             card = card,
             loadTargets = actions.loadSaveTargets,
@@ -334,7 +346,6 @@ internal fun SecretOutputCardContent(
     revealedText: String?,
     secondsLeft: Int,
     copied: Boolean,
-    destroyed: Boolean,
     notice: String?,
     onReveal: () -> Unit,
     onHide: () -> Unit,
@@ -352,27 +363,21 @@ internal fun SecretOutputCardContent(
             .testTag(UiTags.CHAT_SECRET_OUTPUT_CARD),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, if (destroyed) MaterialTheme.colorScheme.outlineVariant else accent.copy(alpha = 0.45f)),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
     ) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Key, contentDescription = null, tint = if (destroyed) MaterialTheme.colorScheme.onSurfaceVariant else accent, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Key, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (revealedText != null) card.slot.label else stringResource(R.string.secret_output_title),
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (destroyed) MaterialTheme.colorScheme.onSurfaceVariant else accent,
+                    color = accent,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
                 if (revealedText != null) {
                     Text(
                         pluralStringResource(R.plurals.secret_output_hide_in, secondsLeft, secondsLeft),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else if (destroyed) {
-                    Text(
-                        stringResource(if (card.slot.state == SecretSlotState.CLEARED) R.string.secret_output_cleared else R.string.secret_output_destroyed),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -391,10 +396,7 @@ internal fun SecretOutputCardContent(
                 Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SecretInfoRow(
                         stringResource(R.string.secret_output_source),
-                        // 从会话记录恢复的槽位不知道长度，只显示来源。
-                        if (card.slot.byteLength > 0) {
-                            pluralStringResource(R.plurals.secret_output_bytes, card.slot.byteLength, secretSourceText(card.slot.source), card.slot.byteLength)
-                        } else secretSourceText(card.slot.source),
+                        pluralStringResource(R.plurals.secret_output_bytes, card.slot.byteLength, secretSourceText(card.slot.source), card.slot.byteLength),
                     )
                     SecretInfoRow(stringResource(R.string.secret_input_visibility), stringResource(R.string.secret_output_visibility_value))
                     SecretInfoRow(stringResource(R.string.secret_output_retain), stringResource(R.string.secret_output_retain_value))
@@ -409,7 +411,7 @@ internal fun SecretOutputCardContent(
                     Text(
                         text = revealedText ?: SECRET_MASK,
                         style = MaterialTheme.typography.bodyLarge.copy(fontFamily = InfinityMonospace),
-                        color = if (destroyed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag(UiTags.CHAT_SECRET_OUTPUT_VALUE),
                     )
                 }
@@ -422,28 +424,21 @@ internal fun SecretOutputCardContent(
                 if (revealedText == null) {
                     Button(
                         onClick = onReveal,
-                        enabled = !destroyed,
                         modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag(UiTags.CHAT_SECRET_OUTPUT_REVEAL),
                     ) { Text(stringResource(R.string.secret_output_reveal)) }
                     OutlinedButton(
                         onClick = onCopy,
-                        enabled = !destroyed,
                         modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag(UiTags.CHAT_SECRET_OUTPUT_COPY),
                     ) { Text(stringResource(R.string.secret_output_copy)) }
                     TextButton(
                         onClick = onSaveAs,
-                        enabled = !destroyed,
                         modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag(UiTags.CHAT_SECRET_OUTPUT_SAVE_AS),
                     ) { Text(stringResource(R.string.secret_output_save_as)) }
                     TextButton(
                         onClick = onDestroy,
-                        enabled = !destroyed,
                         modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag(UiTags.CHAT_SECRET_OUTPUT_DESTROY),
                     ) {
-                        Text(
-                            stringResource(R.string.secret_output_destroy),
-                            color = if (destroyed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.error,
-                        )
+                        Text(stringResource(R.string.secret_output_destroy), color = MaterialTheme.colorScheme.error)
                     }
                 } else {
                     FilledTonalButton(
@@ -480,6 +475,53 @@ internal fun SecretOutputCardContent(
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
+        }
+    }
+}
+
+/** 值已不在的输出卡：只留一行记录，样式与保密输入回执一致。 */
+@Composable
+internal fun SecretOutputSpentRow(card: SecretOutputCard, state: SecretSlotState, modifier: Modifier = Modifier) {
+    val status = stringResource(
+        when (state) {
+            SecretSlotState.CLEARED -> R.string.secret_output_cleared
+            SecretSlotState.REPLACED -> R.string.secret_output_replaced
+            else -> R.string.secret_output_destroyed
+        },
+    )
+    Surface(
+        modifier = modifier.fillMaxWidth().padding(vertical = 4.dp).testTag(UiTags.CHAT_SECRET_OUTPUT_CARD),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Key, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    card.slot.label,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "\$${card.slot.name} · ${card.purpose.ifBlank { secretSourceText(card.slot.source) }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // 状态限宽可折行，窄屏大字号时把宽度留给标题。
+            Text(
+                status,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(max = 112.dp),
+            )
         }
     }
 }

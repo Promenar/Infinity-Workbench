@@ -48,13 +48,14 @@ class SessionSecretVaultTest {
         }.message)
     }
 
-    @Test fun `覆盖值更新卡片且重复show调用幂等`() = runBlocking {
+    @Test fun `覆盖值让已有卡片失效且重复show调用幂等`() = runBlocking {
         vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "test-token".toByteArray())
         vault.show("s", "assistant", "call", "TOKEN", "查看令牌")
         vault.show("s", "assistant", "call", "TOKEN", "查看令牌")
         vault.put("s", "TOKEN", "新令牌", SecretSource.UserInput, "new-token-value".toByteArray())
-        assertEquals(1, vault.observeCards("s").first().size)
-        assertEquals(15, vault.observeCards("s").first().single().slot.byteLength)
+        val card = vault.observeCards("s").first().single()
+        assertEquals(SecretSlotState.REPLACED, card.slot.state)
+        assertEquals(10, card.slot.byteLength)
         assertEquals("new-token-value", vault.environment("s", "\$TOKEN")["TOKEN"])
     }
 
@@ -137,12 +138,35 @@ class SessionSecretVaultTest {
         }.message)
     }
 
-    @Test fun `恢复的卡片在同名槽位重新写入后随之可用`() = runBlocking {
+    @Test fun `恢复的卡片在同名槽位重新写入后保持已清除`() = runBlocking {
         vault.rememberUnavailable("s", "TOKEN", "恢复令牌", SecretSource.UserInput)
         vault.restoreCard("s", "assistant", "call", "TOKEN", "查看令牌")
         vault.put("s", "TOKEN", "新令牌", SecretSource.UserInput, "new-token-value".toByteArray())
         val card = vault.observeCards("s").first().single()
-        assertEquals(SecretSlotState.AVAILABLE, card.slot.state)
-        assertEquals(15, card.slot.byteLength)
+        assertEquals(SecretSlotState.CLEARED, card.slot.state)
+        assertEquals(0, card.slot.byteLength)
+        assertEquals(SecretSlotState.AVAILABLE, vault.observeSlots("s").first().single().state)
+    }
+
+    @Test fun `同名新值让旧卡失效且只有新卡跟随新值`() = runBlocking {
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "first-value".toByteArray())
+        vault.show("s", "a1", "old", "TOKEN", "第一次")
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "second-value-x".toByteArray())
+        vault.show("s", "a2", "new", "TOKEN", "第二次")
+        vault.destroy("s", "TOKEN")
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "third".toByteArray())
+        val cards = vault.observeCards("s").first().associateBy { it.toolCallId }
+        assertEquals(SecretSlotState.REPLACED, cards.getValue("old").slot.state)
+        assertEquals(11, cards.getValue("old").slot.byteLength)
+        assertEquals(SecretSlotState.DESTROYED, cards.getValue("new").slot.state)
+        assertEquals(SecretSlotState.AVAILABLE, vault.observeSlots("s").first().single().state)
+    }
+
+    @Test fun `重复展示同一调用沿用最新代次`() = runBlocking {
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "first-value".toByteArray())
+        vault.show("s", "a1", "call", "TOKEN", "查看")
+        vault.put("s", "TOKEN", "令牌", SecretSource.UserInput, "second-value".toByteArray())
+        vault.show("s", "a1", "call", "TOKEN", "查看")
+        assertEquals(SecretSlotState.AVAILABLE, vault.observeCards("s").first().single().slot.state)
     }
 }

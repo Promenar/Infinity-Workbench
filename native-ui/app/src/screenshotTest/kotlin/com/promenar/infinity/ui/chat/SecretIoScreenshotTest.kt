@@ -111,13 +111,12 @@ private fun SecretFrame(dark: Boolean = true, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun OutputCardPreview(card: SecretOutputCard, revealed: String? = null, copied: Boolean = false, destroyed: Boolean = false) =
+private fun OutputCardPreview(card: SecretOutputCard, revealed: String? = null, copied: Boolean = false) =
     SecretOutputCardContent(
         card = card,
         revealedText = revealed,
         secondsLeft = 28,
         copied = copied,
-        destroyed = destroyed,
         notice = null,
         onReveal = {},
         onHide = {},
@@ -152,13 +151,14 @@ fun secretInputReceiptsDarkPreview() = SecretFrame {
 }
 
 @PreviewTest
-@Preview(name = "保密输出卡 遮蔽 显示 已销毁 重启清除 深中411", widthDp = 411, heightDp = 1460, locale = "zh-rCN")
+@Preview(name = "保密输出卡 遮蔽 显示 失效记录 深中411", widthDp = 411, heightDp = 1080, locale = "zh-rCN")
 @Composable
 fun secretOutputCardDarkPreview() = SecretFrame {
     OutputCardPreview(GiteaCard)
     OutputCardPreview(GiteaCard, revealed = "Xq7r-Lm2V9pWt4Zs8KcN0bYhEe", copied = true)
-    OutputCardPreview(outputCard("Gitea 管理员 admin 的初始密码。", "Gitea 管理员初始密码", SecretSlotState.DESTROYED), destroyed = true)
-    OutputCardPreview(ClearedCard, destroyed = true)
+    SecretOutputSpentRow(GiteaCard, SecretSlotState.DESTROYED)
+    SecretOutputSpentRow(ClearedCard, SecretSlotState.CLEARED)
+    SecretOutputSpentRow(GiteaCard, SecretSlotState.REPLACED)
 }
 
 @PreviewTest
@@ -190,13 +190,13 @@ fun composerSecretGuardDarkPreview() = SecretFrame {
 }
 
 @PreviewTest
-@Preview(name = "Secret cards English 360dp font130", widthDp = 360, heightDp = 2500, locale = "en", fontScale = 1.3f)
+@Preview(name = "Secret cards English 360dp font130", widthDp = 360, heightDp = 2100, locale = "en", fontScale = 1.3f)
 @Composable
 fun secretIoEnglishLargeFontPreview() = SecretFrame {
     SecretInputCard(EnglishInput, onSubmit = { _, _ -> true }, onCancel = {}, onGitHubBrowserLogin = {}, nowMillis = { PreviewNow })
     OutputCardPreview(EnglishCard)
     OutputCardPreview(EnglishCard, revealed = "Xq7r-Lm2V9pWt4Zs8KcN0bYhEe", copied = true)
-    OutputCardPreview(EnglishCard.copy(slot = EnglishCard.slot.copy(byteLength = 0, state = SecretSlotState.CLEARED)), destroyed = true)
+    SecretOutputSpentRow(EnglishCard, SecretSlotState.CLEARED)
     ComposerSecretGuardContent(
         text = GuardText, matches = detectComposerSecrets(GuardText), modelName = "Opus 5.5", defaultUsername = "",
         saving = false, saveFailed = false, onSaveToGit = { _, _ -> }, onEdit = {}, onSendAnyway = {},

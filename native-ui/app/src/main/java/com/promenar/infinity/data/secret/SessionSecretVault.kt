@@ -11,17 +11,23 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** 仅持有本进程内的副本，公开流与卡片都不包含保密值。 */
+/**
+ * 仅持有本进程内的副本，公开流与卡片都不包含保密值。
+ * 同名槽位每次写入都是新的一代；输出卡只跟随展示时那一代的状态，同名新值不会让旧卡重新可用。
+ */
 class SessionSecretVault {
-    private class Entry(var slot: SecretSlot, var bytes: ByteArray?)
+    private class Entry(var slot: SecretSlot, var bytes: ByteArray?, val generation: Long)
     private class Session {
         val entries = linkedMapOf<String, Entry>()
         val slots = MutableStateFlow<List<SecretSlot>>(emptyList())
         val cards = MutableStateFlow<List<SecretOutputCard>>(emptyList())
+        /** 输出卡（助手消息 id 与工具调用 id）对应的槽位代次。 */
+        val cardGenerations = mutableMapOf<Pair<String, String>, Long>()
     }
 
     private val lock = Any()
     private val sessions = mutableMapOf<String, Session>()
+    private var nextGeneration = 0L
 
     fun put(sessionId: String, name: String, label: String, source: SecretSource, value: ByteArray) = synchronized(lock) {
         require(sessionId.isNotBlank()) { "SECRET_SESSION_INVALID" }
@@ -32,7 +38,7 @@ class SessionSecretVault {
         val copy = value.copyOf()
         val session = sessions.getOrPut(sessionId, ::Session)
         session.entries[name]?.bytes?.fill(0)
-        session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, value.size, SecretSlotState.AVAILABLE), copy)
+        session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, value.size, SecretSlotState.AVAILABLE), copy, ++nextGeneration)
         publish(session)
     }
 
@@ -47,7 +53,7 @@ class SessionSecretVault {
         require(label.isNotBlank() && label.length <= SecretIoLimits.MAX_LABEL_CHARS) { "SECRET_LABEL_INVALID" }
         val session = sessions.getOrPut(sessionId, ::Session)
         if (name !in session.entries) {
-            session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, 0, SecretSlotState.CLEARED), null)
+            session.entries[name] = Entry(SecretSlot(sessionId, name, label, source, 0, SecretSlotState.CLEARED), null, ++nextGeneration)
             publish(session)
         }
     }
@@ -58,7 +64,9 @@ class SessionSecretVault {
         require(assistantMessageId.isNotBlank() && toolCallId.isNotBlank()) { "SECRET_CARD_INVALID" }
         val session = sessions[sessionId] ?: return@synchronized
         val entry = session.entries[name] ?: return@synchronized
-        if (session.cards.value.any { it.assistantMessageId == assistantMessageId && it.toolCallId == toolCallId }) return@synchronized
+        val cardKey = assistantMessageId to toolCallId
+        if (cardKey in session.cardGenerations) return@synchronized
+        session.cardGenerations[cardKey] = entry.generation
         session.cards.value = session.cards.value + SecretOutputCard(sessionId, assistantMessageId, toolCallId, entry.slot, purpose)
     }
 
@@ -92,6 +100,7 @@ class SessionSecretVault {
         val session = sessions[sessionId] ?: throw IllegalStateException("SECRET_SLOT_UNAVAILABLE")
         val entry = session.entries[name]?.takeIf { it.bytes != null } ?: throw IllegalStateException("SECRET_SLOT_UNAVAILABLE")
         val card = SecretOutputCard(sessionId, assistantMessageId, toolCallId, entry.slot, purpose)
+        session.cardGenerations[assistantMessageId to toolCallId] = entry.generation
         session.cards.value = session.cards.value.filterNot {
             it.assistantMessageId == assistantMessageId && it.toolCallId == toolCallId
         } + card
@@ -116,6 +125,7 @@ class SessionSecretVault {
         session.entries.clear()
         session.slots.value = emptyList()
         session.cards.value = emptyList()
+        session.cardGenerations.clear()
     }
 
     /** 仅供遮蔽器短暂使用；调用方必须清零所有副本。 */
@@ -126,7 +136,13 @@ class SessionSecretVault {
     private fun publish(session: Session) {
         session.slots.value = session.entries.values.map { it.slot }
         session.cards.value = session.cards.value.map { card ->
-            session.entries[card.slot.name]?.let { card.copy(slot = it.slot) } ?: card
+            val entry = session.entries[card.slot.name]
+            val generation = session.cardGenerations[card.assistantMessageId to card.toolCallId]
+            when {
+                entry != null && entry.generation == generation -> card.copy(slot = entry.slot)
+                card.slot.state == SecretSlotState.AVAILABLE -> card.copy(slot = card.slot.copy(state = SecretSlotState.REPLACED))
+                else -> card
+            }
         }
     }
 
