@@ -27,6 +27,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Path
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.NoSuchFileException
 import java.security.MessageDigest
@@ -141,6 +142,7 @@ class RealPathExternalFolderBackend internal constructor(
                     val temporary = ".infinity-write-${UUID.randomUUID()}"
                     var temporaryId: String? = null
                     var isolated: String? = null
+                    var preserveTemporary = false
                     try {
                         internal.createFile(temporary).use { destination ->
                             temporaryId = destination.state().objectId
@@ -157,6 +159,9 @@ class RealPathExternalFolderBackend internal constructor(
                             val quarantine = ".infinity-replace-${UUID.randomUUID()}"
                             try { parent.moveNew(name, internal, quarantine) }
                             catch (failure: Throwable) {
+                                if (failure is AtomicMoveNotSupportedException && internal.stat(quarantine) == null) {
+                                    return@withInternalDirectory replaceChecked(parent, name, normalized, original, originalState!!, content)
+                                }
                                 if (internal.stat(quarantine) != null) recoverOrThrow(internal, quarantine, parent, name, normalized, failure)
                                 throw moveFailure(failure)
                             }
@@ -176,10 +181,12 @@ class RealPathExternalFolderBackend internal constructor(
                         }
                         published
                     } catch (exception: Throwable) {
+                        preserveTemporary = exception is ExternalFolderException && exception.code == "RECOVERY_REQUIRED" ||
+                            exception.suppressed.any { it is ExternalFolderException && it.code == "RECOVERY_REQUIRED" }
                         isolated?.let { recoverOrThrow(internal, it, parent, name, normalized, exception) }
                         throw exception
                     } finally {
-                        cleanupOwnedFile(internal, temporary, temporaryId)
+                        if (!preserveTemporary) cleanupOwnedFile(internal, temporary, temporaryId)
                     }
                 }
             }
@@ -220,7 +227,16 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    override suspend fun move(sourcePath: String, targetPath: String) = io {
+    override suspend fun move(sourcePath: String, targetPath: String) {
+        try { moveBound(sourcePath, targetPath) }
+        catch (_: CheckedMoveAcrossVolumes) {
+            // 普通 rename 明确未提交且跨卷，释放根锁后复用有界复制、校验和补偿。
+            com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_move_copy_fallback", mapOf("reason" to "EXDEV"))
+            ExternalTreeTransfer.move(this, sourcePath, this, targetPath)
+        }
+    }
+
+    private suspend fun moveBound(sourcePath: String, targetPath: String) = io {
         val source = mutationPath(sourcePath)
         val target = mutationPath(targetPath)
         if (forbiddenRoots.any { withinIgnoringCase(it, logical(source)) }) fail("INVALID_PATH", "移动范围包含受保护目录")
@@ -236,11 +252,12 @@ class RealPathExternalFolderBackend internal constructor(
                     currentCoroutineContext().ensureActive()
                     var moved: RealPathFileState? = null
                     try {
-                        sourceParent.moveNew(sourceName, targetParent, targetName)
+                        moveChecked(sourceParent, sourceName, targetParent, targetName, original, allowCopyFallback = true)
                         moved = targetParent.stat(targetName) ?: fail("CONFLICT", "移动目标在提交后消失")
                         requireSupported(moved)
                         if (!sameMovedObject(moved, original)) fail("CONFLICT", "移动来源在提交期间被替换或修改")
                     } catch (raw: Throwable) {
+                        if (raw is CheckedMoveAcrossVolumes) throw raw
                         val failure = moveFailure(raw)
                         if (moved == null && (raw is FileAlreadyExistsException || raw is NoSuchFileException ||
                                 raw is ErrnoException && raw.errno == OsConstants.EXDEV)) throw failure
@@ -276,7 +293,7 @@ class RealPathExternalFolderBackend internal constructor(
                         try {
                             copyNode(sourceParent, sourceName, source, internal, created)
                             currentCoroutineContext().ensureActive()
-                            try { internal.moveNew(created.name, targetParent, targetName) }
+                            try { moveChecked(internal, created.name, targetParent, targetName, checkNotNull(created.state)) }
                             catch (failure: Throwable) {
                                 if (internal.stat(created.name) == null && targetParent.stat(targetName)?.objectId == created.state?.objectId) {
                                     created.name = targetName
@@ -363,9 +380,10 @@ class RealPathExternalFolderBackend internal constructor(
         if (current.objectId != expected.objectId || current.isSymbolicLink || current.isDirectory != expected.isDirectory) {
             fail("RECOVERY_REQUIRED", "复制目标身份发生变化，已保留供人工核查")
         }
+        if (!sameMovedObject(current, expected)) fail("RECOVERY_REQUIRED", "复制目标被修改，已保留供人工核查")
         val quarantine = ".infinity-copy-cleanup-${UUID.randomUUID()}"
         try {
-            parent.moveNew(created.name, internal, quarantine)
+            moveChecked(parent, created.name, internal, quarantine, current)
             val isolated = internal.stat(quarantine) ?: fail("RECOVERY_REQUIRED", "复制清理目标消失")
             if (!sameMovedObject(isolated, expected)) fail("RECOVERY_REQUIRED", "复制清理目标被替换或修改")
             if (isolated.isDirectory) {
@@ -402,7 +420,7 @@ class RealPathExternalFolderBackend internal constructor(
     ) {
         try {
             if (source.stat(sourceName)?.objectId != expected.objectId) fail("RECOVERY_REQUIRED", "待恢复目标身份发生变化")
-            source.moveNew(sourceName, target, targetName)
+            moveChecked(source, sourceName, target, targetName, expected)
         } catch (recovery: Throwable) {
             if (source.stat(sourceName) == null && target.stat(targetName)?.let { sameMovedObject(it, expected) } == true) return
             failure.addSuppressed(recovery)
@@ -411,7 +429,7 @@ class RealPathExternalFolderBackend internal constructor(
         val restored = target.stat(targetName)
         if (restored != null && sameMovedObject(restored, expected)) return
         if (restored != null && source.stat(sourceName) == null) {
-            try { target.moveNew(targetName, source, sourceName) }
+            try { moveChecked(target, targetName, source, sourceName, restored) }
             catch (recovery: Throwable) { failure.addSuppressed(recovery) }
         }
         recoveryRequired(failure)
@@ -423,6 +441,8 @@ class RealPathExternalFolderBackend internal constructor(
     }
 
     private fun moveFailure(failure: Throwable): Throwable = when (failure) {
+        is CheckedMoveAcrossVolumes -> failure
+        is AtomicMoveNotSupportedException -> unsupportedMove(failure)
         is FileAlreadyExistsException -> ExternalFolderException("NAME_EXISTS", "同名文件或目录已经存在").apply { initCause(failure) }
         is NoSuchFileException -> ExternalFolderException("NOT_FOUND", "移动源或目标父目录不存在").apply { initCause(failure) }
         is IOException -> ExternalFolderException("IO", "原子移动失败，请检查存储卷与目录").apply { initCause(failure) }
@@ -430,12 +450,53 @@ class RealPathExternalFolderBackend internal constructor(
         else -> failure
     }
 
+    /** 能力错误只发生在提交前；放宽窗口限定为最终核对到 renameat 之间。 */
+    private fun moveChecked(source: BoundRealPathDirectory, sourceName: String, target: BoundRealPathDirectory,
+        targetName: String, expected: RealPathFileState, allowCopyFallback: Boolean = false) {
+        try { source.moveNew(sourceName, target, targetName) }
+        catch (failure: AtomicMoveNotSupportedException) {
+            if (source.stat(sourceName)?.revision != expected.revision) fail("CONFLICT", "移动来源在校验期间发生变化")
+            if (target.stat(targetName) != null) throw FileAlreadyExistsException(targetName)
+            try { source.moveReplacing(sourceName, target, targetName) }
+            catch (failure: ErrnoException) {
+                if (allowCopyFallback && failure.errno == OsConstants.EXDEV) throw CheckedMoveAcrossVolumes(failure)
+                throw failure
+            }
+        }
+    }
+
+    private class CheckedMoveAcrossVolumes(cause: ErrnoException) : IOException(cause)
+
+    private suspend fun replaceChecked(parent: BoundRealPathDirectory, name: String, path: String,
+        original: ExternalFolderEntry, originalState: RealPathFileState, content: ByteArray): ExternalFolderEntry {
+        val temporary = ".infinity-write-${UUID.randomUUID()}"
+        var temporaryId: String? = null
+        try {
+            // 普通替换的暂存与目标位于同一目录；复制完成前不触及原件。
+            parent.createFile(temporary).use { destination ->
+                temporaryId = destination.state().objectId
+                copyBounded(content.inputStream(), destination.output, content.size.toLong())
+                destination.sync()
+            }
+            val staged = snapshot(parent, temporary, path, hash = true) ?: fail("CONFLICT", "写入暂存已经消失")
+            if (parent.stat(temporary)?.objectId != temporaryId || staged.sha256 != sha256(content)) fail("CONFLICT", "写入暂存被修改或替换")
+            val current = snapshot(parent, name, path, hash = true)
+            if (current?.identity != original.identity || current?.sha256 != original.sha256) fail("CONFLICT", "文件在写入期间发生变化，请重新读取")
+            currentCoroutineContext().ensureActive()
+            if (parent.stat(name)?.revision != originalState.revision || parent.stat(temporary)?.revision != staged.identity) fail("CONFLICT", "文件在提交前发生变化")
+            parent.atomicReplace(temporary, name)
+            val published = snapshot(parent, name, path, hash = true) ?: fail("CONFLICT", "写入后的文档不可用")
+            if (parent.stat(name)?.objectId != temporaryId || published.sha256 != staged.sha256) fail("CONFLICT", "发布文档在校验期间发生变化")
+            return published
+        } finally { cleanupOwnedFile(parent, temporary, temporaryId) }
+    }
+
     private suspend fun publishNew(sourceParent: BoundRealPathDirectory, temporary: String, parent: BoundRealPathDirectory, name: String,
         restoringOriginal: Boolean = false): String {
         val captured = snapshot(sourceParent, temporary, name, hash = true) ?: fail("NOT_FOUND", "发布源文档不存在")
         val original = stateFor(sourceParent, temporary, captured)
         try {
-            sourceParent.moveNew(temporary, parent, name)
+            moveChecked(sourceParent, temporary, parent, name, original)
             return original.objectId
         } catch (failure: Throwable) {
             val remaining = sourceParent.stat(temporary)
@@ -449,21 +510,43 @@ class RealPathExternalFolderBackend internal constructor(
                 }
                 throw failure
             }
-            val unsupported = failure is ExternalFolderException && failure.code == "UNSUPPORTED" ||
+            val unsupported = failure is AtomicMoveNotSupportedException ||
+                failure is ExternalFolderException && failure.code == "UNSUPPORTED" ||
                 failure is ErrnoException && failure.errno in setOf(OsConstants.EXDEV, OsConstants.ENOSYS, OsConstants.EOPNOTSUPP)
             if (!unsupported || !sameMovedObject(remaining, original)) throw failure
         }
         var createdId: String? = null
+        var targetCreated = false
         try {
             // 无跨目录移动原语的卷使用独占新建，不覆盖并发新增的目录项。
             parent.createFile(name).use { destination ->
+                targetCreated = true
                 createdId = destination.state().objectId
-                sourceParent.openRead(temporary).use { source -> copyBounded(source.input, destination.output, Long.MAX_VALUE) }
+                sourceParent.openRead(temporary).use { source ->
+                    if (source.state().revision != original.revision) fail("CONFLICT", "发布源在复制前发生变化")
+                    copyBounded(source.input, destination.output, original.size)
+                    if (source.state().revision != original.revision) fail("CONFLICT", "发布源在复制期间发生变化")
+                }
                 destination.sync()
+            }
+            if (sourceParent.stat(temporary)?.revision != original.revision ||
+                snapshot(sourceParent, temporary, name, hash = true)?.sha256 != captured.sha256 ||
+                parent.stat(name)?.objectId != createdId || snapshot(parent, name, name, hash = true)?.sha256 != captured.sha256) {
+                fail("CONFLICT", "发布源或目标在复制期间发生变化")
             }
             return createdId!!
         } catch (exception: Throwable) {
-            cleanupOwnedFile(parent, name, createdId)
+            // 共享卷没有按身份删除目录项的原语；保留用户目标与暂存，避免清理窗口误删并发替换者。
+            val nameOccupied = !targetCreated && (exception is FileAlreadyExistsException ||
+                exception is ErrnoException && exception.errno == OsConstants.EEXIST ||
+                exception is ExternalFolderException && exception.code == "CONFLICT")
+            // createFile 可能在独占创建后、返回句柄前失败；只有明确的重名错误能证明未创建。
+            if (!nameOccupied) {
+                if (exception is CancellationException) {
+                    exception.addSuppressed(ExternalFolderException("RECOVERY_REQUIRED", "发布已取消，请保留目标与内部暂存供恢复"))
+                }
+                recoveryRequired(exception)
+            }
             throw exception
         }
     }
@@ -493,6 +576,10 @@ class RealPathExternalFolderBackend internal constructor(
         try {
             try { parent.moveNew(name, internal, quarantine) }
             catch (failure: Throwable) {
+                if (failure is AtomicMoveNotSupportedException && internal.stat(quarantine) == null) {
+                    deleteChecked(parent, name, path, internal, original, state)
+                    return
+                }
                 if (internal.stat(quarantine) != null) recoverOrThrow(internal, quarantine, parent, name, path, failure)
                 throw moveFailure(failure)
             }
@@ -515,6 +602,29 @@ class RealPathExternalFolderBackend internal constructor(
         } catch (exception: Throwable) {
             if (isolated) recoverOrThrow(internal, quarantine, parent, name, path, exception)
             throw exception
+        }
+    }
+
+    private suspend fun deleteChecked(parent: BoundRealPathDirectory, name: String, path: String,
+        internal: BoundRealPathDirectory, expected: ExternalFolderEntry, state: RealPathFileState) {
+        val current = snapshot(parent, name, path, hash = true)
+        if (current?.identity != expected.identity || current?.sha256 != expected.sha256 ||
+            parent.stat(name)?.revision != state.revision) fail("CONFLICT", "删除目标在校验期间发生变化")
+        if (state.isDirectory) {
+            parent.openDirectory(name).use { directory ->
+                if (directory.state().objectId != state.objectId) fail("CONFLICT", "删除目录被替换")
+                for (child in directory.names()) {
+                    if (!visibleName(child)) fail("INVALID_PATH", "删除范围包含内部恢复文件或保留目录")
+                    deleteBound(directory, child, join(path, child), internal)
+                }
+                currentCoroutineContext().ensureActive()
+                if (parent.stat(name)?.objectId != state.objectId) fail("CONFLICT", "删除目录被替换")
+                parent.deleteDirectory(name)
+            }
+        } else {
+            currentCoroutineContext().ensureActive()
+            if (parent.stat(name)?.revision != state.revision) fail("CONFLICT", "删除目标在提交前发生变化")
+            parent.deleteFile(name)
         }
     }
 
@@ -631,9 +741,11 @@ class RealPathExternalFolderBackend internal constructor(
     private suspend fun <T> withRoot(action: suspend (BoundRealPathDirectory) -> T): T {
         val opened = mutableListOf<BoundRealPathDirectory>()
         var rootResolved = false
+        var componentIndex = 0
         try {
             var directory = fileSystem.openFileSystemRoot().also { opened.add(it) }
             for (component in rootPath) {
+                componentIndex++
                 currentCoroutineContext().ensureActive()
                 directory = directory.openDirectory(component.toString()).also { opened.add(it) }
             }
@@ -642,15 +754,24 @@ class RealPathExternalFolderBackend internal constructor(
             return action(directory)
         } catch (exception: ExternalFolderException) {
             if (!rootResolved && exception.code in setOf("NOT_FOUND", "NOT_DIRECTORY")) {
+                rootResolutionFailed(componentIndex, exception.code, null)
                 throw ExternalFolderException("UNAVAILABLE", "挂载目录或存储卷不可用").apply { initCause(exception) }
             }
             throw exception
         } catch (exception: ErrnoException) {
             if (!rootResolved && exception.errno in setOf(OsConstants.ENOENT, OsConstants.ENOTDIR)) {
+                rootResolutionFailed(componentIndex, null, exception.errno)
                 throw ExternalFolderException("UNAVAILABLE", "挂载目录或存储卷不可用").apply { initCause(exception) }
             }
             throw exception
         } finally { opened.asReversed().forEach { it.close() } }
+    }
+
+    private fun rootResolutionFailed(componentIndex: Int, code: String?, errno: Int?) {
+        com.promenar.infinity.utils.InfinityLogger.diagnostic("workspace.real_path_root_unavailable", mapOf(
+            "component_index" to componentIndex, "component_count" to rootPath.nameCount,
+            "code" to code, "errno" to errno,
+        ))
     }
 
     private suspend fun <T> withDirectory(root: BoundRealPathDirectory, path: String, excludedDirectoryId: String? = null, action: suspend (BoundRealPathDirectory) -> T): T {
@@ -687,7 +808,7 @@ class RealPathExternalFolderBackend internal constructor(
                 withInternalDirectory(root) { internal ->
                     withLegacyDirectory(internal, parentPath) { target ->
                         if (target.stat(name) != null) fail("CONFLICT", "旧暂存迁移目标已经存在，已保留原副本")
-                        parent.moveNew(name, target, name)
+                        moveChecked(parent, name, target, name, original)
                         val moved = target.stat(name) ?: fail("CONFLICT", "旧暂存迁移后消失")
                         if (!sameMovedObject(moved, original)) {
                             val failure = ExternalFolderException("CONFLICT", "旧暂存在迁移期间发生变化")
@@ -766,6 +887,10 @@ class RealPathExternalFolderBackend internal constructor(
             } catch (exception: FileAlreadyExistsException) {
                 // 不覆盖发布时目标名已被并发创建者占用，与 EEXIST 一致按冲突处理，双方内容均保留。
                 throw ExternalFolderException("CONFLICT", "目标名称在写入期间被占用，请重新读取").apply { initCause(exception) }
+            } catch (exception: AtomicMoveNotSupportedException) {
+                throw unsupportedMove(exception)
+            } catch (exception: CheckedMoveAcrossVolumes) {
+                throw exception
             } catch (exception: IOException) {
                 throw ExternalFolderException("UNAVAILABLE", "存储操作失败，请检查目录与授权").apply { initCause(exception) }
             }
@@ -775,6 +900,8 @@ class RealPathExternalFolderBackend internal constructor(
         private const val STAT_HASH_LIMIT = 1024L * 1024
         private val locks = ConcurrentHashMap<String, Mutex>()
         private fun fail(code: String, message: String): Nothing = throw ExternalFolderException(code, message)
+        private fun unsupportedMove(cause: AtomicMoveNotSupportedException) =
+            ExternalFolderException("UNSUPPORTED", "当前存储不支持保持文件身份的原子移动").apply { initCause(cause) }
     }
 }
 
@@ -803,6 +930,7 @@ internal interface BoundRealPathDirectory : Closeable {
     fun createDirectory(name: String)
     fun atomicReplace(source: String, target: String)
     fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String)
+    fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String)
     fun linkNew(source: String, target: String): Boolean
     fun deleteFile(name: String)
     fun deleteDirectory(name: String)
@@ -864,6 +992,12 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
         override fun createDirectory(name: String) = Os.mkdir(child(name), 448)
         override fun atomicReplace(source: String, target: String) = Os.rename(child(source), child(target))
         override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            move(source, targetDirectory, target, replace = false)
+        }
+        override fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            move(source, targetDirectory, target, replace = true)
+        }
+        private fun move(source: String, targetDirectory: BoundRealPathDirectory, target: String, replace: Boolean) {
             val destination = targetDirectory as? AndroidDirectory ?: throw ExternalFolderException("UNSUPPORTED", "移动目标不是同类目录句柄")
             // 原有句柄使用 O_PATH；桥接还需 fsync，另开绑定到同一目录的可读 FD。
             val sourceFd = Os.open(base, OsConstants.O_RDONLY or OsConstants.O_CLOEXEC, 0)
@@ -872,7 +1006,10 @@ internal object AndroidRealPathFileSystem : RealPathFileSystem {
                 try {
                     val sourceDescriptor = ParcelFileDescriptor.dup(sourceFd)
                     sourceDescriptor.use { from ->
-                        ParcelFileDescriptor.dup(targetFd).use { to -> AndroidWorkspaceFileMoves.moveNoReplace(from.fd, source, to.fd, target) }
+                        ParcelFileDescriptor.dup(targetFd).use { to ->
+                            if (replace) AndroidWorkspaceFileMoves.moveReplacing(from.fd, source, to.fd, target)
+                            else AndroidWorkspaceFileMoves.moveNoReplace(from.fd, source, to.fd, target)
+                        }
                     }
                 } finally { Os.close(targetFd) }
             } finally { Os.close(sourceFd) }

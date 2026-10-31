@@ -27,6 +27,7 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
     val reads = mutableListOf<Path>()
     var beforeOperation: ((String, Path) -> Unit)? = null
     var supportHardLinks = false
+    var supportAtomicMoves = true
 
     fun backend(root: File, forbiddenRoots: Set<Path> = emptySet(), permissionCheck: () -> Boolean = { true }): RealPathExternalFolderBackend =
         RealPathExternalFolderBackend(root, forbiddenRoots, permissionCheck, this)
@@ -84,6 +85,7 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
             Files.move(child(source), child(target), ATOMIC_MOVE, REPLACE_EXISTING)
         }
         override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            if (!supportAtomicMoves) throw java.nio.file.AtomicMoveNotSupportedException(source, target, "测试卷不支持原子不覆盖移动")
             val operation = when {
                 target.startsWith(".infinity-delete-") -> "delete"
                 target.startsWith(".infinity-replace-") -> "replace"
@@ -97,6 +99,11 @@ internal class JvmBoundRealPathFileSystem : RealPathFileSystem {
             if (!supportHardLinks) return false
             Files.createLink(child(target), child(source))
             return true
+        }
+        override fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String) {
+            beforeOperation?.invoke("checked-move", openedPath.resolve(source))
+            val destination = targetDirectory as Directory
+            Files.move(child(source), destination.child(target), ATOMIC_MOVE, REPLACE_EXISTING)
         }
         override fun deleteFile(name: String) {
             beforeOperation?.invoke("delete", openedPath.resolve(name))

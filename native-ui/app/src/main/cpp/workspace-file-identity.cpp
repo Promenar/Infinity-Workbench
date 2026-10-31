@@ -117,13 +117,51 @@ Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeMoveN
     }
     if (renameat2(source.get(), from.c_str(), target.get(), to.c_str(), RENAME_NOREPLACE) != 0) {
         const int error = errno;
-        if (error == EEXIST || error == ENOTEMPTY) {
+        if (error == EINVAL || error == ENOSYS || error == EOPNOTSUPP) {
+            // 只标记移动提交前的能力错误；同步失败不能触发复制式发布。
+            jclass type = env->FindClass("java/nio/file/AtomicMoveNotSupportedException");
+            if (type == nullptr) return;
+            jmethodID constructor = env->GetMethodID(type, "<init>", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+            if (constructor == nullptr) return;
+            char reason[128];
+            std::snprintf(reason, sizeof(reason), "Atomic no-replace move unavailable (errno=%d)", error);
+            jstring message = env->NewStringUTF(reason);
+            if (message == nullptr) return;
+            auto failure = static_cast<jthrowable>(env->NewObject(type, constructor, nullptr, nullptr, message));
+            if (failure != nullptr) env->Throw(failure);
+        } else if (error == EEXIST || error == ENOTEMPTY) {
             jclass type = env->FindClass("java/nio/file/FileAlreadyExistsException");
             if (type != nullptr) env->ThrowNew(type, "工作区移动目标已存在，两个节点均保留");
         } else if (error == ENOENT) {
             jclass type = env->FindClass("java/nio/file/NoSuchFileException");
             if (type != nullptr) env->ThrowNew(type, "工作区移动源或父目录不存在");
         } else fail(env, "不覆盖移动", error);
+        return;
+    }
+    if (fsync(source.get()) != 0) { fail(env, "同步移动源目录", errno); return; }
+    if (fsync(target.get()) != 0) fail(env, "同步移动目标目录", errno);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_promenar_infinity_data_repository_AndroidWorkspaceFileMoves_nativeMoveReplacing(
+        JNIEnv* env, jobject, jint sourceFd, jbyteArray sourceName, jint targetFd, jbyteArray targetName) {
+    OwnedFile source(sourceFd), target(targetFd);
+    if (!source.directory() || !target.directory()) { fail(env, "打开移动目录FD", errno ? errno : EINVAL); return; }
+    std::string from, to;
+    if (!fileName(env, sourceName, from) || !fileName(env, targetName, to)) {
+        if (!env->ExceptionCheck()) fail(env, "校验移动文件名", EINVAL);
+        return;
+    }
+    if (renameat(source.get(), from.c_str(), target.get(), to.c_str()) != 0) {
+        const int error = errno;
+        jclass type = env->FindClass("android/system/ErrnoException");
+        if (type == nullptr) return;
+        jmethodID constructor = env->GetMethodID(type, "<init>", "(Ljava/lang/String;I)V");
+        if (constructor == nullptr) return;
+        jstring action = env->NewStringUTF("renameat");
+        if (action == nullptr) return;
+        auto failure = static_cast<jthrowable>(env->NewObject(type, constructor, action, error));
+        if (failure != nullptr) env->Throw(failure);
         return;
     }
     if (fsync(source.get()) != 0) { fail(env, "同步移动源目录", errno); return; }

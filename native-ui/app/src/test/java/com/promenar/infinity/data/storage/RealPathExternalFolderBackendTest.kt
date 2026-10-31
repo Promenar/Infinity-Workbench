@@ -13,11 +13,257 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.AtomicMoveNotSupportedException
 
 class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     override fun createBackend(): ExternalFolderBackend = JvmBoundRealPathFileSystem().backend(temporaryFolder.newFolder().canonicalFile)
+
+    @Test fun `不支持原子不覆盖移动时独占发布新文件`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val backend = withoutAtomicMoves(root)
+        backend.write("/file", "complete".toByteArray(), createOnly = true)
+        assertEquals("complete", File(root, "file").readText())
+        assertEquals(listOf(".gitignore"), File(root, ".infinity").list()!!.toList())
+    }
+
+    @Test fun `独占发布保留并发占用目标的内容`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        fs.beforeOperation = { operation, path ->
+            if (operation == "create" && path == File(root, "file").toPath()) File(root, "file").writeText("concurrent")
+        }
+        expectCode("CONFLICT") { withoutAtomicMoves(root, fs).write("/file", "ours".toByteArray(), createOnly = true) }
+        assertEquals("concurrent", File(root, "file").readText())
+    }
+
+    @Test fun `独占复制期间目标被替换时保留替换者且返回冲突`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        var replaced = false
+        fs.beforeOperation = { operation, path ->
+            val target = File(root, "file")
+            if (!replaced && operation == "read" && path.fileName.toString().startsWith(".infinity-write-") && target.exists()) {
+                replaced = true
+                Files.move(target.toPath(), File(root, "saved").toPath())
+                target.writeText("concurrent")
+            }
+        }
+        expectCode("RECOVERY_REQUIRED") { withoutAtomicMoves(root, fs).write("/file", "ours".toByteArray(), createOnly = true) }
+        assertTrue(replaced)
+        assertEquals("concurrent", File(root, "file").readText())
+        assertEquals("ours", File(root, "saved").readText())
+    }
+
+    @Test fun `独占复制前发布源被修改时保留目标与暂存供恢复`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        var modified = false
+        fs.beforeOperation = { operation, path ->
+            if (!modified && operation == "read" && path.fileName.toString().startsWith(".infinity-write-") && File(root, "file").exists()) {
+                modified = true
+                path.toFile().writeText("changed-source")
+            }
+        }
+        expectCode("RECOVERY_REQUIRED") { withoutAtomicMoves(root, fs).write("/file", "ours".toByteArray(), createOnly = true) }
+        assertTrue(modified)
+        assertTrue(File(root, "file").exists())
+        assertTrue(File(root, ".infinity").list()!!.any { it.startsWith(".infinity-write-") })
+    }
+
+    @Test fun `独占发布失败不按路径清理用户目标`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        var targetCleanupAttempted = false
+        fs.beforeOperation = { operation, path ->
+            if (operation == "delete" && path == File(root, "file").toPath()) targetCleanupAttempted = true
+            if (operation == "read" && path.fileName.toString().startsWith(".infinity-write-") && File(root, "file").exists()) {
+                throw IOException("复制读取失败")
+            }
+        }
+        expectCode("RECOVERY_REQUIRED") { withoutAtomicMoves(root, fs).write("/file", "ours".toByteArray(), createOnly = true) }
+        assertTrue(!targetCleanupAttempted)
+        assertTrue(File(root, "file").exists())
+        val temporary = File(root, ".infinity").listFiles()!!.single { it.name.startsWith(".infinity-write-") }
+        assertEquals("ours", temporary.readText())
+    }
+
+    @Test fun `独占发布被取消时仍抛取消并保留恢复副本`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val fs = JvmBoundRealPathFileSystem()
+        fs.beforeOperation = { operation, path ->
+            if (operation == "read" && path.fileName.toString().startsWith(".infinity-write-") && File(root, "file").exists()) {
+                throw kotlinx.coroutines.CancellationException("取消复制")
+            }
+        }
+        val failure = runCatching { withoutAtomicMoves(root, fs).write("/file", "ours".toByteArray(), createOnly = true) }.exceptionOrNull()
+        assertTrue(failure is kotlinx.coroutines.CancellationException)
+        assertTrue(generateSequence(failure) { it.cause }.any { cause ->
+            cause.suppressed.any { it is ExternalFolderException && it.code == "RECOVERY_REQUIRED" }
+        })
+        assertTrue(File(root, "file").exists())
+        val temporary = File(root, ".infinity").listFiles()!!.single { it.name.startsWith(".infinity-write-") }
+        assertEquals("ours", temporary.readText())
+    }
+
+    @Test fun `不支持原子不覆盖移动的卷可覆盖移动复制及递归删除`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val backend = withoutAtomicMoves(root, allowCheckedMove = true)
+        backend.createDirectory("/notes")
+        val original = backend.write("/notes/file", "original".toByteArray(), createOnly = true)
+        backend.write("/notes/file", "changed".toByteArray(), original.sha256)
+        backend.move("/notes/file", "/notes/renamed")
+        backend.move("/notes", "/moved")
+        backend.copy("/moved", "/copied")
+        assertEquals("changed", File(root, "moved/renamed").readText())
+        assertEquals("changed", File(root, "copied/renamed").readText())
+        backend.delete("/moved/renamed")
+        backend.delete("/copied")
+        backend.delete("/moved")
+        assertTrue(backend.list("/").isEmpty())
+        assertEquals(listOf(".gitignore"), File(root, ".infinity").list()!!.toList())
+    }
+
+    @Test fun `放宽覆盖在替换前保持原文且同目录暂存完整内容`() = runBlocking {
+        for (failCommit in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            File(root, "notes").mkdir()
+            val original = File(root, "notes/file").apply { writeText("original") }
+            val fs = JvmBoundRealPathFileSystem()
+            var checked = false
+            fs.beforeOperation = { operation, path ->
+                if (operation == "replace" && path == original.toPath()) {
+                    checked = true
+                    assertEquals("original", original.readText())
+                    val staged = original.parentFile!!.listFiles()!!.single { it.name.startsWith(".infinity-write-") }
+                    assertEquals("complete", staged.readText())
+                    if (failCommit) throw IOException("替换尚未提交")
+                }
+            }
+            val backend = withoutAtomicMoves(root, fs, allowCheckedMove = true)
+            val hash = backend.stat("/notes/file")!!.sha256
+            if (failCommit) expectCode("UNAVAILABLE") { backend.write("/notes/file", "complete".toByteArray(), hash) }
+            else backend.write("/notes/file", "complete".toByteArray(), hash)
+            assertTrue(checked)
+            assertEquals(if (failCommit) "original" else "complete", original.readText())
+            assertEquals(listOf("file"), original.parentFile!!.list()!!.toList())
+        }
+    }
+
+    @Test fun `普通移动失败时保留源且不伪报成功`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        File(root, "source").writeText("original")
+        val fs = JvmBoundRealPathFileSystem()
+        fs.beforeOperation = { operation, _ -> if (operation == "checked-move") throw IOException("移动未提交") }
+        expectCode("IO") { withoutAtomicMoves(root, fs, allowCheckedMove = true).move("/source", "/target") }
+        assertEquals("original", File(root, "source").readText())
+        assertTrue(!File(root, "target").exists())
+    }
+
+    @Test fun `普通复制发布已提交但同步失败时清理本次副本`() = runBlocking {
+        for (directory in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            val source = File(root, "source")
+            if (directory) source.mkdir()
+            val file = if (directory) File(source, "child") else source
+            file.writeText("original")
+            var failed = false
+            val backend = withoutAtomicMoves(root, allowCheckedMove = true, afterCheckedMove = { name, _ ->
+                if (!failed && name.startsWith(".infinity-copy-")) {
+                    failed = true
+                    throw IOException("普通移动已提交，目录同步失败")
+                }
+            })
+            expectCode("IO") { backend.copy("/source", "/target") }
+            assertTrue(failed)
+            assertEquals("original", file.readText())
+            assertTrue(!File(root, "target").exists())
+            assertEquals(listOf(".gitignore"), File(root, ".infinity").list()!!.toList())
+        }
+    }
+
+    @Test fun `放宽覆盖在能力探测后拒绝被替换的原件`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val target = File(root, "file").apply { writeText("original") }
+        var changed = false
+        val backend = withoutAtomicMoves(root, allowCheckedMove = true, beforeUnsupportedMove = { source, _ ->
+            if (source == "file" && !changed) {
+                changed = true
+                Files.move(target.toPath(), File(root, "saved").toPath())
+                target.writeText("concurrent")
+            }
+        })
+        val hash = backend.stat("/file")!!.sha256
+        expectCode("CONFLICT") { backend.write("/file", "ours".toByteArray(), hash) }
+        assertEquals("concurrent", target.readText())
+        assertEquals("original", File(root, "saved").readText())
+    }
+
+    @Test fun `放宽移动删除在能力探测后拒绝身份变化`() = runBlocking {
+        for (deleting in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            val target = File(root, "file").apply { writeText("original") }
+            var changed = false
+            val backend = withoutAtomicMoves(root, allowCheckedMove = true, beforeUnsupportedMove = { source, _ ->
+                if (source == "file" && !changed) {
+                    changed = true
+                    Files.move(target.toPath(), File(root, "saved").toPath())
+                    target.writeText("concurrent")
+                }
+            })
+            expectCode("CONFLICT") { if (deleting) backend.delete("/file") else backend.move("/file", "/target") }
+            assertEquals("concurrent", target.readText())
+            assertEquals("original", File(root, "saved").readText())
+            assertTrue(!File(root, "target").exists())
+        }
+    }
+
+    @Test fun `放宽移动和新建在能力探测后拒绝被占用的目标名`() = runBlocking {
+        for (creating in listOf(false, true)) {
+            val root = temporaryFolder.newFolder().canonicalFile
+            File(root, "source").writeText("original")
+            val backend = withoutAtomicMoves(root, allowCheckedMove = true, beforeUnsupportedMove = { _, target ->
+                if (target == "target") File(root, "target").writeText("concurrent")
+            })
+            expectCode(if (creating) "CONFLICT" else "NAME_EXISTS") {
+                if (creating) backend.write("/target", "ours".toByteArray(), createOnly = true)
+                else backend.move("/source", "/target")
+            }
+            assertEquals("concurrent", File(root, "target").readText())
+            assertEquals("original", File(root, "source").readText())
+        }
+    }
+
+    @Test fun `独占创建后返回句柄前失败时保留完整暂存`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        expectCode("RECOVERY_REQUIRED") { withoutAtomicMoves(root, failAfterCreate = true).write("/file", "ours".toByteArray(), createOnly = true) }
+        assertTrue(File(root, "file").exists())
+        val temporary = File(root, ".infinity").listFiles()!!.single { it.name.startsWith(".infinity-write-") }
+        assertEquals("ours", temporary.readText())
+    }
+
+    private fun withoutAtomicMoves(root: File, base: JvmBoundRealPathFileSystem = JvmBoundRealPathFileSystem(), failAfterCreate: Boolean = false, allowCheckedMove: Boolean = false,
+        beforeUnsupportedMove: (String, String) -> Unit = { _, _ -> },
+        afterCheckedMove: (String, String) -> Unit = { _, _ -> }): RealPathExternalFolderBackend {
+        fun wrap(directory: BoundRealPathDirectory): BoundRealPathDirectory {
+            return PublishDirectory(directory, ::wrap, create = { name ->
+                    val file = directory.createFile(name)
+                    if (failAfterCreate && name == "file") { file.close(); throw IOException("独占创建后读取状态失败") }
+                    file
+                }, ordinaryMove = { source, targetDirectory, target ->
+                    if (!allowCheckedMove) throw AtomicMoveNotSupportedException(null, null, "普通移动也不可用")
+                    directory.moveReplacing(source, (targetDirectory as PublishDirectory).delegate, target)
+                    afterCheckedMove(source, target)
+                }) { source, _, target ->
+                beforeUnsupportedMove(source, target)
+                throw AtomicMoveNotSupportedException(null, null, "存储卷不支持原子不覆盖移动")
+            }
+        }
+        return RealPathExternalFolderBackend(root, emptySet(), { true }, object : RealPathFileSystem {
+            override fun openFileSystemRoot() = wrap(base.openFileSystemRoot())
+        })
+    }
 
     @Test fun `写入删除复制的暂存与隔离仅位于根隐藏目录`() = runBlocking {
         val root = temporaryFolder.newFolder().canonicalFile
@@ -206,10 +452,16 @@ class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
     private class PublishDirectory(
         val delegate: BoundRealPathDirectory,
         private val wrap: (BoundRealPathDirectory) -> BoundRealPathDirectory,
+        private val create: ((String) -> BoundRealPathWrite)? = null,
+        private val ordinaryMove: ((String, BoundRealPathDirectory, String) -> Unit)? = null,
         private val move: (String, BoundRealPathDirectory, String) -> Unit,
     ) : BoundRealPathDirectory by delegate {
         override fun openDirectory(name: String) = wrap(delegate.openDirectory(name))
         override fun moveNew(source: String, targetDirectory: BoundRealPathDirectory, target: String) = move(source, targetDirectory, target)
+        override fun createFile(name: String) = create?.invoke(name) ?: delegate.createFile(name)
+        override fun moveReplacing(source: String, targetDirectory: BoundRealPathDirectory, target: String) =
+            ordinaryMove?.invoke(source, targetDirectory, target) ?:
+                delegate.moveReplacing(source, (targetDirectory as? PublishDirectory)?.delegate ?: targetDirectory, target)
     }
 
     @Test fun `目标祖先目录实际绑定到来源子目录时拒绝复制与移动`() = runBlocking {
