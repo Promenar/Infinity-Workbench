@@ -10,6 +10,8 @@ import com.promenar.infinity.data.workspace.SessionPrivateWorkspacePaths
 import com.promenar.infinity.data.workspace.SessionPrivateWorkspaceRepository
 import com.promenar.infinity.data.workspace.SessionPrivateWorkspaceBackend
 import com.promenar.infinity.data.storage.isUserSkills
+import com.promenar.infinity.data.storage.streamHash
+import com.promenar.infinity.data.storage.produceExternalStream
 import com.promenar.infinity.data.storage.ExternalTreeTransfer
 import com.promenar.infinity.data.storage.externalSnapshotMime
 import com.promenar.infinity.data.storage.requireWritable
@@ -257,8 +259,7 @@ class MountedWorkspaceSkill(
             sourceAlias != null && targetAlias != null && bindings[sourceAlias] != null && bindings[sourceAlias] == bindings[targetAlias]
         }
         if (expected != null) {
-            // 跨命名空间仍走有界快照；默认流实现可能整块读取，不能放宽它的内存预算。
-            val hash = sourceBackend.readStream(source, if (sameMount) Long.MAX_VALUE else ExternalTreeTransfer.MAX_BYTES) { input ->
+            val hash = sourceBackend.readStream(source, Long.MAX_VALUE) { input ->
                 val digest = MessageDigest.getInstance("SHA-256")
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
@@ -285,13 +286,24 @@ class MountedWorkspaceSkill(
             false
         }
         if (nativeMoved) return ToolResult("mount_move", "已移动（原位重命名） / Moved (in-place rename)：$source → $destination")
-        val backupId = if (sourceMounted) mounts.backupBeforeMove(context.sessionId, source) else null
-        if (linux != null) {
-            // 快照仅校验根下名称；实际路径已由 Linux 命名空间核验，每次 IO 仍通过原安全后端。
-            ExternalTreeTransfer.move(LinuxToolTransferBackend(sourceBackend, source), "/item", LinuxToolTransferBackend(targetBackend, destination), "/item", expected)
-        } else ExternalTreeTransfer.move(sourceBackend, source, targetBackend, destination, expected)
+        try {
+            if (linux != null) {
+                // 传输只校验根下名称；实际路径已由 Linux 命名空间核验，每次 IO 仍通过原安全后端。
+                try {
+                    ExternalTreeTransfer.move(LinuxToolTransferBackend(sourceBackend, source), "/item", LinuxToolTransferBackend(targetBackend, destination), "/item", expected)
+                } catch (failure: ExternalFolderException) {
+                    if (failure.code == "RECOVERY_REQUIRED") throw ExternalFolderException(failure.code,
+                        "移动补偿无法安全完成，请核查来源 $source 与目标 $destination / Check source and destination").apply { initCause(failure) }
+                    throw failure
+                }
+            } else ExternalTreeTransfer.move(sourceBackend, source, targetBackend, destination, expected)
+        } catch (failure: Exception) {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                try { privateBackend.confirmCreated() } catch (confirmation: Exception) { failure.addSuppressed(confirmation) }
+            }
+            throw failure
+        }
         val indexed = privateBackend.confirmCreated()
-        if (backupId != null) mounts.completeMoveBackup(context.sessionId, backupId)
         return ToolResult("mount_move", "已复制、校验并移动 / Copied, verified and moved：$source → $destination" + if (indexed) "" else "；文件已保存，索引等待重试")
     }
 
@@ -305,18 +317,26 @@ class MountedWorkspaceSkill(
     }
 }
 
-private class LinuxToolTransferBackend(private val original: ExternalFolderBackend, private val root: String) : ExternalFolderBackend {
+internal class LinuxToolTransferBackend(private val original: ExternalFolderBackend, private val root: String) : ExternalFolderBackend {
     private fun actual(path: String): String {
         val normalized = ExternalFolderPaths.normalize(path)
-        if (normalized != "/item" && !normalized.startsWith("/item/")) fail("INVALID_PATH", "移动快照路径越界")
+        if (normalized != "/item" && !normalized.startsWith("/item/")) fail("INVALID_PATH", "移动传输路径越界")
         return root + normalized.removePrefix("/item")
     }
     override suspend fun stat(path: String) = original.stat(actual(path))?.copy(path = path)
     override suspend fun list(path: String) = original.list(actual(path)).map { it.copy(path = path.trimEnd('/') + "/" + it.name) }
     override suspend fun read(path: String, maxBytes: Long) = original.read(actual(path), maxBytes)
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+        original.readStream(actual(path), maxBytes, consume)
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit) =
+        original.writeStream(actual(path), expectedSize, createOnly, produce).copy(path = path)
+    override suspend fun availableBytes(path: String) = original.availableBytes(if (path == "/") root.substringBeforeLast('/').ifEmpty { "/" } else actual(path))
+    override suspend fun validateTree(path: String) = original.validateTree(actual(path))
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) =
         original.write(actual(path), content, expectedSha256, createOnly).copy(path = path)
     override suspend fun createDirectory(path: String) = original.createDirectory(actual(path)).copy(path = path)
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) =
+        original.deleteForTransfer(actual(path), expected.copy(path = actual(path)), expectedSha256)
     override suspend fun delete(path: String, expectedSha256: String?) = original.delete(actual(path), expectedSha256)
 }
 
@@ -505,13 +525,46 @@ internal class PrivateWorkspaceTransferBackend(
             SecureWorkspaceFileOps().readLimited(File(root.physicalRootPath).toPath(), ExternalFolderPaths.normalize(path).trim('/').split('/'), maxBytes)
         }
     }
-    override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry {
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T {
+        privateReader?.let { return it.readStream(workspace, rootUuid, path, maxBytes, consume) }
+        val entry = find(path) ?: fail("NOT_FOUND", "文件不存在")
+        if (entry.isDirectory) fail("IS_DIRECTORY", "目标为目录")
+        val root = workspace.getByUuid(rootUuid, rootUuid) ?: fail("NOT_FOUND", "工作区不可用")
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        return WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
+            SecureWorkspaceFileOps().readStream(File(root.physicalRootPath).toPath(), ExternalFolderPaths.normalize(path).trim('/').split('/'), maxBytes) { input ->
+                // 仓库的文件句柄回调是同步 API；保留取消与挂载绑定，移除调度器以免单线程调用死锁。
+                kotlinx.coroutines.runBlocking(context.minusKey(kotlin.coroutines.ContinuationInterceptor)) {
+                    WorkspaceMutationCoordinator.consumeUnlocked(File(root.physicalRootPath).toPath()) { consume(input) }
+                }
+            }
+        }
+    }
+    override suspend fun availableBytes(path: String): Long? {
+        find(path)?.takeIf { it.isDirectory } ?: fail("NOT_FOUND", "目标目录不存在")
+        val root = workspace.getByUuid(rootUuid, rootUuid) ?: fail("NOT_FOUND", "工作区不可用")
+        return WorkspaceMutationCoordinator.withBoundRoot(File(root.physicalRootPath).toPath(), root.hash) {
+            File(root.physicalRootPath).usableSpace
+        }
+    }
+    override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry =
+        writeStream(path, content.size.toLong(), createOnly) { it.write(content) }
+
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit): ExternalFolderEntry {
         if (!createOnly) fail("UNSUPPORTED", "跨工作区复制只允许新建")
-        val parent = find(path.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("NOT_FOUND", "目标目录不存在")
-        val id = UUID.randomUUID().toString()
-        val entry = workspace.createFileInWorkspaceStreaming(rootUuid, id, path.substringAfterLast('/'), externalSnapshotMime(path.substringAfterLast('/')), parent.uuid, path, ExternalTreeTransfer.MAX_BYTES) { it.write(content) }
+        val normalized = ExternalFolderPaths.normalize(path)
+        val parentPath = normalized.substringBeforeLast('/').ifEmpty { "/" }
+        val parent = find(parentPath) ?: fail("NOT_FOUND", "目标目录不存在")
+        if (!parent.isDirectory) fail("NOT_DIRECTORY", "目标父项不是目录")
+        if (find(normalized) != null) fail("CONFLICT", "目标已存在")
+        if (expectedSize < 0) fail("INVALID_ARGUMENT", "文件大小无效")
+        if (availableBytes(parentPath)!! < expectedSize) fail("NO_SPACE", "目标可用空间不足 / Insufficient destination space")
+        val context = kotlinx.coroutines.currentCoroutineContext()
+        val entry = workspace.createFileInWorkspaceStreaming(rootUuid, UUID.randomUUID().toString(), normalized.substringAfterLast('/'), externalSnapshotMime(normalized.substringAfterLast('/')), parent.uuid, normalized, expectedSize.coerceAtLeast(1)) { output ->
+            kotlinx.coroutines.runBlocking(context.minusKey(kotlin.coroutines.ContinuationInterceptor)) { produceExternalStream(output, expectedSize, produce) }
+        }
         created.add(entry.uuid)
-        return stat(path)!!
+        return ExternalFolderEntry(path, entry.name, false, entry.sizeBytes, entry.updatedAt, entry.hash, entry.uuid)
     }
     override suspend fun createDirectory(path: String): ExternalFolderEntry {
         val parent = find(path.substringBeforeLast('/').ifEmpty { "/" }) ?: fail("NOT_FOUND", "目标目录不存在")
@@ -521,12 +574,25 @@ internal class PrivateWorkspaceTransferBackend(
     }
     override suspend fun delete(path: String, expectedSha256: String?) {
         val entry = find(path) ?: return
-        if (expectedSha256 != null && Sha256Utils.hash(read(path, ExternalTreeTransfer.MAX_BYTES)) != expectedSha256) fail("CONFLICT", "删除前来源已改变")
+        if (expectedSha256 != null) {
+            try { workspace.moveToRecycleBinIfHash(rootUuid, entry.uuid, expectedSha256) }
+            catch (failure: IllegalStateException) { fail("CONFLICT", "删除前来源已改变") }
+            created.remove(entry.uuid)
+            return
+        }
         if (entry.uuid in created) {
             if (entry.isDirectory) workspace.moveToRecycleBin(rootUuid, entry.uuid) else workspace.rollbackCreatedEntry(rootUuid, entry.uuid)
             created.remove(entry.uuid)
         }
         else workspace.moveToRecycleBin(rootUuid, entry.uuid)
+    }
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) {
+        val entry = find(path) ?: fail("CONFLICT", "来源已不存在")
+        if (entry.uuid != expected.identity || entry.isDirectory != expected.isDirectory) fail("CONFLICT", "来源身份已变化")
+        if (entry.isDirectory) workspace.moveEmptyDirectoryToRecycleBin(rootUuid, entry.uuid)
+        else try { workspace.moveToRecycleBinIfHash(rootUuid, entry.uuid, requireNotNull(expectedSha256)) }
+        catch (failure: IllegalStateException) { fail("CONFLICT", "删除前来源已改变") }
+        created.remove(entry.uuid)
     }
     suspend fun confirmCreated(): Boolean {
         var indexed = true

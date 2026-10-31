@@ -3,10 +3,8 @@ package com.promenar.infinity.data.workspace
 import com.promenar.infinity.data.linux.LinuxFileSystemImpl
 import com.promenar.infinity.domain.linux.*
 import com.promenar.infinity.domain.storage.*
+import com.promenar.infinity.data.storage.produceExternalStream
 import com.promenar.infinity.infra.util.Sha256Utils
-import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
-import java.nio.file.attribute.BasicFileAttributes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,6 +43,29 @@ class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, priv
         external(exact().writeContent(normalized, content, expectedSha256 = expectedSha256, createOnly = createOnly), Sha256Utils.hash(content))
     }
 
+    override suspend fun availableBytes(path: String): Long? = operation { files.availableBytes(checked(path)) }
+
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T = operation {
+        if (maxBytes < 0) fail("INVALID_ARGUMENT", "读取上限无效")
+        val normalized = checked(path)
+        val before = files.stat(normalized) ?: fail("NOT_FOUND", "文件不存在")
+        rejectLink(before)
+        if (before.type != LinuxFileType.FILE) fail("INVALID_PATH", "只能读取普通文件")
+        if (before.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
+        val result = exact().readStream(normalized, maxBytes, consume)
+        val after = files.stat(normalized) ?: fail("CONFLICT", "读取期间文件改变")
+        if (before.size != after.size || before.modifiedMs != after.modifiedMs) fail("CONFLICT", "读取期间文件改变")
+        result
+    }
+
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit): ExternalFolderEntry = operation {
+        if (!createOnly) fail("UNSUPPORTED", "流式传输只允许新建文件")
+        val normalized = mutation(path)
+        requireWritable(normalized)
+        if (files.stat(normalized) != null) fail("CONFLICT", "目标已存在")
+        external(exact().writeStream(normalized, expectedSize, null) { produceExternalStream(it, expectedSize, produce) })
+    }
+
     override suspend fun createDirectory(path: String): ExternalFolderEntry = operation {
         val normalized = mutation(path)
         requireWritable(normalized)
@@ -55,6 +76,12 @@ class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, priv
         requireWritable(mutation(path))
         validateTree(path)
         exact().deleteChecked(mutation(path), expectedSha256)
+    }
+
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = operation {
+        val normalized = mutation(path)
+        requireWritable(normalized)
+        exact().deleteForTransfer(normalized, expected.identity, expectedSha256, expected.isDirectory)
     }
 
     override suspend fun move(sourcePath: String, targetPath: String) = operation {
@@ -72,12 +99,13 @@ class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, priv
 
     override suspend fun validateTree(path: String) = operation {
         val normalized = mutation(path)
-        suspend fun inspect(target: String) {
+        suspend fun inspect(target: String, depth: Int) {
+            if (depth > 32) fail("TOO_LARGE", "目录超过32层深度上限")
             val entry = files.stat(target) ?: fail("NOT_FOUND", "源条目不存在")
             rejectLink(entry)
-            if (entry.type == LinuxFileType.DIRECTORY) files.list(target).forEach { inspect(it.path) }
+            if (entry.type == LinuxFileType.DIRECTORY) files.list(target).forEach { inspect(it.path, depth + 1) }
         }
-        inspect(normalized)
+        inspect(normalized, 0)
     }
 
     private suspend fun checked(raw: String): String {
@@ -104,8 +132,8 @@ class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, priv
         if (entry.type == LinuxFileType.SYMLINK) fail("INVALID_PATH", "文件工具不经过符号链接，请使用实际路径")
         if (entry.type !in setOf(LinuxFileType.FILE, LinuxFileType.DIRECTORY)) fail("INVALID_PATH", "文件工具只访问普通文件和目录")
     }
-    private fun external(entry: LinuxFileEntry, hash: String? = null, identity: String? = null) = ExternalFolderEntry(
-        entry.path, entry.name, entry.type == LinuxFileType.DIRECTORY, entry.size, entry.modifiedMs, hash, identity,
+    private suspend fun external(entry: LinuxFileEntry, hash: String? = null, identity: String? = null) = ExternalFolderEntry(
+        entry.path, entry.name, entry.type == LinuxFileType.DIRECTORY, entry.size, entry.modifiedMs, hash, identity ?: (files as? LinuxFileSystemImpl)?.fileIdentity(entry.path),
     )
     private fun rootIdentity(): String {
         val root = files.hostFile("/") ?: fail("UNAVAILABLE", "Linux 根目录不可用")
@@ -115,6 +143,7 @@ class LinuxSessionRootfsBackend private constructor(files: LinuxFileSystem, priv
     private suspend fun <T> operation(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         try { block() } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: LinuxFileException) {
+            if (failure is LinuxStreamingException) fail(failure.failureCode, "Linux 流式操作失败：${failure.failureCode}")
             fail(when (failure.code) {
                 LinuxFileErrorCode.CHANGED -> "CONFLICT"
                 LinuxFileErrorCode.NOT_READY -> "UNAVAILABLE"

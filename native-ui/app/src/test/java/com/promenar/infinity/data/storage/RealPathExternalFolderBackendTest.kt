@@ -5,6 +5,7 @@ import com.promenar.infinity.domain.storage.ExternalFolderException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -19,6 +20,41 @@ class RealPathExternalFolderBackendTest : ExternalFolderBackendContractTest() {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     override fun createBackend(): ExternalFolderBackend = JvmBoundRealPathFileSystem().backend(temporaryFolder.newFolder().canonicalFile)
+
+    @Test fun `FUSE大文件流写回执与无摘要stat使用同一对象身份`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val backend = JvmBoundRealPathFileSystem().apply { emulateFuse = true }.backend(root)
+        val receipt = backend.writeStream("/file", 2L * 1024 * 1024) { output ->
+            val block = ByteArray(64 * 1024) { (it % 251).toByte() }
+            repeat(32) { output.write(block) }
+        }
+        val current = backend.stat("/file")!!
+        assertNull(current.sha256)
+        assertEquals(receipt.identity, current.identity)
+    }
+
+    @Test fun `条件删除拒绝同内容新对象和非空目录`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        val original = backend.write("/file", "same".toByteArray(), createOnly = true)
+        Files.move(File(root, "file").toPath(), File(root, "saved").toPath())
+        File(root, "file").writeText("same")
+        expectCode("CONFLICT") { backend.deleteForTransfer("/file", original, original.sha256) }
+        val directory = backend.createDirectory("/dir")
+        File(root, "dir/new").writeText("外部新增")
+        org.junit.Assert.assertNotNull(runCatching { backend.deleteForTransfer("/dir", directory, null) }.exceptionOrNull())
+        assertEquals("外部新增", File(root, "dir/new").readText())
+    }
+
+    @Test fun `真实目录深度超限预检拒绝且未创建目标`() = runBlocking {
+        val root = temporaryFolder.newFolder().canonicalFile
+        val source = File(root, "source").apply { mkdir() }
+        var current = source
+        repeat(33) { current = File(current, "child").apply { mkdir() } }
+        val backend = JvmBoundRealPathFileSystem().backend(root)
+        expectCode("TOO_LARGE") { ExternalTreeTransfer.move(backend, "/source", backend, "/target") }
+        assertTrue(source.exists()); assertFalse(File(root, "target").exists())
+    }
 
     @Test fun `不支持原子不覆盖移动时独占发布新文件`() = runBlocking {
         val root = temporaryFolder.newFolder().canonicalFile

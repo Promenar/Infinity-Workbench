@@ -78,7 +78,8 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
 
     override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (InputStream) -> T): T = io {
         if (maxBytes < 0) fail("INVALID_ARGUMENT", "读取上限无效")
-        val document = find(ExternalFolderPaths.normalize(path)) ?: fail("NOT_FOUND", "文件不存在")
+        val normalized = ExternalFolderPaths.normalize(path)
+        val document = find(normalized) ?: fail("NOT_FOUND", "文件不存在")
         requireFile(document)
         if (document.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
         input(document).use { source ->
@@ -102,7 +103,10 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
                     return count
                 }
             }
-            consume(bounded)
+            val result = lock.consumeUnlocked { consume(bounded) }
+            val after = find(normalized) ?: fail("CONFLICT", "文件在读取期间被删除")
+            if (after.id != document.id || after.size != document.size || after.lastModified != document.lastModified) fail("CONFLICT", "文件在读取期间发生变化")
+            result
         }
     }
 
@@ -159,6 +163,54 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
         }
     }
 
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit): ExternalFolderEntry = io {
+        if (!createOnly) fail("UNSUPPORTED", "流式传输只允许新建文件")
+        if (expectedSize < 0) fail("INVALID_ARGUMENT", "文件大小无效")
+        val normalized = mutationPath(path)
+        val name = normalized.substringAfterLast('/')
+        val parent = find(parentPath(normalized)) ?: fail("NOT_FOUND", "父目录不存在")
+        requireDirectory(parent)
+        requireCapability(parent, Document.FLAG_DIR_SUPPORTS_CREATE, "READ_ONLY", "该目录不允许创建文档")
+        if (child(parent, name) != null) fail("CONFLICT", "目标已存在")
+        val document = createDocument(parent, name, "application/octet-stream")
+        val written = MessageDigest.getInstance("SHA-256")
+        var uncertainWrite = false
+        try {
+            requireCapability(document, Document.FLAG_SUPPORTS_DELETE, "UNSUPPORTED", "提供商不能安全清理文档")
+            requireCapability(document, Document.FLAG_SUPPORTS_WRITE, "READ_ONLY", "文档不允许写入")
+            if (document.name != name || child(parent, name)?.id != document.id) fail("CONFLICT", "提供商返回了其它目标名称")
+            val output = contentResolver.openOutputStream(document.uri, "wt") ?: fail("UNAVAILABLE", "无法打开写入流")
+            val checksum = output.use { stream ->
+                val tracked = object : java.io.OutputStream() {
+                    override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+                    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                        uncertainWrite = true
+                        stream.write(bytes, offset, length)
+                        written.update(bytes, offset, length)
+                        uncertainWrite = false
+                    }
+                    override fun flush() = stream.flush()
+                }
+                produceExternalStream(tracked, expectedSize, produce)
+            }
+            if (digest(document) != checksum || child(parent, name)?.id != document.id) fail("VERIFY_FAILED", "发布后的文档校验失败")
+            entry(normalized, queryDocument(document.uri), hash = true)
+        } catch (failure: Exception) {
+            withContext(NonCancellable) {
+                val current = child(parent, document.name)
+                if (current != null) {
+                    if (uncertainWrite || current.id != document.id || digest(current) != written.externalHex()) {
+                        throw ExternalFolderException("RECOVERY_REQUIRED", "目标已改变或写入状态未知，请核查 $path").apply { addSuppressed(failure) }
+                    }
+                    if (!DocumentsContract.deleteDocument(contentResolver, current.uri)) {
+                        throw ExternalFolderException("RECOVERY_REQUIRED", "目标清理失败，请核查 $path").apply { addSuppressed(failure) }
+                    }
+                }
+            }
+            throw failure
+        }
+    }
+
     override suspend fun createDirectory(path: String): ExternalFolderEntry = io {
         val normalized = mutationPath(path)
         val parent = find(parentPath(normalized)) ?: fail("NOT_FOUND", "父目录不存在")
@@ -184,6 +236,22 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
         requireSafeDeletion(document)
         currentCoroutineContext().ensureActive()
         if (expectedSha256 != null && digest(document) != expectedSha256) fail("CONFLICT", "文件版本已经变化，请重新读取")
+        if (!DocumentsContract.deleteDocument(contentResolver, document.uri)) fail("UNAVAILABLE", "提供商未能删除文档")
+    }
+
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = io {
+        val normalized = mutationPath(path)
+        val document = find(normalized) ?: fail("CONFLICT", "来源已不存在")
+        val current = entry(normalized, document, hash = false)
+        if (current.identity != expected.identity || current.isDirectory != expected.isDirectory) fail("CONFLICT", "来源身份已变化")
+        requireCapability(document, Document.FLAG_SUPPORTS_DELETE, "READ_ONLY", "文档不允许删除")
+        if (document.isDirectory) {
+            if (children(document).isNotEmpty()) fail("CONFLICT", "来源目录含新增条目")
+        } else if (digest(document) != expectedSha256) fail("CONFLICT", "来源内容已变化")
+        currentCoroutineContext().ensureActive()
+        val latest = find(normalized) ?: fail("CONFLICT", "来源已不存在")
+        if (entry(normalized, latest, hash = false).identity != current.identity || document.isDirectory && children(latest).isNotEmpty()) fail("CONFLICT", "来源发生变化")
+        // SAF 没有跨应用条件删除原语，保留提供商调用前的身份和空目录复核。
         if (!DocumentsContract.deleteDocument(contentResolver, document.uri)) fail("UNAVAILABLE", "提供商未能删除文档")
     }
 

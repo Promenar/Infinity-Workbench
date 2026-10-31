@@ -64,8 +64,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
             root.copy(uuid = "copy:${entry.path}", materializedPath = entry.path, name = entry.name)
         }
         coEvery { delete("session", any(), any(), any()) } coAnswers { store.delete(arg(1), arg(2)) }
-        coEvery { backupBeforeMove("session", any()) } returns "backup"
-        coEvery { completeMoveBackup("session", "backup") } returns Unit
     }
     private val rootfs = mockk<ExternalFolderBackend> {
         coEvery { stat("/") } returns ExternalFolderEntry("/", "", true, 0, 1, identity = "rootfs")
@@ -113,15 +111,12 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         }
         assertThat(store.moves).hasSize(6)
         assertThat(store.reads).isEqualTo(0)
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
-        coVerify(exactly = 0) { mounts.completeMoveBackup(any(), any()) }
     }
 
     @Test fun `大文件与千条目目录移动不进入受限快照`() = runBlocking {
         store.add("/large", size = 4L * 1024 * 1024 * 1024)
         store.add("/tree", true)
         repeat(1005) { store.add("/tree/item$it") }
-        coEvery { mounts.backupBeforeMove(any(), any()) } throws ExternalFolderException("RECYCLE_LIMIT", "快照超限")
         for ((from, to) in listOf("/large" to "/renamed", "/tree" to "/renamed-tree")) {
             val result = move(path(from), path(to))
             assertWithMessage(result.content).that(result.status).isEqualTo("success")
@@ -129,7 +124,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         assertThat(store.nodes.getValue("/renamed").size).isEqualTo(4L * 1024 * 1024 * 1024)
         assertThat(store.nodes.keys.count { it.startsWith("/renamed-tree/") }).isEqualTo(1005)
         assertThat(store.reads).isEqualTo(0)
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
     @Test fun `流式版本校验允许超过32MiB且拒绝不一致版本`() = runBlocking {
@@ -142,10 +136,9 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         assertWithMessage(result.content).that(result.status).isEqualTo("success")
         assertThat(store.streamLimits).containsExactly(Long.MAX_VALUE, Long.MAX_VALUE)
         assertThat(store.reads).isEqualTo(0)
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
-    @Test fun `后端不支持移动时保留复制校验和回收副本流程`() = runBlocking {
+    @Test fun `后端不支持移动时使用流式复制校验`() = runBlocking {
         store.add("/source")
         store.failure = "UNSUPPORTED"
         val result = move(path("/source"), path("/target"))
@@ -155,32 +148,19 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         assertThat(store.moves).containsExactly("/source" to "/target")
         assertThat(store.nodes).doesNotContainKey("/source")
         assertThat(store.nodes.getValue("/target").identity).isNotEqualTo("id:/source")
-        assertThat(store.reads).isGreaterThan(0)
-        coVerify(exactly = 1) { mounts.backupBeforeMove("session", any()) }
-        coVerify(exactly = 1) { mounts.completeMoveBackup("session", "backup") }
+        assertThat(store.streamLimits).isNotEmpty()
     }
 
-    @Test fun `跨挂载和挂载到私有及rootfs保持受限备份路径`() = runBlocking {
-        store.add("/mnt/docs/source")
-        coEvery { mounts.backupBeforeMove(any(), any()) } throws ExternalFolderException("RECYCLE_LIMIT", "原回收区限制")
-        val destinations = mutableListOf(path("/target"), "/mnt/other/target", if (linux) "/home/session/target" else "/session/target")
-        if (linux) destinations.add("/etc/target")
-        for (destination in destinations) {
-            val result = move("/mnt/docs/source", destination)
-            assertThat(result.content).contains("RECYCLE_LIMIT")
-            assertThat(store.nodes).containsKey("/mnt/docs/source")
+    @Test fun `跨挂载不需要回收备份且版本使用无界流读取`() = runBlocking {
+        for (destination in listOf(path("/target"), "/mnt/other/target")) {
+            store.add("/mnt/docs/source")
+            val result = move("/mnt/docs/source", destination, Sha256Utils.hash("payload"))
+            assertWithMessage(result.content).that(result.status).isEqualTo("success")
+            assertThat(result.content).contains("已复制、校验并移动")
+            assertThat(store.nodes).doesNotContainKey("/mnt/docs/source")
         }
         assertThat(store.moves).isEmpty()
-        coVerify(exactly = destinations.size) { mounts.backupBeforeMove("session", "/mnt/docs/source") }
-    }
-
-    @Test fun `跨命名空间的版本读取保留32MiB预算`() = runBlocking {
-        store.add("/mnt/docs/source")
-        coEvery { mounts.backupBeforeMove(any(), any()) } throws ExternalFolderException("RECYCLE_LIMIT", "原回收区限制")
-        val result = move("/mnt/docs/source", path("/target"), Sha256Utils.hash("payload"))
-        assertThat(result.content).contains("RECYCLE_LIMIT")
-        assertThat(store.streamLimits).containsExactly(32L * 1024 * 1024)
-        assertThat(store.moves).isEmpty()
+        assertThat(store.streamLimits).doesNotContain(32L * 1024 * 1024)
     }
 
     @Test fun `只读挂载拒绝原生移动和备份`() = runBlocking {
@@ -189,7 +169,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         val result = move("/mnt/docs/source", "/mnt/docs/target")
         assertThat(result.content).contains("READ_ONLY")
         assertThat(store.moves).isEmpty()
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
     @Test fun `后端真实错误直接返回且不转入复制`() = runBlocking {
@@ -200,7 +179,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
             assertThat(result.status).isEqualTo("error")
             assertThat(result.content).contains(code)
         }
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
     @Test fun `目录不能移动到子目录且过期审批身份拒绝写入`() = runBlocking {
@@ -208,37 +186,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         assertThat(move(path("/tree"), path("/tree/child")).content).contains("INVALID_PATH")
         assertThat(move(path("/tree"), path("/target"), approved = """["move_file",{"mountIds":{"":"stale"}}]""").content).contains("CONFLICT")
         assertThat(store.moves).isEmpty()
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
-    }
-
-    @Test fun `私有到挂载的大文件仍走受限快照且不调用原生移动`() = runBlocking {
-        coEvery { workspace.getByMaterializedPath("root", "/large") } returns root.copy(
-            uuid = "private-large", name = "large", isDirectory = false, materializedPath = "/large", sizeBytes = 80L * 1024 * 1024)
-        val source = if (linux) "/home/session/large" else "/session/large"
-        val result = move(source, "/mnt/docs/target")
-        assertWithMessage(result.content).that(result.content).contains("RECYCLE_LIMIT")
-        assertThat(store.moves).isEmpty()
-        assertThat(store.nodes).doesNotContainKey("/mnt/docs/target")
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
-    }
-
-    @Test fun `大私有文件携带版本参数时先受既有读取预算保护`() = runBlocking {
-        coEvery { workspace.getByMaterializedPath("root", "/large") } returns root.copy(
-            uuid = "private-large", name = "large", isDirectory = false, materializedPath = "/large", sizeBytes = 80L * 1024 * 1024)
-        coEvery { workspace.getByUuid("root", "root") } returns root
-        mockkConstructor(com.promenar.infinity.data.repository.SecureWorkspaceFileOps::class)
-        try {
-            every { anyConstructed<com.promenar.infinity.data.repository.SecureWorkspaceFileOps>().readLimited(any(), listOf("large"), any()) } answers {
-                assertThat(thirdArg<Long>()).isEqualTo(32L * 1024 * 1024)
-                throw ExternalFolderException("RECYCLE_LIMIT", "私有文件超过既有快照预算")
-            }
-            val result = move(if (linux) "/home/session/large" else "/session/large", "/mnt/docs/target", "version")
-            assertThat(result.content).contains("RECYCLE_LIMIT")
-            assertThat(store.moves).isEmpty()
-            verify(exactly = 1) { anyConstructed<com.promenar.infinity.data.repository.SecureWorkspaceFileOps>().readLimited(any(), listOf("large"), any()) }
-        } finally {
-            unmockkConstructor(com.promenar.infinity.data.repository.SecureWorkspaceFileOps::class)
-        }
     }
 
     @Test fun `私有命名空间的流式读取向底层传递私有相对路径`() = runBlocking {
@@ -254,7 +201,6 @@ class NativeMountedMoveTest(private val linux: Boolean) {
         assertThat(move(path("/source"), path("/target")).content).contains("NAME_EXISTS")
         assertThat(store.nodes).containsKey("/source")
         assertThat(move(path("/absent"), path("/target")).content).contains("NOT_FOUND")
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
     private class MemoryBackend : ExternalFolderBackend {

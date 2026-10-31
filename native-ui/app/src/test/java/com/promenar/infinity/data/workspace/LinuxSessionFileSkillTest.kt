@@ -82,6 +82,15 @@ class LinuxSessionFileSkillTest {
 
     @After fun cleanup() { com.promenar.infinity.startup.StartupWriteBarrier.resetForTesting(); unmockkConstructor(SecureWorkspaceFileOps::class); deleteLinuxFixture(temp) }
 
+    @Test fun `Linux传输目录回执使用底层身份并支持整树移动`() = runBlocking {
+        File(rootfsDirectory, "tmp/source/child").apply { mkdirs() }
+        File(rootfsDirectory, "tmp/source/child/item.bin").writeBytes(byteArrayOf(1, 2, 3))
+        val backend = access.backend("one")
+        com.promenar.infinity.data.storage.ExternalTreeTransfer.move(backend, "/tmp/source", backend, "/tmp/target")
+        assertThat(File(rootfsDirectory, "tmp/source").exists()).isFalse()
+        assertThat(File(rootfsDirectory, "tmp/target/child/item.bin").readBytes()).isEqualTo(byteArrayOf(1, 2, 3))
+    }
+
     @Test fun `手机存储的workspace路径写入映射到所选目录根`() = runBlocking {
         selected = SessionWorkspace.Directory(
             WorkspaceEntity("shared", WorkspaceEntity.KIND_SHARED, "手机存储", externalDirectory.path, 0), externalDirectory,
@@ -172,7 +181,6 @@ class LinuxSessionFileSkillTest {
         assertWithMessage(result.content).that(result.status).isEqualTo("success")
         assertThat(result.content).contains("已移动（原位重命名）")
         coVerify(exactly = 1) { backend.move("/a", "/b") }
-        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
     }
 
     @Test fun `特殊登记根下分支工具读取创建和移动保留实际cwd与父挂载区别`() = runBlocking {
@@ -444,7 +452,6 @@ class LinuxSessionFileSkillTest {
                 { access.write("one", path, "new".toByteArray(), null, false); Unit },
                 { access.createDirectory("one", path + "-dir"); Unit },
                 { access.delete("one", path, null, false) },
-                { access.backupBeforeMove("one", path); Unit },
             )
             for (action in actions) assertWithMessage("隔离路径=%s", path).that(runCatching { action() }.exceptionOrNull())
                 .isInstanceOf(com.promenar.infinity.startup.StartupIsolationException::class.java)

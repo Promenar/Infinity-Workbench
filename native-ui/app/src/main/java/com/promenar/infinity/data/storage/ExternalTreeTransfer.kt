@@ -66,29 +66,7 @@ object ExternalTreeTransfer {
         return created
     }
     suspend fun move(source: ExternalFolderBackend, sourcePath: String, target: ExternalFolderBackend, targetPath: String, expectedSha256: String? = null) {
-        val tree = capture(source, sourcePath)
-        if (expectedSha256 != null && tree.nodes.singleOrNull()?.takeUnless { it.isDirectory }?.let { externalSha256(it.bytes) } != expectedSha256) {
-            throw ExternalFolderException("CONFLICT", "expected_sha256 与移动快照版本不一致")
-        }
-        val created = copy(tree, target, targetPath)
-        try {
-            if (capture(source, sourcePath).digest() != tree.digest()) {
-                throw ExternalFolderException("CONFLICT", "复制期间源文件发生变化，移动已取消")
-            }
-            source.delete(sourcePath, tree.nodes.singleOrNull()?.takeUnless { it.isDirectory }?.let { externalSha256(it.bytes) })
-        } catch (failure: Exception) {
-            compensate("来源 $sourcePath 与目标 $targetPath", failure) {
-                // 删除目录的提供商可能在报错前已删除部分子项，仅补回缺失项，绝不覆盖并发修改。
-                for (node in tree.nodes) {
-                    val path = sourcePath.trimEnd('/') + node.relativePath
-                    if (source.stat(path) == null) {
-                        if (node.isDirectory) source.createDirectory(path) else source.write(path, node.bytes, createOnly = true)
-                    }
-                }
-                rollback(target, targetPath, created)
-            }
-            throw failure
-        }
+        ExternalStreamingMove.move(source, sourcePath, target, targetPath, expectedSha256)
     }
 
     private suspend fun rollback(backend: ExternalFolderBackend, path: String, nodes: List<ExternalCreatedNode>) {

@@ -253,19 +253,6 @@ class ExternalFolderManager(
             }
         } }
 
-    override suspend fun backupBeforeMove(sessionId: String, path: String): String = withContext(Dispatchers.IO) { mutex.withLock {
-        access(sessionId, path, writing = true) { mount, backend, relative ->
-            if (relative == "/") fail("INVALID_PATH", "不能移动挂载根目录")
-            recycle.save(mount.id, path, ExternalTreeTransfer.capture(backend, relative)).id
-        }
-    } }
-
-    override suspend fun completeMoveBackup(sessionId: String, backupId: String) = withContext(Dispatchers.IO) { mutex.withLock {
-        val item = recycleItemsUnlocked(sessionId).firstOrNull { it.id == backupId } ?: fail("NOT_FOUND", "移动补偿副本不属于当前会话")
-        namespace(sessionId).singleOrNull { it.id == item.mountId }?.requireWritable()
-        recycle.remove(backupId)
-    } }
-
     override suspend fun recycleItems(sessionId: String) = withContext(Dispatchers.IO) {
         val ids = namespace(sessionId).map { it.id }.toSet()
         mutex.withLock { recycle.items().filter { it.mountId in ids } }
@@ -358,6 +345,15 @@ class ExternalFolderManager(
         override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.readStream(relative, maxBytes, consume) }
         }
+        override suspend fun availableBytes(path: String): Long? = withContext(Dispatchers.IO) {
+            access(sessionId, path, bindings = bindings) { _, backend, relative -> backend.availableBytes(relative) }
+        }
+        override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit) = withContext(Dispatchers.IO) { mutex.withLock {
+            access(sessionId, path, bindings, writing = true) { _, backend, relative ->
+                if (relative == "/") fail("INVALID_PATH", "不能覆盖挂载根目录")
+                backend.writeStream(relative, expectedSize, createOnly, produce).copy(path = path)
+            }
+        } }
         override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) = writeReceipt(sessionId, path, content, expectedSha256, createOnly, bindings).receipt
         override suspend fun createDirectory(path: String) = withContext(Dispatchers.IO) { mutex.withLock {
             access(sessionId, path, bindings, writing = true) { _, backend, relative ->
@@ -365,6 +361,12 @@ class ExternalFolderManager(
                 backend.createDirectory(relative).copy(path = path)
             }
         } }
+        override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = withContext(Dispatchers.IO) {
+            access(sessionId, path, bindings, writing = true) { _, backend, relative ->
+                if (relative == "/") fail("INVALID_PATH", "不能移动挂载根目录")
+                backend.deleteForTransfer(relative, expected.copy(path = relative), expectedSha256)
+            }
+        }
         override suspend fun delete(path: String, expectedSha256: String?) = withContext(Dispatchers.IO) {
             access(sessionId, path, bindings, writing = true) { _, backend, relative ->
                 if (relative == "/") fail("INVALID_PATH", "不能移动挂载根目录")

@@ -2,6 +2,7 @@ package com.promenar.infinity.data.linux
 
 import com.promenar.infinity.domain.linux.*
 import com.promenar.infinity.domain.storage.*
+import com.promenar.infinity.data.storage.produceExternalStream
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +77,16 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
         external(normalized, result, sha(content))
     }
 
+    override suspend fun availableBytes(path: String): Long? = operation { files.availableBytes(guest(normalize(path))) }
+
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (java.io.OutputStream) -> Unit): ExternalFolderEntry = operation {
+        if (!createOnly) fail("UNSUPPORTED", "流式传输只允许新建文件")
+        val normalized = mutation(path)
+        rejectLink(normalized)
+        if (files.stat(guest(normalized)) != null) fail("CONFLICT", "目标已存在")
+        external(normalized, files.writeStream(guest(normalized), expectedSize, null) { produceExternalStream(it, expectedSize, produce) })
+    }
+
     override suspend fun createDirectory(path: String): ExternalFolderEntry = operation {
         val normalized = mutation(path)
         external(normalized, files.createDirectory(guest(parent(normalized)), normalized.substringAfterLast('/')))
@@ -85,6 +96,12 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
         val normalized = mutation(path)
         rejectLink(normalized)
         files.deleteChecked(guest(normalized), expectedSha256)
+    }
+
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = operation {
+        val normalized = mutation(path)
+        rejectLink(normalized)
+        files.deleteForTransfer(guest(normalized), expected.identity, expectedSha256, expected.isDirectory)
     }
 
     override suspend fun move(sourcePath: String, targetPath: String) = operation {
@@ -118,14 +135,14 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
     private fun parent(path: String) = path.substringBeforeLast('/').ifEmpty { "/" }
     private fun join(parent: String, name: String) = parent.trimEnd('/') + "/" + name
     private fun guest(path: String) = directory + path.takeUnless { it == "/" }.orEmpty()
-    private fun external(path: String, entry: LinuxFileEntry, hash: String? = null) = ExternalFolderEntry(path, if (path == "/") "" else entry.name,
-        entry.type == LinuxFileType.DIRECTORY, entry.size, entry.modifiedMs, hash)
+    private suspend fun external(path: String, entry: LinuxFileEntry, hash: String? = null) = ExternalFolderEntry(path, if (path == "/") "" else entry.name,
+        entry.type == LinuxFileType.DIRECTORY, entry.size, entry.modifiedMs, hash, files.fileIdentity(entry.path))
     private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     private suspend fun <T> operation(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         if (!available()) fail("UNAVAILABLE", "Linux 主目录不可用")
         try { block() } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: LinuxFileException) {
-            if (failure is LinuxStreamingException && failure.failureCode == "TOO_LARGE") fail("TOO_LARGE", "文件超过读取上限")
+            if (failure is LinuxStreamingException) fail(failure.failureCode, "Linux 流式操作失败：${failure.failureCode}")
             fail(when (failure.code) {
                 LinuxFileErrorCode.CHANGED -> "CONFLICT"
                 LinuxFileErrorCode.NOT_READY -> "UNAVAILABLE"

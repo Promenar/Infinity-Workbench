@@ -1,6 +1,7 @@
 package com.promenar.infinity.data.linux
 
 import com.promenar.infinity.domain.linux.*
+import com.promenar.infinity.data.storage.consumeUnlocked
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -94,6 +95,11 @@ class LinuxFileSystemImpl internal constructor(
         read(source, offset, length)
     }
 
+    /** 移动补偿使用进程内对象身份，不能以路径和时间戳代替。 */
+    internal suspend fun fileIdentity(path: String): String = operation {
+        access.attributes(resolvePath(path, followFinal = false)).fileKey()?.toString() ?: fail(LinuxFileErrorCode.IO)
+    }
+
     override suspend fun availableBytes(parent: String): Long = operation {
         val directory = resolvePath(parent)
         requireDirectory(directory)
@@ -110,13 +116,19 @@ class LinuxFileSystemImpl internal constructor(
         if (original.size() > maxBytes) fail(LinuxFileErrorCode.IO)
         access.openRead(source).use { opened ->
             val revision = opened.revision()
-            val value = reader(java.nio.channels.Channels.newInputStream(opened.channel))
-            if (opened.revision() != revision) fail(LinuxFileErrorCode.CHANGED)
+            val value = mutex.consumeUnlocked { reader(java.nio.channels.Channels.newInputStream(opened.channel)) }
+            val after = regularAttributes(source)
+            if (opened.revision() != revision || after.fileKey() != original.fileKey() || after.size() != original.size() ||
+                after.lastModifiedTime() != original.lastModifiedTime()) fail(LinuxFileErrorCode.CHANGED)
             value
         }
     }
 
-    override suspend fun writeStreaming(path: String, size: Long, expected: LinuxFileEntry?, check: () -> Unit, beforeCommit: () -> Unit, onCommitted: () -> Unit, writer: (java.io.OutputStream) -> String): LinuxFileEntry = operation {
+    override suspend fun writeStreaming(path: String, size: Long, expected: LinuxFileEntry?, check: () -> Unit, beforeCommit: () -> Unit, onCommitted: () -> Unit, writer: (java.io.OutputStream) -> String): LinuxFileEntry =
+        writeStream(path, size, expected, check, beforeCommit, onCommitted) { writer(it) }
+
+    /** 文件工具与同步传输共用大小、版本、空间和原子提交校验。 */
+    internal suspend fun writeStream(path: String, size: Long, expected: LinuxFileEntry?, check: () -> Unit = {}, beforeCommit: () -> Unit = {}, onCommitted: () -> Unit = {}, writer: suspend (java.io.OutputStream) -> String): LinuxFileEntry = operation {
         require(size >= 0)
         val normalized = mutationPath(path)
         val destination = resolvePath(normalized, followFinal = false)
@@ -292,6 +304,17 @@ class LinuxFileSystemImpl internal constructor(
         val staging = access.temporaryDirectory(target.parent, ".infinity-linux-copy-")
         try { copyNode(source, staging.resolve("item")); access.move(staging.resolve("item"), target) }
         finally { deleteNode(staging, cleanup = true) }
+    }
+
+    internal suspend fun deleteForTransfer(path: String, identity: String?, sha256: String?, directory: Boolean) = operation {
+        val source = resolvePath(mutationPath(path), followFinal = false)
+        val attributes = access.attributes(source)
+        if (attributes.fileKey()?.toString() != identity || attributes.isDirectory != directory) fail(LinuxFileErrorCode.CHANGED)
+        if (directory) {
+            if (access.children(source).isNotEmpty()) fail(LinuxFileErrorCode.CHANGED)
+        } else if (hash(source) != sha256) fail(LinuxFileErrorCode.CHANGED)
+        // delete 只解除当前条目；非空目录由文件系统拒绝，绝不递归。
+        access.delete(source)
     }
 
     internal suspend fun deleteChecked(path: String, expectedSha256: String?) = operation {
@@ -493,6 +516,7 @@ class LinuxFileSystemImpl internal constructor(
 
     private fun mapped(failure: Exception): LinuxFileException = when (failure) {
         is LinuxFileException -> failure
+        is com.promenar.infinity.domain.storage.ExternalFolderException -> LinuxStreamingException(failure.code).apply { initCause(failure) }
         is FileAlreadyExistsException -> LinuxFileException(LinuxFileErrorCode.NAME_EXISTS, failure)
         is NoSuchFileException -> LinuxFileException(LinuxFileErrorCode.NOT_FOUND, failure)
         is android.system.ErrnoException -> LinuxFileException(when (failure.errno) {

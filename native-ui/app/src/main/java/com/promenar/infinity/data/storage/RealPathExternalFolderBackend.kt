@@ -97,7 +97,7 @@ class RealPathExternalFolderBackend internal constructor(
         withRoot { root ->
             withParent(root, normalized) { parent, name ->
                 requireFile(parent.stat(name) ?: fail("NOT_FOUND", "文件不存在"))
-                readVerifiedRealPath(parent, name, maxBytes, consume).value
+                readVerifiedRealPath(parent, name, maxBytes) { input -> lock.consumeUnlocked { consume(input) } }.value
             }
         }
     }
@@ -162,6 +162,53 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
+    override suspend fun availableBytes(path: String): Long? = io {
+        val normalized = ExternalFolderPaths.normalize(path)
+        withRoot { root -> withDirectory(root, normalized) { it.availableBytes() } }
+    }
+
+    override suspend fun writeStream(path: String, expectedSize: Long, createOnly: Boolean, produce: suspend (OutputStream) -> Unit): ExternalFolderEntry = io {
+        if (!createOnly) fail("UNSUPPORTED", "流式传输只允许新建文件")
+        val normalized = mutationPath(path)
+        withRoot { root -> withParent(root, normalized) { parent, name ->
+            if (parent.stat(name) != null) fail("CONFLICT", "目标已存在")
+            if (expectedSize < 0) fail("INVALID_ARGUMENT", "文件大小无效")
+            if (parent.availableBytes() < expectedSize) fail("NO_SPACE", "目标可用空间不足 / Insufficient destination space")
+            withInternalDirectory(root) { internal ->
+                val temporary = ".infinity-write-${UUID.randomUUID()}"
+                var temporaryId: String? = null
+                var publishedId: String? = null
+                var checksum: String? = null
+                try {
+                    internal.createFile(temporary).use { file ->
+                        temporaryId = file.state().objectId
+                        checksum = produceExternalStream(file.output, expectedSize, produce)
+                        file.sync()
+                    }
+                    currentCoroutineContext().ensureActive()
+                    if (parent.stat(name) != null) fail("CONFLICT", "目标已存在")
+                    publishedId = publishNew(internal, temporary, parent, name)
+                    val receipt = snapshot(parent, name, normalized, hash = true) ?: fail("UNAVAILABLE", "写入后文件不可用")
+                    checkPublished(publishedId, parent.stat(name)?.objectId, checksum, receipt.sha256)
+                    receipt
+                } catch (failure: Exception) {
+                    withContext(NonCancellable) {
+                        if (publishedId != null) {
+                            val current = snapshot(parent, name, normalized, hash = true)
+                            if (current != null) {
+                                if (parent.stat(name)?.objectId != publishedId || current.sha256 != checksum) {
+                                    throw ExternalFolderException("RECOVERY_REQUIRED", "目标已改变，请核查 $path").apply { addSuppressed(failure) }
+                                }
+                                parent.deleteFile(name)
+                            }
+                        }
+                    }
+                    throw failure
+                } finally { withContext(NonCancellable) { cleanupOwnedFile(internal, temporary, temporaryId) } }
+            }
+        } }
+    }
+
     override suspend fun createDirectory(path: String): ExternalFolderEntry = io {
         val normalized = mutationPath(path)
         withRoot { root ->
@@ -189,10 +236,26 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
+    override suspend fun deleteForTransfer(path: String, expected: ExternalFolderEntry, expectedSha256: String?) = io {
+        val normalized = mutationPath(path)
+        withRoot { root -> withParent(root, normalized) { parent, name ->
+            val original = snapshot(parent, name, normalized, hash = true) ?: fail("CONFLICT", "来源已不存在")
+            if (original.identity != expected.identity || original.isDirectory != expected.isDirectory ||
+                !original.isDirectory && original.sha256 != expectedSha256) fail("CONFLICT", "来源身份或内容已变化")
+            if (original.isDirectory) {
+                // 内核 rmdir 在目录非空时拒绝，不能用递归删除代替。
+                parent.deleteDirectory(name)
+            } else {
+                val state = stateFor(parent, name, original)
+                withInternalDirectory(root) { internal -> deleteBound(parent, name, normalized, internal, original, state) }
+            }
+        } }
+    }
+
     override suspend fun validateTree(path: String) = io {
         val normalized = mutationPath(path)
         withRoot { root ->
-            withParent(root, normalized) { parent, name -> preflightDelete(parent, name, normalized) }
+            withParent(root, normalized) { parent, name -> preflightDelete(parent, name, normalized, maxDepth = 32) }
         }
     }
 
@@ -581,7 +644,8 @@ class RealPathExternalFolderBackend internal constructor(
         }
     }
 
-    private suspend fun preflightDelete(parent: BoundRealPathDirectory, name: String, path: String) {
+    private suspend fun preflightDelete(parent: BoundRealPathDirectory, name: String, path: String, depth: Int = 0, maxDepth: Int = Int.MAX_VALUE) {
+        if (depth > maxDepth) fail("TOO_LARGE", "目录超过32层深度上限")
         currentCoroutineContext().ensureActive()
         val state = parent.stat(name) ?: fail("NOT_FOUND", "删除目标不存在")
         requireSupported(state)
@@ -590,7 +654,7 @@ class RealPathExternalFolderBackend internal constructor(
                 if (!visibleName(child)) fail("INVALID_PATH", "删除范围包含内部恢复文件或保留目录")
                 val childPath = join(path, child)
                 ensureAllowed(childPath)
-                preflightDelete(directory, child, childPath)
+                preflightDelete(directory, child, childPath, depth + 1, maxDepth)
             }
         }
     }
@@ -890,7 +954,7 @@ class RealPathExternalFolderBackend internal constructor(
     }
     private fun entry(path: String, state: RealPathFileState, sha256: String? = null, stableIdentity: Boolean = false): ExternalFolderEntry =
         ExternalFolderEntry(path, if (path == "/") rootPath.fileName.toString() else path.substringAfterLast('/'), state.isDirectory,
-            if (state.isDirectory) 0 else state.size, state.lastModified, sha256, if (state.isDirectory || stableIdentity && sha256 != null) state.objectId else state.revision)
+            if (state.isDirectory) 0 else state.size, state.lastModified, sha256, if (state.isDirectory || stableIdentity) state.objectId else state.revision)
     private fun requireFile(state: RealPathFileState) { requireSupported(state); if (state.isDirectory) fail("IS_DIRECTORY", "目标是目录") }
     private fun requireSupported(state: RealPathFileState) {
         if (state.isSymbolicLink) fail("INVALID_PATH", "不允许通过符号链接访问目录")
@@ -917,6 +981,7 @@ class RealPathExternalFolderBackend internal constructor(
                     OsConstants.ENOTDIR -> "NOT_DIRECTORY"
                     OsConstants.EEXIST -> "CONFLICT"
                     OsConstants.EROFS -> "READ_ONLY"
+                    OsConstants.ENOSPC -> "NO_SPACE"
                     OsConstants.ENOSYS, OsConstants.EOPNOTSUPP, OsConstants.EXDEV -> "UNSUPPORTED"
                     else -> "UNAVAILABLE"
                 }

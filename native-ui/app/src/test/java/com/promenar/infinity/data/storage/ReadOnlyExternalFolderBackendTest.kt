@@ -19,6 +19,7 @@ class ReadOnlyExternalFolderBackendTest {
         every { files.forDirectory("/root", any()) } returns files
         val backend = ReadOnlyExternalFolderBackend(LinuxHomeExternalFolderBackend(files) { true })
         listOf<suspend () -> Any?>(
+            { backend.writeStream("/new", 0) { error("只读不得运行生产者") } },
             { backend.write("/note.txt", byteArrayOf()) }, { backend.createDirectory("/new") },
             { backend.delete("/note.txt") }, { backend.move("/note.txt", "/new") }, { backend.copy("/note.txt", "/new") },
         ).forEach { action ->
@@ -42,6 +43,7 @@ class ReadOnlyExternalFolderBackendTest {
         }
         val backend = ReadOnlyExternalFolderBackend(writable)
         listOf<suspend () -> Any?>(
+            { backend.writeStream("/new", 0) { error("只读不得运行生产者") } },
             { backend.write("/note.txt", byteArrayOf()) }, { backend.createDirectory("/new") },
             { backend.delete("/note.txt") }, { backend.move("/note.txt", "/new") }, { backend.copy("/note.txt", "/new") },
         ).forEach { action ->

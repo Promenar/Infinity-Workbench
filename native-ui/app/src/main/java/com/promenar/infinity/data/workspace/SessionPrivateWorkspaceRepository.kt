@@ -32,6 +32,7 @@ internal class SessionPrivateWorkspaceRepository(
     override suspend fun moveToRecycleBin(workspaceRootUuid: String, uuid: String) = base.moveToRecycleBin(root().uuid, id(uuid))
     override suspend fun moveToRecycleBinIfHash(workspaceRootUuid: String, uuid: String, expectedSha256: String) =
         base.moveToRecycleBinIfHash(root().uuid, id(uuid), expectedSha256)
+    override suspend fun moveEmptyDirectoryToRecycleBin(workspaceRootUuid: String, uuid: String) = base.moveEmptyDirectoryToRecycleBin(root().uuid, id(uuid))
     override suspend fun rename(workspaceRootUuid: String, uuid: String, newName: String, expectedName: String?) =
         base.rename(root().uuid, id(uuid), newName, expectedName)
     override suspend fun updateParent(workspaceRootUuid: String, uuid: String, newParentUuid: String) =

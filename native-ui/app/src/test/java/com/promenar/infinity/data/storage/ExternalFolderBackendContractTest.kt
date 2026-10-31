@@ -18,6 +18,36 @@ import java.security.MessageDigest
 abstract class ExternalFolderBackendContractTest {
     abstract fun createBackend(): ExternalFolderBackend
 
+    @Test fun `流式写入校验长度且不覆盖已有条目`() = runBlocking {
+        val backend = createBackend()
+        val receipt = backend.writeStream("/stream", 7) { it.write("payload".toByteArray()) }
+        assertEquals(7L, receipt.size)
+        assertEquals("payload", backend.readStream("/stream", Long.MAX_VALUE) { it.readBytes().toString(Charsets.UTF_8) })
+        expectCode("CONFLICT") { backend.writeStream("/stream", 0) { error("不得调用生产者") } }
+        expectCode("CONFLICT") { backend.writeStream("/short", 7) { it.write(1) } }
+        expectCode("CONFLICT") { backend.writeStream("/long", 0) { it.write(1) } }
+        assertNull(backend.stat("/short")); assertNull(backend.stat("/long"))
+        expectCode("UNSUPPORTED") { backend.writeStream("/overwrite", 0, createOnly = false) { } }
+    }
+
+    @Test fun `流式生产者失败和取消不留下目标`() = runBlocking {
+        val backend = createBackend()
+        for (cancel in listOf(false, true)) {
+            try {
+                backend.writeStream("/partial", 7) { output ->
+                    output.write(1)
+                    if (cancel) throw kotlinx.coroutines.CancellationException("取消")
+                    throw ExternalFolderException("IO", "中断")
+                }
+                org.junit.Assert.fail("应传播中断")
+            } catch (failure: Exception) {
+                if (cancel) assertTrue(failure is kotlinx.coroutines.CancellationException)
+                else assertEquals("IO", (failure as ExternalFolderException).code)
+            }
+            assertNull(backend.stat("/partial"))
+        }
+    }
+
     @Test
     fun rootExistsAndMissingEntriesRemainAbsent() = runBlocking {
         val backend = createBackend()

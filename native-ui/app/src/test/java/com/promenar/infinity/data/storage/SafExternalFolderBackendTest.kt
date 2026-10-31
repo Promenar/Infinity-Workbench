@@ -196,7 +196,7 @@ class SafExternalFolderBackendTest : ExternalFolderBackendContractTest() {
         backend.createDirectory("/source")
         backend.write("/source/a.txt", "original".toByteArray())
         val source = object : ExternalFolderBackend by backend {
-            override suspend fun delete(path: String, expectedSha256: String?) {
+            override suspend fun deleteForTransfer(path: String, expected: com.promenar.infinity.domain.storage.ExternalFolderEntry, expectedSha256: String?) {
                 throw com.promenar.infinity.domain.storage.ExternalFolderException("UNAVAILABLE", "测试来源拒绝删除")
             }
         }

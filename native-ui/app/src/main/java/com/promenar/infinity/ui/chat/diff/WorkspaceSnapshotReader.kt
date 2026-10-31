@@ -19,9 +19,16 @@ data class CapturedSnapshot(val snapshot: FileSnapshot, val sha256: String? = nu
 fun interface PrivateWorkspaceReader {
     suspend fun read(workspace: IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long): ByteArray
 
+    /** 自定义读取器的兼容回退；默认实现使用安全句柄流。 */
+    suspend fun <T> readStream(workspace: IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+        consume(read(workspace, rootUuid, path, maxBytes).inputStream())
+
     companion object {
-        val Default = PrivateWorkspaceReader { workspace, rootUuid, path, maxBytes ->
-            PrivateWorkspaceTransferBackend(workspace, rootUuid).read(path, maxBytes)
+        val Default = object : PrivateWorkspaceReader {
+            override suspend fun read(workspace: IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long) =
+                PrivateWorkspaceTransferBackend(workspace, rootUuid).read(path, maxBytes)
+            override suspend fun <T> readStream(workspace: IWorkspaceRepository, rootUuid: String, path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+                PrivateWorkspaceTransferBackend(workspace, rootUuid).readStream(path, maxBytes, consume)
         }
     }
 }
