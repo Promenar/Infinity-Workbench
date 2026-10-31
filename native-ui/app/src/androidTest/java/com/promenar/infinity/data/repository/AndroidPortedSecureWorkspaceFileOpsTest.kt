@@ -18,6 +18,7 @@ class AndroidPortedSecureWorkspaceFileOpsTest {
         val root = Files.createTempDirectory(projectRoot, ".workspace-secure-root")
         val outside = Files.createTempDirectory(projectRoot, ".workspace-secure-outside")
         val safe = Files.createDirectory(root.resolve("safe"))
+        Files.createDirectory(root.resolve(".infinity"))
         if (!verifySecureSupport(root)) {
             root.toFile().deleteRecursively()
             outside.toFile().deleteRecursively()
@@ -33,20 +34,24 @@ class AndroidPortedSecureWorkspaceFileOpsTest {
         }
         claim(ops, root)
 
-        var rejected = false
+        var failure: Throwable? = null
         var outsideWritten = false
+        var originalWritten = false
         try {
             ops.createFile(root, listOf("safe", "new.txt"), "secret".toByteArray())
-        } catch (_: SecurityException) {
-            rejected = true
+        } catch (error: Exception) {
+            failure = error
         } finally {
             outsideWritten = Files.exists(outside.resolve("new.txt"))
+            originalWritten = Files.exists(root.resolve("safe-original/new.txt"))
             root.toFile().deleteRecursively()
             outside.toFile().deleteRecursively()
         }
 
-        assertThat(rejected).isTrue()
+        assertThat(swapped).isTrue()
+        assertThat(failure is SecurityException || failure is java.nio.file.FileSystemException).isTrue()
         assertThat(outsideWritten).isFalse()
+        assertThat(originalWritten).isFalse()
     }
 
     @Test
