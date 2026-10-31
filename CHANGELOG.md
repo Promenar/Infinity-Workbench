@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+
+- 修复发行设备回归的聊天模型测试夹具缺少目录元数据，导致目录刷新后模型被筛掉并触发超时；增加刷新后的可用性断言。
+
 ## [0.8.0-beta] - 2026-10-31
 
 `v0.7.1-beta` 与 `v0.7.2-beta` 标签的发行流水线均未通过设备回归，没有发布安装包；其全部内容并入本版本。

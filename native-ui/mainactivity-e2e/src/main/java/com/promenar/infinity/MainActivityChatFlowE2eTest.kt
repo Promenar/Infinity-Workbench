@@ -23,6 +23,10 @@ import com.promenar.infinity.data.model.LoopStatus
 import com.promenar.infinity.data.model.Message
 import com.promenar.infinity.data.model.MessageRole
 import com.promenar.infinity.data.model.ModelInfo
+import com.promenar.infinity.data.model.catalog.ModelCapability
+import com.promenar.infinity.data.model.catalog.ModelMetadataOverride
+import com.promenar.infinity.data.model.catalog.ModelWorkload
+import com.promenar.infinity.data.model.catalog.SupportState
 import com.promenar.infinity.data.model.Session
 import com.promenar.infinity.data.remote.stableModelId
 import com.promenar.infinity.domain.generation.GenerationRuntimePolicy
@@ -163,6 +167,12 @@ class MainActivityChatFlowE2eTest {
             .forEach { manager.deleteModel(it.id) }
         manager.addModel(e2eModel("model-a", "E2E Model A"))
         manager.addModel(e2eModel("model-b", "E2E Model B"))
+        // 模拟启动后模型目录刷新，确保夹具在真实刷新路径中仍然可用于聊天。
+        manager.refreshCatalogMetadata()
+        assertThat(
+            manager.providerModels.value.filter { it.id == firstModelId || it.id == secondModelId }
+                .map { it.type },
+        ).containsExactly("chat", "chat")
     }
 
     private fun e2eModel(remoteId: String, name: String) = ModelInfo(
@@ -175,6 +185,11 @@ class MainActivityChatFlowE2eTest {
         capabilities = listOf("chat"),
         providerName = "E2E Provider",
         providerId = "e2e-provider",
+        providerMetadata = ModelMetadataOverride(
+            displayName = name,
+            workload = ModelWorkload.GENERATIVE_TEXT,
+            capabilities = mapOf(ModelCapability.CHAT_ENDPOINT to SupportState.SUPPORTED),
+        ),
     )
 
     private suspend fun seedSession(approval: ApprovalRequest?) {
