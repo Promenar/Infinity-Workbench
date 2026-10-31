@@ -2,6 +2,12 @@ name: Android 截图诊断
 
 on:
   workflow_dispatch:
+    inputs:
+      preview_filter:
+        description: 要诊断的截图预览过滤条件
+        type: string
+        required: true
+        default: '*emptyChatReleasePreview*'
 
 permissions:
   contents: read
@@ -50,10 +56,12 @@ jobs:
 
       - name: 比对代表性截图
         working-directory: native-ui
+        env:
+          PREVIEW_FILTER: ${{ inputs.preview_filter }}
         run: |
           set -euo pipefail
           ./gradlew --no-daemon --stacktrace --no-build-cache clean
-          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest --tests '*emptyChatReleasePreview*'
+          ./gradlew --no-daemon --stacktrace --no-build-cache :app:validateSideloadDebugScreenshotTest --tests "$PREVIEW_FILTER"
 
       - name: 保留截图报告与参考图
         if: always()
