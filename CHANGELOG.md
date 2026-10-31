@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0-beta] - 2026-11-01
+
 ### 修复
 
 - 修复手机共享存储工作区上文件覆盖、移动、重命名与删除失败：卷不支持原子不覆盖移动时，核对身份和版本后使用普通移动或删除；覆盖写以完整暂存原子替换，Linux 与非 Linux 文件工具共用此后端。
