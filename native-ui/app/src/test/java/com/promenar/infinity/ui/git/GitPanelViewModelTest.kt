@@ -138,7 +138,13 @@ class GitPanelViewModelTest {
         val commit = fileState.detail as GitPanelDetail.Commit
         assertThat(commit.detail).isInstanceOf(GitLoad.Ready::class.java)
         assertThat(commit.file!!.change.oldPath).isEqualTo("src/Old.kt")
-        assertThat(runner.values(runner.commands.lastIndex, "--blob")).containsExactly(
+        // 其他异步查询可能在文件读取后完成；验证参数时不能依赖全局命令顺序。
+        val statusIndex = runner.operations().indexOf("status")
+        assertThat(statusIndex).isAtLeast(0)
+        runBlocking { runner.run(runner.commands[statusIndex]) }
+        val readIndex = runner.operations().indexOfLast { it == "read" }
+        assertThat(readIndex).isAtLeast(0)
+        assertThat(runner.values(readIndex, "--blob")).containsExactly(
             "${InspectFixtures.SHA_B}^:src/Old.kt",
             "${InspectFixtures.SHA_B}:src/New.kt",
         ).inOrder()

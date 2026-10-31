@@ -14,9 +14,9 @@ import com.promenar.infinity.startup.StartupScopeKind
 import com.promenar.infinity.startup.StartupStep
 import com.promenar.infinity.startup.StartupWriteBarrier
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -64,9 +64,11 @@ class StartupIsolatedVectorQueueTest {
             StartupIssueScope(StartupScopeKind.WORKSPACE_ROOT, "root-a", "工作区")) { error("journal 冲突") }
         StartupWriteBarrier.install(manager)
         val indexedRoots = mutableListOf<String>()
+        val indexingStarted = CompletableDeferred<Unit>()
         val indexService = object : DocumentIndexService {
             override suspend fun rebuild(event: FileIndexEvent): DocumentIndexResult {
                 indexedRoots += event.workspaceRootUuid
+                indexingStarted.complete(Unit)
                 awaitCancellation()
             }
 
@@ -90,7 +92,8 @@ class StartupIsolatedVectorQueueTest {
             assertThat(database.vectorizationTaskDao().getById("pending-a")).isEqualTo(retainedTask)
             assertThat(database.fileEntryDao().getAnyStateByUuidForLifecycle("root-a", "file-a")).isEqualTo(isolatedFile)
 
-            runCurrent()
+            // Room 可在测试调度器之外完成数据库操作，等待索引入口而非仅推进虚拟队列。
+            indexingStarted.await()
 
             assertThat(indexedRoots).containsExactly("root-b")
             assertThat(database.vectorizationTaskDao().getById("pending-a")).isEqualTo(retainedTask)
