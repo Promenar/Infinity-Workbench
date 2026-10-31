@@ -726,6 +726,8 @@ tasks.register<JavaExec>("runSshTestServer") {
 tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir
+    // 完整 JVM 单测的测试进程需容纳持久化测试夹具与 Android/Robolectric 类加载。
+    if (name == "testSideloadDebugUnitTest" || name == "testPlayDebugUnitTest") maxHeapSize = "1g"
     // MINA 的 NIO SPI 由 JDK 加载；保持同一加载器，避免污染 Robolectric 原生 SQLite 初始化。
     systemProperty("org.robolectric.packagesToNotAcquire", "org.apache.sshd.")
 }
