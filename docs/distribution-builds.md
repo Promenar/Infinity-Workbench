@@ -31,6 +31,8 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 侧载与 Play 的 Debug JVM 单测进程各配置 1 GiB 堆，Gradle 和 Kotlin 守护进程继续使用各自的内存配置。
 
+发行工作流按侧载 Debug、Play Debug、侧载 Release、Play Release 分阶段执行完整门禁与构建，继续复用 Gradle 守护进程和缓存。各阶段顺序执行，任一阶段失败即停止签名发布。
+
 依赖 Android 文件描述符与目录身份实现的工作区安全测试在设备回归中执行，覆盖根目录替换、符号链接竞争、回滚和旧回收目录恢复；不依赖 Android 桥接的协调逻辑仍由 JVM 单测覆盖。排查设备测试时可手动运行“Android 工作区设备诊断”，检查七项测试及执行日志，该诊断不替代完整设备门禁。
 
 | 变体 | APK 相对 `native-ui/` 的路径 | mapping |

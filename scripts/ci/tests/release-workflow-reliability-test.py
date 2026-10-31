@@ -405,9 +405,21 @@ class ReleaseWorkflowReliabilityTest(unittest.TestCase):
                     ":app:testSideloadDebugUnitTest",
                     ":app:lintSideloadDebug",
                     ":app:assembleSideloadDebug",
+                ],
+                [
+                    "./gradlew",
+                    "--stacktrace",
                     ":app:assemblePlayDebug",
                     ":app:testPlayDebugUnitTest",
+                ],
+                [
+                    "./gradlew",
+                    "--stacktrace",
                     ":app:assembleSideloadRelease",
+                ],
+                [
+                    "./gradlew",
+                    "--stacktrace",
                     ":app:assemblePlayRelease",
                 ],
             ],

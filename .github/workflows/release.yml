@@ -392,10 +392,13 @@ jobs:
           ./gradlew --stacktrace \
             :app:testSideloadDebugUnitTest \
             :app:lintSideloadDebug \
-            :app:assembleSideloadDebug \
+            :app:assembleSideloadDebug
+          ./gradlew --stacktrace \
             :app:assemblePlayDebug \
-            :app:testPlayDebugUnitTest \
-            :app:assembleSideloadRelease \
+            :app:testPlayDebugUnitTest
+          ./gradlew --stacktrace \
+            :app:assembleSideloadRelease
+          ./gradlew --stacktrace \
             :app:assemblePlayRelease
           python3 ../scripts/ci/check-distribution-manifests.py --build-type release
           python3 ../scripts/ci/check-native-page-alignment.py --build-type release
