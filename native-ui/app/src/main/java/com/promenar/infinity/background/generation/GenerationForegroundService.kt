@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import androidx.core.app.NotificationCompat
 import com.promenar.infinity.InfinityApplication
@@ -26,6 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -41,6 +43,9 @@ class GenerationForegroundService : Service() {
     private var trackedSubagents = false
     private var subagentCount = 0
     private var latestStartId: Int = 0
+    private val notificationThrottle = GenerationNotificationThrottle()
+    private var pendingNotification: Job? = null
+    private var latestWork: ForegroundWorkState? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -123,9 +128,33 @@ class GenerationForegroundService : Service() {
                     subagentCount = work.subagentCount
                     trackedSubagents = subagentCount > 0
                     if (work.isEmpty) stopTracking(null)
-                    else updateNotification(work.generations)
+                    else scheduleNotification(work)
                 }
         }
+    }
+
+    /** 每个 token 都会刷新快照；按 [GenerationNotificationThrottle] 合并纯进度变化，等待结束后补发最新状态。 */
+    private fun scheduleNotification(work: ForegroundWorkState) {
+        latestWork = work
+        val key = work.notificationKey()
+        val wait = notificationThrottle.delayFor(key, SystemClock.elapsedRealtime())
+        if (wait == 0L) {
+            pendingNotification?.cancel()
+            pendingNotification = null
+            sendNotification(work)
+            return
+        }
+        if (pendingNotification?.isActive == true) return
+        pendingNotification = serviceScope.launch {
+            delay(wait)
+            pendingNotification = null
+            latestWork?.takeUnless { it.isEmpty }?.let(::sendNotification)
+        }
+    }
+
+    private fun sendNotification(work: ForegroundWorkState) {
+        notificationThrottle.markSent(work.notificationKey(), SystemClock.elapsedRealtime())
+        updateNotification(work.generations)
     }
 
     private fun handleStop(intent: Intent) {
@@ -283,6 +312,7 @@ class GenerationForegroundService : Service() {
         if (expectedTaskId != null && trackedTaskId != expectedTaskId) return
         observerJob?.cancel()
         observerJob = null
+        cancelPendingNotification()
         trackedTaskId = null
         trackedSubagents = false
         subagentCount = 0
@@ -293,11 +323,19 @@ class GenerationForegroundService : Service() {
     private fun stopUnconditionally() {
         observerJob?.cancel()
         observerJob = null
+        cancelPendingNotification()
         trackedTaskId = null
         trackedSubagents = false
         subagentCount = 0
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun cancelPendingNotification() {
+        pendingNotification?.cancel()
+        pendingNotification = null
+        latestWork = null
+        notificationThrottle.reset()
     }
 
     companion object {

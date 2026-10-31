@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+
+- 生成中的前台通知不再随每个 token 刷新：阶段、任务、排队与子代理数量变化立即更新，进度计数至多每秒更新一次并保证补发最后状态，避免超过系统通知限速而被丢弃。
+
 ## [0.9.1-beta] - 2026-11-01
 
 ### 修复
