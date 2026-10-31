@@ -506,7 +506,7 @@ internal fun SecretOutputSpentRow(card: SecretOutputCard, state: SecretSlotState
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "\$${card.slot.name} · ${card.purpose.ifBlank { secretSourceText(card.slot.source) }}",
+                    "\$${card.slot.name} · ${card.purpose.ifBlank { secretSourceText(card.slot.source) }}", // wrap-check: allow 单行省略的保密输出回执
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
