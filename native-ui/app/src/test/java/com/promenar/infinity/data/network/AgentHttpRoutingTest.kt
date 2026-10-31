@@ -28,7 +28,7 @@ class AgentHttpRoutingTest {
 
     @Test fun `DNS派生tailnet固定CONNECT的IP并保留原始SNI证书与Host身份`(): Unit = runBlocking {
         val identity = identity()
-        TlsProxy(identity.context).use { fixture ->
+        TlsProxy(identity.serverContext).use { fixture ->
             val endpoint = AgentNetworkPolicy(tailnetRunning = { true }, resolver = { arrayOf(InetAddress.getByName("100.64.0.9")) })
                 .validate("https://origin.test/file")
             val base = OkHttpClient.Builder().sslSocketFactory(identity.context.socketFactory, identity.trust)
@@ -54,7 +54,7 @@ class AgentHttpRoutingTest {
 
     @Test fun `固定隧道IP不能绕过原始主机证书校验`(): Unit = runBlocking {
         val identity = identity()
-        TlsProxy(identity.context).use { fixture ->
+        TlsProxy(identity.serverContext).use { fixture ->
             val endpoint = AgentNetworkPolicy(tailnetRunning = { true }, resolver = { arrayOf(InetAddress.getByName("100.64.0.9")) })
                 .validate("https://wrong.test/file")
             val base = OkHttpClient.Builder().sslSocketFactory(identity.context.socketFactory, identity.trust).build()
@@ -69,7 +69,7 @@ class AgentHttpRoutingTest {
 
     @Test fun `tailnet自签名证书归为证书错误而不是代理不可用`(): Unit = runBlocking {
         val identity = identity()
-        TlsProxy(identity.context).use { fixture ->
+        TlsProxy(identity.serverContext).use { fixture ->
             val endpoint = AgentNetworkPolicy(tailnetRunning = { true }, resolver = { arrayOf(InetAddress.getByName("100.64.0.9")) })
                 .validate("https://origin.test/file")
             // 默认信任库不认识临时自签名证书，与真机访问 fnOS 自签名服务的情形一致。
@@ -112,7 +112,7 @@ class AgentHttpRoutingTest {
 
     @Test fun `固定隧道IP仍执行原始主机的证书pin校验`(): Unit = runBlocking {
         val identity = identity()
-        TlsProxy(identity.context).use { fixture ->
+        TlsProxy(identity.serverContext).use { fixture ->
             val endpoint = AgentNetworkPolicy(tailnetRunning = { true }, resolver = { arrayOf(InetAddress.getByName("100.64.0.9")) })
                 .validate("https://origin.test/file")
             val differentPin = "sha256/" + java.util.Base64.getEncoder().encodeToString(ByteArray(32))
@@ -126,7 +126,12 @@ class AgentHttpRoutingTest {
         }
     }
 
-    private data class Identity(val context: SSLContext, val trust: X509TrustManager, val certificate: X509Certificate)
+    private data class Identity(
+        val context: SSLContext,
+        val serverContext: SSLContext,
+        val trust: X509TrustManager,
+        val certificate: X509Certificate,
+    )
 
     private fun identity(): Identity {
         // 临时生成测试证书；私钥与随机口令不进入源码、输出或报告。
@@ -145,8 +150,10 @@ class AgentHttpRoutingTest {
         val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
             .trustManagers.filterIsInstance<X509TrustManager>().single()
         password.fill('\u0000')
-        return Identity(SSLContext.getInstance("TLS").apply { init(keys.keyManagers, arrayOf(trust), null) }, trust,
-            store.getCertificate("origin") as X509Certificate)
+        val clientContext = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, arrayOf(trust), null) }
+        // 服务端测试夹具需实现标准 SNI 匹配；客户端仍使用当前默认 TLS provider。
+        val serverContext = SSLContext.getInstance("TLS", "SunJSSE").apply { init(keys.keyManagers, arrayOf(trust), null) }
+        return Identity(clientContext, serverContext, trust, store.getCertificate("origin") as X509Certificate)
     }
 
     private class TlsProxy(context: SSLContext) : AutoCloseable {
