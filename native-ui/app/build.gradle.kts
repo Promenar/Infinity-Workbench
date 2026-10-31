@@ -727,7 +727,12 @@ tasks.withType<Test> {
     useJUnitPlatform()
     workingDir = rootProject.projectDir
     // 完整 JVM 单测的测试进程需容纳持久化测试夹具与 Android/Robolectric 类加载。
-    if (name == "testSideloadDebugUnitTest" || name == "testPlayDebugUnitTest") maxHeapSize = "1g"
+    if (name == "testSideloadDebugUnitTest" || name == "testPlayDebugUnitTest") {
+        maxHeapSize = "1g"
+        // 完整单测按测试类分到多个进程并行；每个进程 1g 堆，默认取半数核心且不超过 4，内存紧张时可用 -Pinfinity.unitTestForks 下调。
+        maxParallelForks = providers.gradleProperty("infinity.unitTestForks").orNull?.toIntOrNull()
+            ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
+    }
     // MINA 的 NIO SPI 由 JDK 加载；保持同一加载器，避免污染 Robolectric 原生 SQLite 初始化。
     systemProperty("org.robolectric.packagesToNotAcquire", "org.apache.sshd.")
 }

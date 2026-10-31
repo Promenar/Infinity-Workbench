@@ -29,7 +29,7 @@ python3 ../scripts/ci/check-native-page-alignment.py
 
 排查 Linux 托管环境的 JVM 单测时，可手动运行“Android JVM 单测诊断”，指定测试过滤条件并读取保留的 XML 和测试报告；可选采样测试进程的 JVM 参数和堆使用。该入口不使用签名材料，不替代完整单测。
 
-侧载与 Play 的 Debug JVM 单测进程各配置 1 GiB 堆，Gradle 和 Kotlin 守护进程继续使用各自的内存配置。
+侧载与 Play 的 Debug JVM 单测按测试类分到多个进程并行，每个进程配置 1 GiB 堆；默认进程数取 CPU 核心数的一半且不超过 4，内存紧张时可用 `-Pinfinity.unitTestForks=<n>` 下调（传 1 即恢复单进程）。Gradle 和 Kotlin 守护进程继续使用各自的内存配置。
 
 发行工作流按侧载 Debug、Play Debug、侧载 Release、Play Release 分阶段执行完整门禁与构建，继续复用 Gradle 守护进程和缓存。各阶段顺序执行，任一阶段失败即停止签名发布。
 
