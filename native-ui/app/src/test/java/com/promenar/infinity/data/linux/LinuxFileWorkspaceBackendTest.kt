@@ -17,6 +17,65 @@ class LinuxFileWorkspaceBackendTest {
     private val backend = LinuxFileWorkspaceBackend(fs.forHome()) { ready }
     @After fun cleanup() { deleteLinuxFixture(root) }
 
+    @Test fun `原生移动的流式摘要读取不受64MiB整块上限约束`() = runBlocking {
+        val source = File(home, "large")
+        java.io.RandomAccessFile(source, "rw").use { it.setLength(80L * 1024 * 1024) }
+        val bytes = backend.readStream("/large", Long.MAX_VALUE) { input ->
+            val buffer = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+            }
+            total
+        }
+        assertThat(bytes).isEqualTo(80L * 1024 * 1024)
+    }
+
+    @Test fun `流式读取期间文件增长不能向消费者交付超预算内容`() = runBlocking {
+        val source = File(home, "growing").apply { writeText("abc") }
+        var delivered = 0
+        val failure = runCatching {
+            backend.readStream("/growing", 3) { input ->
+                source.appendText("def")
+                val buffer = ByteArray(64)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    delivered += count
+                }
+            }
+        }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(ExternalFolderException::class.java)
+        assertThat(delivered).isAtMost(3)
+        assertThat((failure as ExternalFolderException).code).isEqualTo("TOO_LARGE")
+    }
+
+    @Test fun `流式旧句柄稳定时仍核验读取后的来源路径`() = runBlocking {
+        val source = File(home, "source").apply { writeText("original") }
+        val heldIo = io.mockk.spyk(LinuxFileIo())
+        io.mockk.every { heldIo.openRead(any()) } answers {
+            val channel = Files.newByteChannel(firstArg<java.nio.file.Path>(), setOf(java.nio.file.StandardOpenOption.READ, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            LinuxFileIo.ReadHandle(channel, { "稳定旧句柄" }, channel::close)
+        }
+        val metadata = object : LinuxFileMetadata by TestLinuxFileMetadata {
+            override val access = heldIo
+        }
+        val backend = LinuxFileWorkspaceBackend(LinuxFileSystemImpl(root, { true }, metadata)) { true }
+        val failure = runCatching {
+            backend.readStream("/source", Long.MAX_VALUE) { input ->
+                val original = input.readBytes().toString(Charsets.UTF_8)
+                Files.move(source.toPath(), File(home, "held-original").toPath())
+                source.writeText("replacement-with-different-size")
+                original
+            }
+        }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(ExternalFolderException::class.java)
+        assertThat((failure as ExternalFolderException).code).isEqualTo("CONFLICT")
+        assertThat(source.readText()).isEqualTo("replacement-with-different-size")
+    }
+
     @Test fun `工作区文件工具还原假硬链接并保护内部实体`() = runBlocking<Unit> {
         val content = File(home, ".l2s.data0001.0002").apply { writeText("content") }
         val middle = File(home, ".l2s.data0001")

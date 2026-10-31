@@ -76,6 +76,36 @@ class SafExternalFolderBackend(private val contentResolver: ContentResolver, pri
         }
     }
 
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (InputStream) -> T): T = io {
+        if (maxBytes < 0) fail("INVALID_ARGUMENT", "读取上限无效")
+        val document = find(ExternalFolderPaths.normalize(path)) ?: fail("NOT_FOUND", "文件不存在")
+        requireFile(document)
+        if (document.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
+        input(document).use { source ->
+            // 提供商报告的大小可能未知或过期，实际流也必须逐块核对预算。
+            var remaining = maxBytes
+            val bounded = object : InputStream() {
+                override fun read(): Int {
+                    val value = source.read()
+                    if (value >= 0) {
+                        if (remaining == 0L) fail("TOO_LARGE", "文件超过读取上限")
+                        remaining--
+                    }
+                    return value
+                }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                    val count = source.read(bytes, offset, length)
+                    if (count > 0) {
+                        if (count > remaining) fail("TOO_LARGE", "文件超过读取上限")
+                        remaining -= count
+                    }
+                    return count
+                }
+            }
+            consume(bounded)
+        }
+    }
+
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry = io {
         val normalized = mutationPath(path)
         val name = normalized.substringAfterLast('/')

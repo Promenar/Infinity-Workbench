@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+
+- 文件工具在同一挂载内优先调用存储后端原生移动，真实路径同卷重命名保持 inode，不经过回收区与内存快照；Linux 与普通模式均支持大文件和大型目录，来源版本采用流式 SHA-256 校验，后端不支持时保留复制校验回退。
+
 ## [0.9.2-beta] - 2026-11-01
 
 ### 修复

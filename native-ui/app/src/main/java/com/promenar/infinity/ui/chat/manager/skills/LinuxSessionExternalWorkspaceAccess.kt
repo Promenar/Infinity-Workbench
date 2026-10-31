@@ -409,6 +409,36 @@ class LinuxSessionExternalWorkspaceAccess(
         com.promenar.infinity.data.model.ToolResult("linux_private_move", "已完成：$destination [uuid=${moved.uuid}] [hash=${moved.hash}]")
     }
 
+    internal suspend fun sameMountedBackend(sessionId: String, source: String, destination: String): Boolean = operation {
+        val current = namespace(sessionId)
+        sameMountedBackend(route(current, normalize(current, source)), route(current, normalize(current, destination)))
+    }
+
+    private fun sameMountedBackend(from: LinuxSessionPath, to: LinuxSessionPath): Boolean =
+        from.kind == LinuxSessionPathKind.WORKSPACE && to.kind == LinuxSessionPathKind.WORKSPACE ||
+            from.kind == LinuxSessionPathKind.EXTERNAL && to.kind == LinuxSessionPathKind.EXTERNAL &&
+            ExternalMountPaths.parse(from.path)?.first == ExternalMountPaths.parse(to.path)?.first
+
+    /** 同一挂载内使用原后端移动；转换与读写共用绑定，跨命名空间交回快照流程。 */
+    internal suspend fun moveMounted(sessionId: String, source: String, destination: String): Unit? = operation {
+        val current = namespace(sessionId)
+        val from = route(current, mutation(current, source))
+        val to = route(current, mutation(current, destination))
+        requireWritable(sessionId, current, source)
+        requireWritable(sessionId, current, destination)
+        if (!sameMountedBackend(from, to)) return@operation null
+        suspend fun moveBound() {
+            val bindings = currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds.orEmpty()
+            original.backend(sessionId, bindings).move(from.path, to.path)
+        }
+        if (from.kind == LinuxSessionPathKind.WORKSPACE) {
+            withOriginalBindings(current, workspacePaths = true) { moveBound() }
+        } else {
+            checkedExternal(sessionId, to.path)
+            withExternal(current, sessionId, from.path) { moveBound() }
+        }
+    }
+
     /** MIME 只选择文本类型，UTF-8、NUL 与预算门禁继续核验真实字节。 */
     internal suspend fun textMime(sessionId: String, path: String): String? = operation {
         when (route(namespace(sessionId), path).kind) {

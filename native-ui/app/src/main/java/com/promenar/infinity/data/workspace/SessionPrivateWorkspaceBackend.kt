@@ -10,6 +10,8 @@ internal class SessionPrivateWorkspaceBackend(private val base: ExternalFolderBa
         it.copy(path = if (SessionPrivateWorkspacePaths.contains(path)) SessionPrivateWorkspacePaths.virtual(it.path) else it.path)
     }
     override suspend fun read(path: String, maxBytes: Long) = base.read(relative(path), maxBytes)
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T =
+        base.readStream(relative(path), maxBytes, consume)
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean) =
         base.write(relative(path), content, expectedSha256, createOnly).copy(path = path)
     override suspend fun createDirectory(path: String) = base.createDirectory(relative(path)).copy(path = path)

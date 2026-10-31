@@ -100,7 +100,11 @@ class LinuxFileSystemImpl internal constructor(
         access.directory(directory) { it.toFile().usableSpace }
     }
 
-    override suspend fun <T> readStreaming(path: String, maxBytes: Long, reader: (java.io.InputStream) -> T): T = operation {
+    override suspend fun <T> readStreaming(path: String, maxBytes: Long, reader: (java.io.InputStream) -> T): T =
+        readStream(path, maxBytes) { reader(it) }
+
+    /** 文件工具的挂起回调沿用同一个句柄和版本复核。 */
+    internal suspend fun <T> readStream(path: String, maxBytes: Long, reader: suspend (java.io.InputStream) -> T): T = operation {
         val source = resolvePath(path)
         val original = regularAttributes(source)
         if (original.size() > maxBytes) fail(LinuxFileErrorCode.IO)

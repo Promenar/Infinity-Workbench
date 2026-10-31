@@ -142,6 +142,39 @@ class LinuxSessionFileSkillTest {
         assertThat(privateTarget).contains("/home/session/same.txt")
     }
 
+    @Test fun `rootfs移动的版本冲突仍在原读取预算内检查`() = runBlocking {
+        val result = skill(MoveFileSkill(workspace, FileIndexEventSink.None)).execute(
+            json("path" to "/etc/config", "newParentPath" to "/mnt/docs", "expected_sha256" to "wrong"), context())
+        assertThat(result.content).contains("CONFLICT")
+        assertThat(File(rootfsDirectory, "etc/config").readText()).isEqualTo("rootfs-data")
+        coVerify(exactly = 0) { mounts.write(any(), any(), any(), any(), any()) }
+    }
+
+    @Test fun `分支workspace原生移动保留基础挂载身份和路径绑定`() = runBlocking {
+        selectProject()
+        val backend = mockk<ExternalFolderBackend>()
+        val branch = com.promenar.infinity.data.branch.BranchLinuxFileNamespace(
+            com.promenar.infinity.data.branch.BranchLinuxCommandWorkspace(externalDirectory, "/workspace/branches/feature"), backend,
+        )
+        val fresh = LinuxSessionExternalWorkspaceAccess(mounts, workspace, files, { selected }, LinuxSessionRootfsBackend(fs), branchNamespace = { branch })
+        every { mounts.backend("one", any()) } answers { backend }
+        coEvery { backend.move("/a", "/b") } coAnswers {
+            val operation = kotlinx.coroutines.currentCoroutineContext()[com.promenar.infinity.data.branch.BranchLinuxWorkspaceOperation]!!
+            assertThat(operation.workspacePaths).isTrue()
+            assertThat(operation.baseRoot).isEqualTo(externalDirectory)
+            assertThat(operation.backend).isSameInstanceAs(backend)
+            assertThat(kotlinx.coroutines.currentCoroutineContext()[ExternalMountOperationBindings]?.mountIds?.get(""))
+                .isEqualTo(operation.mount.id)
+        }
+        val wrapped = LinuxSessionFileSkill(MoveFileSkill(workspace, FileIndexEventSink.None), { mode }, fresh,
+            workspace, files, FileIndexEventSink.None, captureFileChanges = false)
+        val result = wrapped.execute(json("path" to "/workspace/a", "newName" to "b"), context())
+        assertWithMessage(result.content).that(result.status).isEqualTo("success")
+        assertThat(result.content).contains("已移动（原位重命名）")
+        coVerify(exactly = 1) { backend.move("/a", "/b") }
+        coVerify(exactly = 0) { mounts.backupBeforeMove(any(), any()) }
+    }
+
     @Test fun `特殊登记根下分支工具读取创建和移动保留实际cwd与父挂载区别`() = runBlocking {
         for (cwd in listOf("/opt/.infinity-project/feature", "/root/.l2s.project", "/home/code ")) {
             val directory = File(rootfsDirectory, cwd.removePrefix("/")).apply { mkdirs() }

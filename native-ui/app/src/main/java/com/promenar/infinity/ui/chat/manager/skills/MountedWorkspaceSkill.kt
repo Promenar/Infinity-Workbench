@@ -24,9 +24,11 @@ import com.promenar.infinity.ui.chat.diff.PrivateWorkspaceReader
 import com.promenar.infinity.ui.chat.diff.WorkspaceSnapshotReader
 import com.promenar.infinity.ui.chat.manager.registry.*
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import com.promenar.infinity.data.storage.namespaceBindings
 import kotlinx.coroutines.withContext
@@ -247,14 +249,42 @@ class MountedWorkspaceSkill(
         val privateNamespace = SessionPrivateWorkspaceBackend(privateBackend)
         val sourceBackend = if (sourceMounted) externalBackend else privateNamespace
         val targetBackend = if (destinationMounted) externalBackend else privateNamespace
+        val sameMount = sourceMounted && destinationMounted && if (linux != null) {
+            linux.sameMountedBackend(context.sessionId, source, destination)
+        } else {
+            val sourceAlias = ExternalMountPaths.aliasOf(source, rooted)
+            val targetAlias = ExternalMountPaths.aliasOf(destination, rooted)
+            sourceAlias != null && targetAlias != null && bindings[sourceAlias] != null && bindings[sourceAlias] == bindings[targetAlias]
+        }
         if (expected != null) {
-            val bytes = sourceBackend.read(source, ExternalTreeTransfer.MAX_BYTES)
-            if (Sha256Utils.hash(bytes) != expected) fail("CONFLICT", "expected_sha256 与来源不一致")
+            // 跨命名空间仍走有界快照；默认流实现可能整块读取，不能放宽它的内存预算。
+            val hash = sourceBackend.readStream(source, if (sameMount) Long.MAX_VALUE else ExternalTreeTransfer.MAX_BYTES) { input ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+            if (hash != expected) fail("CONFLICT", "expected_sha256 与来源不一致")
         }
         if (destination == source) {
             sourceBackend.stat(source) ?: fail("NOT_FOUND", "源条目不存在")
             return ToolResult("mount_move", "目标路径未变化：$source")
         }
+        // 摘要校验到移动之间仍有短暂竞态；后端在实际移动前会再次核对来源身份。
+        val nativeMoved = try {
+            if (!sameMount) false
+            else if (linux != null) linux.moveMounted(context.sessionId, source, destination) != null
+            else { externalBackend.move(source, destination); true }
+        } catch (failure: ExternalFolderException) {
+            if (failure.code != "UNSUPPORTED") throw failure
+            false
+        }
+        if (nativeMoved) return ToolResult("mount_move", "已移动（原位重命名） / Moved (in-place rename)：$source → $destination")
         val backupId = if (sourceMounted) mounts.backupBeforeMove(context.sessionId, source) else null
         if (linux != null) {
             // 快照仅校验根下名称；实际路径已由 Linux 命名空间核验，每次 IO 仍通过原安全后端。
@@ -262,7 +292,7 @@ class MountedWorkspaceSkill(
         } else ExternalTreeTransfer.move(sourceBackend, source, targetBackend, destination, expected)
         val indexed = privateBackend.confirmCreated()
         if (backupId != null) mounts.completeMoveBackup(context.sessionId, backupId)
-        return ToolResult("mount_move", "已复制、校验并移动：$source → $destination" + if (indexed) "" else "；文件已保存，索引等待重试")
+        return ToolResult("mount_move", "已复制、校验并移动 / Copied, verified and moved：$source → $destination" + if (indexed) "" else "；文件已保存，索引等待重试")
     }
 
     private suspend fun pathArgument(args: JsonObject, context: SkillExecutionContext, repository: IWorkspaceRepository, uuidKey: String, pathKey: String): String? {

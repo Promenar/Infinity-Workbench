@@ -35,6 +35,40 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
         bytes
     }
 
+    override suspend fun <T> readStream(path: String, maxBytes: Long, consume: suspend (java.io.InputStream) -> T): T = operation {
+        if (maxBytes < 0) fail("INVALID_ARGUMENT", "读取上限无效")
+        val target = guest(normalize(path))
+        val entry = files.stat(target) ?: fail("NOT_FOUND", "文件不存在")
+        if (entry.type != LinuxFileType.FILE) fail("INVALID_PATH", "只能读取普通文件")
+        if (entry.size > maxBytes) fail("TOO_LARGE", "文件超过读取上限")
+        val value = files.readStream(target, maxBytes) { source ->
+            var remaining = maxBytes
+            val bounded = object : java.io.InputStream() {
+                override fun read(): Int {
+                    val value = source.read()
+                    if (value >= 0) {
+                        if (remaining == 0L) throw LinuxStreamingException("TOO_LARGE")
+                        remaining--
+                    }
+                    return value
+                }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                    val count = source.read(bytes, offset, length)
+                    if (count > 0) {
+                        if (count > remaining) throw LinuxStreamingException("TOO_LARGE")
+                        remaining -= count
+                    }
+                    return count
+                }
+            }
+            consume(bounded)
+        }
+        // 句柄版本稳定不能证明路径未被替换，保留整块读取原有的读后路径复核。
+        val after = files.stat(target) ?: fail("CONFLICT", "文件在读取期间发生变化")
+        if (entry.modifiedMs != after.modifiedMs || entry.size != after.size) fail("CONFLICT", "文件在读取期间发生变化")
+        value
+    }
+
     override suspend fun write(path: String, content: ByteArray, expectedSha256: String?, createOnly: Boolean): ExternalFolderEntry = operation {
         val normalized = mutation(path)
         rejectLink(normalized)
@@ -91,6 +125,7 @@ internal class LinuxFileWorkspaceBackend(files: LinuxFileSystemImpl, private val
         if (!available()) fail("UNAVAILABLE", "Linux 主目录不可用")
         try { block() } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: LinuxFileException) {
+            if (failure is LinuxStreamingException && failure.failureCode == "TOO_LARGE") fail("TOO_LARGE", "文件超过读取上限")
             fail(when (failure.code) {
                 LinuxFileErrorCode.CHANGED -> "CONFLICT"
                 LinuxFileErrorCode.NOT_READY -> "UNAVAILABLE"
