@@ -165,8 +165,15 @@ class AgentHttpRoutingTest {
                     socket.getOutputStream().apply { write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray()); flush() }
                     (context.socketFactory.createSocket(socket, "localhost", socket.port, true) as SSLSocket).use { tls ->
                         tls.useClientMode = false
+                        tls.sslParameters = tls.sslParameters.apply {
+                            sniMatchers = listOf(object : SNIMatcher(StandardConstants.SNI_HOST_NAME) {
+                                override fun matches(serverName: SNIServerName): Boolean {
+                                    sni.complete((serverName as SNIHostName).asciiName)
+                                    return true
+                                }
+                            })
+                        }
                         tls.startHandshake()
-                        sni.complete(((tls.session as ExtendedSSLSession).requestedServerNames.single() as SNIHostName).asciiName)
                         val request = tls.inputStream.bufferedReader()
                         request.readLine()
                         while (true) {
