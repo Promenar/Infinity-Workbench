@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.2-beta] - 2026-11-01
+
 ### 修复
 
 - 共享存储移动遇到句柄式 EXDEV 时，核对路径与目录身份后重试原生重命名，保持同卷文件身份；真实跨卷使用流式复制与摘要校验，移除移动的 32 MiB 和 1000 条目限制，预查可用空间并从可信目标补偿恢复来源。
