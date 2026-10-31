@@ -1228,10 +1228,16 @@ internal fun InlineToolRow(
     // 知识检索逐条显示结果数，点按打开检索详情；混合工具时追加在摘要下方。
     val knowledgeSteps = remember(invocations) { invocations.mapNotNull(::knowledgeSearchStep) }
     val knowledgeOnly = knowledgeSteps.isNotEmpty() && knowledgeSteps.size == invocations.size
+    val jobLabels = LocalBackgroundJobLabels.current
+    // 只有一条命令在跑时，摘要直接说它在做什么或在等哪个后台任务。
+    val runningCommand = if (summary.runningAction == ToolSummaryAction.COMMAND) {
+        invocations.singleOrNull { !it.complete }?.let { commandStepLabel(it.name, it.call?.toolArgs, jobLabels) }
+    } else null
+    val runningCommandText = runningCommand?.let { runningCommandText(it) }
     val segments = buildList<CharSequence> {
         if (stateSummaries.isNotEmpty()) add(stateSummaries.joinToString("，"))
         // 文件改动只来自成功的文件工具：全是文件编辑时标题直接给出文件与行数，混合工具时作为补充段。
-        if (!stateOnly && (!showFileTitle || !summary.isFileEditOnly)) add(toolGroupSummaryText(summary))
+        if (!stateOnly && (!showFileTitle || !summary.isFileEditOnly)) add(runningCommandText ?: toolGroupSummaryText(summary))
         if (showFileTitle) add(com.promenar.infinity.ui.chat.diff.fileChangesStyledTitle(fileChanges))
         if (summary.failedCount == 0 && summary.runningAction == null) summary.durationMs?.let { add(stepDurationText(it)) }
     }
@@ -1272,15 +1278,27 @@ internal fun InlineToolRow(
                 invocations.forEach { invocation ->
                     key(invocation.steps.firstOrNull()?.id) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val commandStep = remember(invocation, jobLabels) { commandStepLabel(invocation.name, invocation.call?.toolArgs, jobLabels) }
+                            val heading = commandStep?.let { commandStepHeading(it) }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(toolFriendlyName(invocation.name), style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                                invocation.name?.let { name ->
-                                    Text(
-                                        name,
-                                        style = InfinityTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = InfinityMonospace),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    )
+                                if (heading != null) {
+                                    // 有短标题或能认出所操作的任务时，标题占主位，工具名退为小字。
+                                    Text(heading, style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    invocation.name?.let { name ->
+                                        Text(name, style = InfinityTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = InfinityMonospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    }
+                                } else {
+                                    Text(toolFriendlyName(invocation.name), style = InfinityTypography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                    invocation.name?.let { name ->
+                                        Text(
+                                            name,
+                                            style = InfinityTypography.labelSmall.copy(fontSize = 11.sp, fontFamily = InfinityMonospace),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                                 if (invocation.ranInLinux) LinuxRuntimeChip()
                                 invocation.durationMs?.let { Text(stepDurationText(it), style = InfinityTypography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -1301,7 +1319,12 @@ internal fun InlineToolRow(
                             }
                             val workspaceChanges = remember(invocation) { invocation.workspaceChanges }
                             workspaceChanges?.let { com.promenar.infinity.ui.chat.diff.WorkspaceChangesList(it) }
-                            invocation.call?.toolArgs?.takeIf(String::isNotBlank)?.let { args ->
+                            commandStep?.waitLimitSeconds?.let { limit ->
+                                JobWaitProgress(limit, startedAt = invocation.call?.timestamp, running = !invocation.complete)
+                            }
+                            // 等待、查看、停止任务的参数只有任务号，标题已说明对象，不再显示原始参数。
+                            val argumentsShown = commandStep?.kind !in setOf(CommandStepKind.WAIT, CommandStepKind.STATUS, CommandStepKind.STOP)
+                            invocation.call?.toolArgs?.takeIf { argumentsShown && it.isNotBlank() }?.let { args ->
                                 ExpandableToolText(text = args, collapsedLines = 6, arguments = true)
                             }
                             invocation.results.forEach { result ->
@@ -1333,6 +1356,55 @@ internal fun InlineToolRow(
         }
     }
 }
+
+/** 运行中摘要：有短标题的命令说明在做什么，等待任务说明在等哪个；其余返回 null 沿用通用文案。 */
+@Composable
+private fun runningCommandText(step: CommandStepLabel): String? = when (step.kind) {
+    CommandStepKind.RUN -> step.label?.let { stringResource(R.string.chat_step_command_running_titled, it) }
+    CommandStepKind.WAIT -> stringResource(R.string.chat_step_job_wait_running, commandJobName(step))
+    else -> null
+}
+
+/** 明细标题：命令显示短标题；任务操作显示“动作 · 任务名”。没有可说的内容时返回 null，沿用工具通称。 */
+@Composable
+private fun commandStepHeading(step: CommandStepLabel): String? = when (step.kind) {
+    CommandStepKind.RUN -> step.label
+    else -> {
+        val action = stringResource(when (step.kind) {
+            CommandStepKind.WAIT -> R.string.chat_step_job_wait_name
+            CommandStepKind.STATUS -> R.string.chat_step_job_status_name
+            CommandStepKind.STOP -> R.string.chat_step_job_stop_name
+            else -> R.string.chat_step_job_input_name
+        })
+        "$action · ${commandJobName(step)}"
+    }
+}
+
+/** 任务名：找到记录时为短标题或命令原文，否则为短任务号。 */
+@Composable
+private fun commandJobName(step: CommandStepLabel): String = step.label
+    ?: step.jobId?.let { stringResource(R.string.chat_step_job_unknown, shortJobId(it)) }
+    ?: stringResource(R.string.chat_step_job_wait_name)
+
+/** job_wait 的等待进度：运行中每秒刷新“已等待 / 最长”，结束后只留最长等待时间。 */
+@Composable
+private fun JobWaitProgress(limitSeconds: Int, startedAt: Long?, running: Boolean) {
+    val limit = if (limitSeconds % 60 == 0) stringResource(R.string.chat_step_job_wait_limit_minutes, limitSeconds / 60)
+        else stringResource(R.string.chat_step_job_wait_limit_seconds, limitSeconds)
+    val elapsedSeconds by produceState(initialValue = -1L, running, startedAt) {
+        if (!running || startedAt == null || startedAt <= 0) { value = -1L; return@produceState }
+        while (true) {
+            value = ((System.currentTimeMillis() - startedAt) / 1000).coerceIn(0, limitSeconds.toLong())
+            delay(1_000)
+        }
+    }
+    val text = if (elapsedSeconds >= 0) {
+        stringResource(R.string.chat_step_job_wait_elapsed, clockText(elapsedSeconds), clockText(limitSeconds.toLong()))
+    } else limit
+    Text(text, style = InfinityTypography.labelSmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+private fun clockText(seconds: Long): String = "%d:%02d".format(seconds / 60, seconds % 60)
 
 /** 标明这条命令在内置 Linux 环境中运行，与系统 shell 的结果区分。 */
 @Composable

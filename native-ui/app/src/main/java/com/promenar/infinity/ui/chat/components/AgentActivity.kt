@@ -198,12 +198,7 @@ private fun RunningJobCard(
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(InfinitySpacing.Medium))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = job.summary,
-                        style = InfinityTypography.bodyMedium.copy(fontFamily = InfinityMonospace),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    JobLabel(job, showCommand = true)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         SmallTag(jobRunnerLabel(job), MaterialTheme.colorScheme.surfaceContainerHighest)
                         Text(
@@ -261,13 +256,7 @@ private fun FinishedJobRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             JobStateIcon(job, Modifier.size(18.dp))
             Spacer(Modifier.width(InfinitySpacing.Medium))
-            Text(
-                text = job.summary,
-                style = InfinityTypography.bodyMedium.copy(fontFamily = InfinityMonospace),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            JobLabel(job, Modifier.weight(1f))
             Spacer(Modifier.width(InfinitySpacing.Small))
             val transferFailure = job.transfer?.failure
             if (transferFailure != null) {
@@ -333,12 +322,7 @@ internal fun BackgroundJobRow(
             }
             Spacer(Modifier.width(InfinitySpacing.Medium))
             Column(Modifier.weight(1f)) {
-                Text(
-                    text = job.summary,
-                    style = InfinityTypography.bodyMedium.copy(fontFamily = InfinityMonospace),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                JobLabel(job)
                 Text(
                     text = (jobMetaSegments(job, nowMillis) + listOfNotNull(sessionTitle)).joinToString(" · "),  // wrap-check: allow 单行显示
                     style = InfinityTypography.labelSmall,
@@ -701,5 +685,31 @@ private fun SmallTag(
 ) {
     Surface(shape = CircleShape, color = color, contentColor = contentColor) {
         Text(text, style = InfinityTypography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+    }
+}
+
+/**
+ * 任务名：有短标题时显示标题，[showCommand] 为 true 时在下方用小号等宽字补一行命令原文；
+ * 没有标题时从左往右显示命令原文，最多两行，不按规则猜“主命令”。
+ */
+@Composable
+private fun JobLabel(job: BackgroundJob, modifier: Modifier = Modifier, showCommand: Boolean = false) {
+    val title = job.title?.takeIf(String::isNotBlank)
+    Column(modifier) {
+        Text(
+            text = title ?: job.summary,
+            style = if (title != null) InfinityTypography.bodyMedium else InfinityTypography.bodyMedium.copy(fontFamily = InfinityMonospace),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (title != null && showCommand) {
+            Text(
+                text = job.summary,
+                style = InfinityTypography.labelSmall.copy(fontFamily = InfinityMonospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

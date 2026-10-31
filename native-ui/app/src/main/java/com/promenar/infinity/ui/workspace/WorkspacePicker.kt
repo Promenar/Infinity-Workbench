@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.SdStorage
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -423,17 +424,26 @@ fun WorkspacePickerContent(
             onNavigateToCrumb = { index -> onNavigate(page.navigateToCrumb(crumbs.getOrNull(index - 1)?.id)) },
             modifier = Modifier.testTag("workspace_picker_breadcrumbs"),
             backButtonTag = "workspace_picker_back",
+            actions = {
+                // 与返回按钮对称地放在页头右侧，不再单独占一行；Linux 起点列表的父目录是不可选的 `/`，不提供新建。
+                if (page != WorkspacePickerPage.Linux(null)) {
+                    Spacer(Modifier.width(InfinitySpacing.Small))
+                    FilledTonalIconButton(
+                        onClick = onCreate,
+                        enabled = !state.busy && !state.loading && state.loadError == null,
+                        modifier = Modifier.size(40.dp).testTag("workspace_picker_create"),
+                    ) {
+                        Icon(
+                            Icons.Rounded.CreateNewFolder,
+                            contentDescription = stringResource(
+                                if (page == WorkspacePickerPage.Projects) R.string.workspace_picker_new_project else R.string.workspace_picker_new_folder,
+                            ),
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            },
         )
-        TextButton(
-            onClick = onCreate,
-            // Linux 起点列表本身不能新建目录（父目录是不可选的 `/`）。
-            enabled = !state.busy && !state.loading && state.loadError == null && page != WorkspacePickerPage.Linux(null),
-            modifier = Modifier.heightIn(min = InfinitySpacing.MinimumTouchTarget).testTag("workspace_picker_create"),
-        ) {
-            Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.size(InfinitySpacing.Small))
-            Text(stringResource(if (page == WorkspacePickerPage.Projects) R.string.workspace_picker_new_project else R.string.workspace_picker_new_folder))
-        }
     }
     AnimatedVisibility(
         visible = page != WorkspacePickerPage.Home && (state.loading || state.busy),

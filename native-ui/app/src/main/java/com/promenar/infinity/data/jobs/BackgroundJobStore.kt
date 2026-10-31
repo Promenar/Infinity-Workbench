@@ -44,10 +44,12 @@ data class BackgroundJobRecord(
     val transfer: SftpTransferRecord? = null,
     /** 仅记录执行时引用的槽位名，供进程恢复时明确报告缺失。 */
     val secretNames: List<String> = emptyList(),
+    /** 智能体为命令写的短标题；旧记录与未填写时为 null。 */
+    val title: String? = null,
 ) {
     /** 未知执行器按 SHELL 展示，持久化原值保留，不据此启动新命令。 */
     val runnerKind: BackgroundJobRunner get() = BackgroundJobRunner.entries.firstOrNull { it.name == runner } ?: BackgroundJobRunner.SHELL
-    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id",remoteHost,transfer?.value())
+    fun job() = BackgroundJob(id,sessionId,runnerKind,summary,BackgroundJobState.valueOf(state),exitCode,startedAtMillis,endedAtMillis,maxRuntimeMinutes,BackgroundJobExitAction.fromWire(onExit) ?: BackgroundJobExitAction.NONE,BackgroundJobLogs.reference(id),"job:$id",remoteHost,transfer?.value(),title)
     val running: Boolean get() = state == "RUNNING"
 }
 

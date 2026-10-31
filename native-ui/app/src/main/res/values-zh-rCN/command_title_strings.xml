@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_step_command_running_titled">正在运行：%1$s</string>
+    <string name="chat_step_job_wait_running">正在等待：%1$s</string>
+    <string name="chat_step_job_wait_name">等待后台任务</string>
+    <string name="chat_step_job_status_name">查看后台任务</string>
+    <string name="chat_step_job_stop_name">停止后台任务</string>
+    <string name="chat_step_job_input_name">向后台任务输入</string>
+    <string name="chat_step_job_unknown">任务 %1$s</string>
+    <string name="chat_step_job_wait_limit_minutes">最长等待 %1$d 分钟</string>
+    <string name="chat_step_job_wait_limit_seconds">最长等待 %1$d 秒</string>
+    <string name="chat_step_job_wait_elapsed">已等待 %1$s / %2$s</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_step_command_running_titled">Running: %1$s</string>
+    <string name="chat_step_job_wait_running">Waiting: %1$s</string>
+    <string name="chat_step_job_wait_name">Wait for job</string>
+    <string name="chat_step_job_status_name">Check job</string>
+    <string name="chat_step_job_stop_name">Stop job</string>
+    <string name="chat_step_job_input_name">Send input to job</string>
+    <string name="chat_step_job_unknown">Job %1$s</string>
+    <string name="chat_step_job_wait_limit_minutes">Waits up to %1$d min</string>
+    <string name="chat_step_job_wait_limit_seconds">Waits up to %1$d s</string>
+    <string name="chat_step_job_wait_elapsed">Waited %1$s of %2$s</string>
+</resources>

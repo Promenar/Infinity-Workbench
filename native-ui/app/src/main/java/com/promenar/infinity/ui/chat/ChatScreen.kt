@@ -708,6 +708,7 @@ fun ChatScreenContent(
         com.promenar.infinity.ui.media.LocalWorkspaceMedia provides workspaceMedia,
         com.promenar.infinity.ui.media.LocalMediaMessenger provides mediaMessenger,
         com.promenar.infinity.ui.common.motion.LocalGenerationMotion provides generationMotion,
+        LocalBackgroundJobLabels provides rememberBackgroundJobLabels(),
     ) {
     BoxWithConstraints(
         modifier = Modifier

@@ -171,7 +171,7 @@ class BackgroundJobManager(
         }
         return if(executionGate==null) checked() else executionGate.withNewSessionAdmission(sessionId) {checked()}
     }
-    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null, transfer: SftpTransferRecord? = null):BackgroundJobRecord = gate.withLock {
+    private suspend fun reserve(sessionId:String, root:String, kind:BackgroundJobRunner, source:String, minutes:Int, action:BackgroundJobExitAction, sshControl: SshExecControl? = null, remoteHost: String? = null, transfer: SftpTransferRecord? = null, title: String? = null):BackgroundJobRecord = gate.withLock {
         com.promenar.infinity.startup.StartupWriteBarrier.requireWritable(sessionId = sessionId, rootId = root, subsystem = com.promenar.infinity.startup.StartupSubsystem.BACKGROUND_JOBS)
         executionGate?.requireSessionWritable(sessionId)
         require(minutes in 1..1440) { "max_runtime_minutes 必须为 1–1440" }
@@ -182,11 +182,11 @@ class BackgroundJobManager(
         val id="job-${UUID.randomUUID()}"
         val secretNames = try { vault?.environment(sessionId,source)?.keys?.sorted().orEmpty() }
         catch (_: IllegalStateException) { throw JobAccessException("JOB_SECRET_UNAVAILABLE", "引用的保密槽位已销毁或不能作为环境变量，任务未启动。") }
-        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost,transfer=transfer,secretNames=secretNames).also {
+        BackgroundJobRecord(id,sessionId,root,kind.name,ExecRunInfo.summarize(source),startedAtMillis=now(),maxRuntimeMinutes=minutes,onExit=action.wireName,logWorkspacePath=BackgroundJobLogs.reference(id),runDirectory=File(runRoot,id).path,directWorkspace=kind==BackgroundJobRunner.SSH,remoteHost=remoteHost,transfer=transfer,secretNames=secretNames,title=title).also {
             store.put(it); active[id]=Active().also { handle -> handle.sshControl = sshControl }; publish()
         }
     }
-    suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction, expectedMode: com.promenar.infinity.domain.model.SessionRunMode? = null):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
+    suspend fun startBuiltin(sessionId:String, workspaceRootUuid:String, kind:BackgroundJobRunner, source:String, stdin:String?, minutes:Int, action:BackgroundJobExitAction, expectedMode: com.promenar.infinity.domain.model.SessionRunMode? = null, title:String? = null):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
         require(kind != BackgroundJobRunner.TERMUX && kind != BackgroundJobRunner.SSH)
         val mode = sessionMode(sessionId) ?: throw JobAccessException("EXEC_RUN_MODE_REQUIRED", messages(RunModeMessage.MODE_REQUIRED))
@@ -196,7 +196,7 @@ class BackgroundJobManager(
             throw JobAccessException("EXEC_MODE_TOOL_UNAVAILABLE", messages(RunModeMessage.BUILTIN_TOOL_BLOCKED))
         }
         val actualKind = if (kind in setOf(BackgroundJobRunner.SHELL, BackgroundJobRunner.PYTHON) && linux) BackgroundJobRunner.LINUX else kind
-        val record=reserve(sessionId,workspaceRootUuid,actualKind,source,minutes,action)
+        val record=reserve(sessionId,workspaceRootUuid,actualKind,source,minutes,action,title=title)
         val handle=active.getValue(record.id)
         val started=CompletableDeferred<BackgroundJobRecord>()
         handle.worker=scope.launch(Dispatchers.IO) {
@@ -270,6 +270,7 @@ class BackgroundJobManager(
     suspend fun runLinuxForeground(
         sessionId: String, root: String, source: String, yieldSeconds: Int, minutes: Int,
         action: BackgroundJobExitAction, live: ToolLiveOutputSink,
+        title: String? = null,
         block: suspend (LinuxExecAttachment, ToolLiveOutputSink) -> com.promenar.infinity.domain.tool.CommandToolResult,
     ): com.promenar.infinity.domain.tool.CommandToolResult {
         val result = CompletableDeferred<com.promenar.infinity.domain.tool.CommandToolResult>()
@@ -280,7 +281,7 @@ class BackgroundJobManager(
         try {
             withContext(NonCancellable) {
                 initialize()
-                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.LINUX, source, minutes, action) }
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.LINUX, source, minutes, action, title = title) }
                     .copy(directWorkspace = true)
                 ownedRecord = record
                 val handle = active.getValue(record.id)
@@ -400,6 +401,7 @@ class BackgroundJobManager(
         timeoutSeconds: Int, maxOutputChars: Int, yieldSeconds: Int, background: Boolean,
         minutes: Int, action: BackgroundJobExitAction, live: ToolLiveOutputSink,
         transfer: SftpTransfer? = null,
+        title: String? = null,
         executeTransfer: (suspend (String, SshExecControl, suspend (Long, Long, Long?) -> Unit) -> com.promenar.infinity.domain.tool.CommandToolResult)? = null,
     ): SshJobRunResult = runSshOnIo(transfer) { trace ->
         require(timeoutSeconds in 1..600 && minutes in 1..1440 && yieldSeconds in 0..(if (transfer == null) timeoutSeconds else minutes * 60))
@@ -415,7 +417,7 @@ class BackgroundJobManager(
             withContext(NonCancellable) {
                 initialize()
                 recoverSftpCleanup(runtime, snapshot.alias)
-                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias, transfer?.let(SftpTransferRecord::from)) }
+                val record = admitted(sessionId) { reserve(sessionId, root, BackgroundJobRunner.SSH, source, minutes, action, control, snapshot.alias, transfer?.let(SftpTransferRecord::from), title) }
                 ownedRecord = record
                 val handle = active.getValue(record.id)
                 ownedHandle = handle
@@ -646,11 +648,11 @@ class BackgroundJobManager(
         }
     }
 
-    suspend fun startTermux(sessionId:String, workspaceRootUuid:String, source:String, workdir:String?, stdin:String?, minutes:Int, action:BackgroundJobExitAction):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
+    suspend fun startTermux(sessionId:String, workspaceRootUuid:String, source:String, workdir:String?, stdin:String?, minutes:Int, action:BackgroundJobExitAction, title:String? = null):BackgroundJobRecord = scope.async(Dispatchers.IO) { admitted(sessionId) {
         initialize()
         TermuxCommandRequest(source,workdir,stdin=stdin)
         val backend=termux ?: throw JobAccessException("JOB_TERMUX_UNAVAILABLE","Termux 后台接入不可用，请检查工具设置。")
-        val record=reserve(sessionId,workspaceRootUuid,BackgroundJobRunner.TERMUX,source,minutes,action)
+        val record=reserve(sessionId,workspaceRootUuid,BackgroundJobRunner.TERMUX,source,minutes,action,title=title)
         val handle=active.getValue(record.id)
         val started=CompletableDeferred<BackgroundJobRecord>()
         handle.worker=scope.launch(Dispatchers.IO) {

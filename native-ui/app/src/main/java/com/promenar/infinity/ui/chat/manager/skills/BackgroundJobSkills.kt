@@ -38,8 +38,9 @@ internal suspend fun runBackgroundExec(
     val action=BackgroundJobExitAction.fromWire((args["on_exit"] as? JsonPrimitive)?.content ?: "notify") ?: throw IllegalArgumentException("on_exit 必须为 none、notify 或 wake")
     val manager=jobs ?: throw JobAccessException("JOB_UNAVAILABLE","后台任务服务不可用，请重新打开应用。")
     val stdin=(args["stdin"] as? JsonPrimitive)?.content
-    val record=if(kind==BackgroundJobRunner.TERMUX) manager.startTermux(context.sessionId,context.workspaceRootUuid,source,(args["workdir"] as? JsonPrimitive)?.content?.trim()?.takeUnless{it.isEmpty() || it=="~" || it=="\$HOME"},stdin,minutes,action)
-        else manager.startBuiltin(context.sessionId,context.workspaceRootUuid,kind,source,stdin,minutes,action, expectedMode = context.runMode)
+    val title=ExecToolArguments.title(args)
+    val record=if(kind==BackgroundJobRunner.TERMUX) manager.startTermux(context.sessionId,context.workspaceRootUuid,source,(args["workdir"] as? JsonPrimitive)?.content?.trim()?.takeUnless{it.isEmpty() || it=="~" || it=="\$HOME"},stdin,minutes,action,title)
+        else manager.startBuiltin(context.sessionId,context.workspaceRootUuid,kind,source,stdin,minutes,action, expectedMode = context.runMode, title = title)
     normalized.result(backgroundStartJson(record))
 }
 internal suspend fun jobToolResult(id:String, body:suspend()->JsonObject):ToolResult = try {

@@ -150,11 +150,11 @@ fun backgroundJobsSideloadLightEnglishPreview() = ActivityPreviewFrame(dark = fa
     BackgroundJobsContent(jobs = previewJobs, nowMillis = NOW, keepAliveAvailable = true, onStop = {}, onOpenLog = {})
 }
 
-// SSH 后台命令与本地任务同一列表，运行环境标签后接主机 ID。
+// SSH 后台命令与本地任务同一列表，运行环境标签后接主机 ID；有短标题与无标题的行混排。
 private val mixedJobs = listOf(
-    previewJob("ssh1", "rsync -a /data/ backup:/srv/data/", BackgroundJobState.RUNNING, runner = BackgroundJobRunner.SSH).copy(remoteHost = "nas"),
+    previewJob("ssh1", "rsync -a /data/ backup:/srv/data/", BackgroundJobState.RUNNING, runner = BackgroundJobRunner.SSH).copy(remoteHost = "nas", title = "同步数据到 NAS 备份"),
     previewJob("sh1", "./gradlew assembleDebug", BackgroundJobState.RUNNING),
-    previewJob("ssh2", "journalctl -u app --since today", BackgroundJobState.EXITED, exit = 0, runner = BackgroundJobRunner.SSH).copy(remoteHost = "build-server"),
+    previewJob("ssh2", "journalctl -u app --since today", BackgroundJobState.EXITED, exit = 0, runner = BackgroundJobRunner.SSH).copy(remoteHost = "build-server", title = "查看今日应用日志"),
 )
 
 @PreviewTest

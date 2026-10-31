@@ -53,6 +53,8 @@ data class BackgroundJob(
     val remoteHost: String? = null,
     /** SFTP 传输任务的方向、路径与进度；命令任务为 null。 */
     val transfer: SftpTransfer? = null,
+    /** 智能体为命令写的短标题；界面优先显示它，没有时显示命令原文。 */
+    val title: String? = null,
 )
 
 enum class SftpTransferDirection { UPLOAD, DOWNLOAD }
