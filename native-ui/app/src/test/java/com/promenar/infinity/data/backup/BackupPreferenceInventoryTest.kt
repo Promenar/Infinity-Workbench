@@ -16,6 +16,12 @@ class BackupPreferenceInventoryTest {
     }
 
     @Test
+    fun `检视器边缘条位置登记为本机状态且不参与备份`() {
+        assertThat(BackupPreferencePolicy.isKnown("infinity_ui_state", "chat_inspector_strip_lift")).isTrue()
+        assertThat(BackupPreferencePolicy.isAllowed("infinity_ui_state", "chat_inspector_strip_lift")).isFalse()
+    }
+
+    @Test
     fun `长期记忆开关作为用户偏好参与备份且不放宽凭据限制`() {
         assertThat(BackupPreferencePolicy.isKnown("infinity_settings", "long_term_memory_enabled")).isTrue()
         assertThat(BackupPreferencePolicy.isAllowed("infinity_settings", "long_term_memory_enabled")).isTrue()
@@ -102,6 +108,8 @@ class BackupPreferenceInventoryTest {
             "data/tailnet/TailnetSettings.kt#preferences" to "infinity_tailnet",
             // 已建索引的分块基线：随本机向量索引走，独立偏好文件，不在备份命名空间内（键为常量）。
             "ui/rag/KnowledgeBaseSettingsLogic.kt#prefs" to "rag_index_baseline",
+            // 检视器边缘条位置：本机界面状态，独立偏好文件，不参与备份。
+            "ui/chat/ChatInspector.kt#prefs" to "infinity_ui_state",
         )
         val editorChain = Regex("(\\w+)\\s*\\.edit\\(\\)([\\s\\S]{0,2000}?)\\.apply\\(\\)")
         val editorPut = Regex("\\.put(?:String|StringSet|Boolean|Int|Long|Float)\\(\\s*\"([^\"]+)\"")

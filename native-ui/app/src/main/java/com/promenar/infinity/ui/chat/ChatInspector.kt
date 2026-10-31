@@ -396,9 +396,6 @@ internal fun ChatInspectorStrip(
     }
 }
 
-private const val UiStatePrefs = "infinity_ui_state"
-private const val StripLiftKey = "chat_inspector_strip_lift"
-
 /** 拖动 [dragY] 像素后边缘条的上移比例：0 贴底，1 顶到可移动范围上沿；没有可移动范围时保持不变。 */
 internal fun inspectorStripLift(fraction: Float, dragY: Float, maxLiftPx: Float): Float =
     if (maxLiftPx <= 0f) fraction else (fraction - dragY / maxLiftPx).coerceIn(0f, 1f)
@@ -410,11 +407,11 @@ internal fun inspectorStripLift(fraction: Float, dragY: Float, maxLiftPx: Float)
 @Composable
 internal fun Modifier.inspectorStripDrag(maxLiftPx: Float): Modifier {
     val context = LocalContext.current
-    val prefs = remember(context) { context.applicationContext.getSharedPreferences(UiStatePrefs, Context.MODE_PRIVATE) }
-    var fraction by remember { mutableFloatStateOf(prefs.getFloat(StripLiftKey, 0f).coerceIn(0f, 1f)) }
+    val prefs = remember(context) { context.applicationContext.getSharedPreferences("infinity_ui_state", Context.MODE_PRIVATE) }
+    var fraction by remember { mutableFloatStateOf(prefs.getFloat("chat_inspector_strip_lift", 0f).coerceIn(0f, 1f)) }
     val maxLift by rememberUpdatedState(maxLiftPx)
     val haptics by rememberUpdatedState(LocalInfinityHaptics.current)
-    val save = { prefs.edit().putFloat(StripLiftKey, fraction).apply() }
+    val save = { prefs.edit().putFloat("chat_inspector_strip_lift", fraction).apply() }
     return this
         .offset { IntOffset(0, -(fraction * maxLift.coerceAtLeast(0f)).roundToInt()) }
         .pointerInput(prefs) {
